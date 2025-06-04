@@ -1,41 +1,107 @@
+# Set the minimum iOS version to 13.0 to match React Native requirements
+platform :ios, '13.0'
 
-# Resolve react_native_pods.rb with node to allow for hoisting
-require Pod::Executable.execute_command('node', ['-p',
-  'require.resolve(
-    "react-native/scripts/react_native_pods.rb",
-    {paths: [process.argv[1]]},
-  )', __dir__]).strip
+# Use CDN source for faster and more reliable pod installation
+install! 'cocoapods', :deterministic_uuids => false
 
-platform :ios, min_ios_version_supported
-prepare_react_native_project!
+# Set the source to use CDN
+source 'https://cdn.cocoapods.org/'
 
-use_modular_headers!
+# Disable Flipper since it's causing issues
+ENV['NO_FLIPPER'] = '1'
 
-linkage = ENV['USE_FRAMEWORKS']
-if linkage != nil
-  Pod::UI.puts "Configuring Pod with #{linkage}ally linked Frameworks".green
-  use_frameworks! :linkage => linkage.to_sym
+# Monkey patch to exclude boost from React Native pods
+def use_react_native!(options={})
+  # Call the original method
+  original_use_react_native(options)
+  
+  # Remove the boost pod if it was added
+  pods_to_remove = ['boost']
+  
+  # Get the main target
+  target = self.targets.find { |t| t.name == 'SplitSmart' }
+  
+  # Remove the boost pod from the target
+  target.dependencies.each do |dependency|
+    if pods_to_remove.include?(dependency.name)
+      target.dependencies.delete(dependency)
+    end
+  end
 end
 
-target 'SplitSmart' do
-  pod 'FirebaseCore'
-  pod 'FirebaseAuth'
-  pod 'FirebaseMessaging'
-  config = use_native_modules!
+# Load React Native with custom configuration
+require_relative '../node_modules/react-native/scripts/react_native_pods'
 
+# Prepare React Native project
+config = use_native_modules!
+
+# Use our local boost pod
+pod 'LocalBoost', :path => '.', :modular_headers => true
+
+target 'SplitSmart' do
+  # Use React Native's built-in pod installation with custom configurations
   use_react_native!(
     :path => config[:reactNativePath],
-    # An absolute path to your application root.
-    :app_path => "#{Pod::Config.instance.installation_root}/.."
+    :hermes_enabled => true,
+    :fabric_enabled => false,
+    :flipper_configuration => FlipperConfiguration.disabled
   )
-
+  
+  # Firebase pods
+  pod 'Firebase', '10.19.0'
+  pod 'Firebase/Auth', '10.19.0'
+  pod 'Firebase/Messaging', '10.19.0'
+  
+  # React Native Firebase pods
+  pod 'RNFBApp', :path => '../node_modules/@react-native-firebase/app'
+  pod 'RNFBAuth', :path => '../node_modules/@react-native-firebase/auth'
+  pod 'RNFBMessaging', :path => '../node_modules/@react-native-firebase/messaging'
+  
+  # Other React Native libraries
+  pod 'RNScreens', :path => '../node_modules/react-native-screens'
+  pod 'react-native-safe-area-context', :path => '../node_modules/react-native-safe-area-context'
+  
+  # Pre-install hook to configure build settings and fix Boost checksum
+  pre_install do |installer|
+    # Fix for Boost checksum mismatch
+    boost_pod = installer.pod_targets.find { |p| p.name == 'boost' }
+    if boost_pod
+      # Update the source URL to use the correct checksum
+      boost_pod.instance_variable_get(:@spec).source = {
+        :http => 'https://boostorg.jfrog.io/artifactory/main/release/1.76.0/source/boost_1_76_0.tar.bz2',
+        :sha256 => '79e6d3f986444e5a80afbeccdaf2d1c1cf964baa8d766d20859d653a16c39848'
+      }
+      
+      # Configure build settings for Boost
+      boost_pod.build_configurations.each do |config|
+        config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
+        config.build_settings['CLANG_CXX_LIBRARY'] = 'libc++'
+        config.build_settings['OTHER_CPLUSPLUSFLAGS'] = ['-std=c++17']
+      end
+    end
+  end
+  
   post_install do |installer|
-    # https://github.com/facebook/react-native/blob/main/packages/react-native/scripts/react_native_pods.rb#L197-L202
+    # Apply React Native post install
     react_native_post_install(
       installer,
-      config[:reactNativePath],
-      :mac_catalyst_enabled => false,
-      # :ccache_enabled => true
+      :mac_catalyst_enabled => false
     )
+    
+    # Set deployment target and other settings
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |config|
+        # Set iOS deployment target
+        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+        
+        # Fix for arm64 simulator builds
+        config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'arm64'
+        
+        # Set C++ standard
+        config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
+        config.build_settings['CLANG_CXX_LIBRARY'] = 'libc++'
+        config.build_settings['OTHER_CPLUSPLUSFLAGS'] = ['-std=c++17']
+      end
+    end
   end
 end

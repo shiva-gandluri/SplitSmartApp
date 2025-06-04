@@ -1,0 +1,129 @@
+# Set the minimum iOS version to 13.0 to match React Native requirements
+platform :ios, '13.0'
+
+# Use CDN source for faster and more reliable pod installation
+install! 'cocoapods', :deterministic_uuids => false
+
+# Set the source to use CDN
+source 'https://cdn.cocoapods.org/'
+
+# Disable Flipper since it's causing issues
+ENV['NO_FLIPPER'] = '1'
+
+# Load React Native with custom configuration
+require_relative '../node_modules/react-native/scripts/react_native_pods'
+
+# Disable the default M1 workaround as we'll handle it ourselves
+def __apply_Xcode_12_5_M1_post_install_workaround(installer)
+  # No-op to prevent the default implementation from running
+end
+
+# Prepare React Native project
+prepare_react_native_project!
+
+# Flipper configuration
+flipper_config = ENV['NO_FLIPPER'] == "1" ? FlipperConfiguration.disabled : FlipperConfiguration.enabled
+
+linkage = ENV['USE_FRAMEWORKS']
+if linkage != nil
+  Pod::UI.puts "Configuring Pod with #{linkage}ally linked Frameworks".green
+  use_frameworks! :linkage => linkage.to_sym
+end
+
+target 'SplitSmart' do
+  config = use_native_modules!
+
+  # Flags change depending on the env values.
+  flags = get_default_flags()
+
+  # Use React Native's built-in pod installation with custom configurations
+  use_react_native!(
+    :path => config[:reactNativePath],
+    :hermes_enabled => true,
+    :fabric_enabled => flags[:fabric_enabled],
+    :flipper_configuration => flipper_config,
+    :app_path => "#{Pod::Config.instance.installation_root}/.."
+  )
+
+  # Pods for SplitSmart
+  # Add Firebase pods with specific versions compatible with @react-native-firebase 18.7.3
+  pod 'Firebase/Core', '10.19.0'
+  pod 'Firebase/Auth', '10.19.0'
+  pod 'Firebase/Messaging', '10.19.0'
+  
+  target 'SplitSmartTests' do
+    inherit! :search_paths
+    # Pods for testing
+  end
+  
+  # Pre-install hook to ensure clean Boost installation
+  pre_install do |installer|
+    # Remove any duplicate boost pods
+    installer.pod_targets.each do |target|
+      if target.name == 'boost' && target.pod_name != 'boost'
+        target.remove_from_project
+      end
+    end
+    
+    # Set build settings for boost
+    installer.pod_targets.each do |target|
+      if target.name == 'boost'
+        target.build_configurations.each do |config|
+          config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
+          config.build_settings['CLANG_CXX_LIBRARY'] = 'libc++'
+          config.build_settings['OTHER_CPLUSPLUSFLAGS'] = '-std=c++17'
+        end
+      end
+    end
+  end
+  
+  # Add our custom boost pod
+  pod 'boost', :path => '.', :modular_headers => true
+  
+  # Pre-install hook to modify pod dependencies
+  pre_install do |installer|
+    # Remove boost dependency from React Native pods
+    installer.pod_targets.each do |pod|
+      if pod.name.start_with?('React-') || pod.name == 'ReactCommon' || pod.name == 'React-cxxreact' || pod.name == 'React-jsi'
+        pod.dependencies.delete_if { |d| d.name == 'boost' }
+      end
+      
+      # Configure boost pod
+      if pod.name == 'boost'
+        pod.build_configurations.each do |config|
+          config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
+          config.build_settings['CLANG_CXX_LIBRARY'] = 'libc++'
+          config.build_settings['OTHER_CPLUSPLUSFLAGS'] = '-std=c++17'
+        end
+      end
+    end
+  end
+  
+  post_install do |installer|
+    # Apply React Native post install
+    react_native_post_install(
+      installer,
+      :mac_catalyst_enabled => false
+    )
+    
+    # Set deployment target and other settings
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |config|
+        # Set iOS deployment target
+        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+        
+        # Fix for arm64 simulator builds
+        config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'arm64'
+        
+        # Fix for React Native 0.72.x
+        config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= ['$(inherited)']
+        config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << '$(inherited)'
+        
+        # Fix for Flipper
+        if target.name == 'Flipper' || target.name.start_with?('Flipper')
+          config.build_settings['BUILD_LIBRARY_FOR_DISTRIBUTION'] = 'NO'
+        end
+      end
+    end
+  end
+end
