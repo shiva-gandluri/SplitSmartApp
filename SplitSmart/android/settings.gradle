@@ -1,6 +1,28 @@
-pluginManagement { includeBuild("../node_modules/@react-native/gradle-plugin") }
-plugins { id("com.facebook.react.settings") }
-extensions.configure(com.facebook.react.ReactSettingsExtension){ ex -> ex.autolinkLibrariesFromCommand() }
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+        maven {
+            url = new File(settingsDir, '../node_modules/react-native/android').toString()
+        }
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+        maven {
+            url = new File(settingsDir, '../node_modules/react-native/android').toString()
+        }
+        maven {
+            url = new File(settingsDir, '../node_modules/jsc-android/dist').toString()
+        }
+        maven { url 'https://www.jitpack.io' }
+    }
+}
+
 rootProject.name = 'SplitSmart'
 include ':app'
-includeBuild('../node_modules/@react-native/gradle-plugin')
