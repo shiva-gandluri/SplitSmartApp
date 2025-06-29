@@ -4,6 +4,9 @@ pluginManagement {
         mavenCentral()
         gradlePluginPortal()
         maven {
+            url = new File(settingsDir, '../node_modules/@react-native/gradle-plugin').toString()
+        }
+        maven {
             url = new File(settingsDir, '../node_modules/react-native/android').toString()
         }
     }
@@ -13,7 +16,11 @@ dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         google()
-        mavenCentral()
+        mavenCentral {
+            content {
+                excludeGroup "com.facebook.react"
+            }
+        }
         maven {
             url = new File(settingsDir, '../node_modules/react-native/android').toString()
         }
@@ -25,4 +32,8 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = 'SplitSmart'
+
+apply from: new File(settingsDir, "../node_modules/@react-native-community/cli-platform-android/native_modules.gradle");
+applyNativeModulesSettingsGradle(settings)
+
 include ':app'
