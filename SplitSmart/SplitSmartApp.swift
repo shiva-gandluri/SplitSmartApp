@@ -8,11 +8,24 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         // Configure Firebase as early as possible
         FirebaseApp.configure()
         print("✅ Firebase configured successfully")
+        
+        // Configure Google Sign-In with client ID from GoogleService-Info.plist
+        guard let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
+              let plist = NSDictionary(contentsOfFile: path),
+              let clientID = plist["CLIENT_ID"] as? String else {
+            print("❌ Failed to get CLIENT_ID from GoogleService-Info.plist")
+            return false
+        }
+        
+        GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
+        print("✅ Google Sign-In configured with client ID: \(clientID)")
+        
         return true
     }
     
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey : Any] = [:]) -> Bool {
         // Handle Google Sign-In URL scheme
+        print("🔗 Handling URL: \(url.absoluteString)")
         return GIDSignIn.sharedInstance.handle(url)
     }
 }
