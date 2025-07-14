@@ -37,6 +37,7 @@
 		1111111111111111111111111111111F /* ScanView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ScanView.swift; path = Views/ScanView.swift; sourceTree = "<group>"; };
 		2222222222222222222222222222222B /* TabButton.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TabButton.swift; path = Components/TabButton.swift; sourceTree = "<group>"; };
 		3333333333333333333333333333333B /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = Assets.xcassets; sourceTree = "<group>"; };
+		C2E4EE30ABFC4A7A9ED41DFF /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; name = "Info.plist"; path = "Info.plist"; sourceTree = "<group>"; };
 		F1A2B3C4D5E6F7A8B9C0D1E2 /* SplitSmart.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SplitSmart.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -113,6 +114,7 @@
 				1111111111111111111111111111111F /* ScanView.swift */,
 				2222222222222222222222222222222B /* TabButton.swift */,
 				3333333333333333333333333333333B /* Assets.xcassets */,
+				C2E4EE30ABFC4A7A9ED41DFF /* Info.plist */,
 				DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD /* GoogleService-Info.plist */,
 			);
 			path = SplitSmart;
@@ -350,20 +352,8 @@
 				DEVELOPMENT_TEAM = "";
 				CODE_SIGN_IDENTITY = "";
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_CFBundleURLTypes = (
-					{
-						CFBundleURLName = "GoogleSignIn";
-						CFBundleURLSchemes = (
-							"com.googleusercontent.apps.994578888112-6223olgk818d20pf3isoirbq35tr5ut7",
-						);
-					},
-				);
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SplitSmart/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks"
@@ -387,20 +377,8 @@
 				DEVELOPMENT_TEAM = "";
 				CODE_SIGN_IDENTITY = "";
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_CFBundleURLTypes = (
-					{
-						CFBundleURLName = "GoogleSignIn";
-						CFBundleURLSchemes = (
-							"com.googleusercontent.apps.994578888112-6223olgk818d20pf3isoirbq35tr5ut7",
-						);
-					},
-				);
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SplitSmart/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks"
