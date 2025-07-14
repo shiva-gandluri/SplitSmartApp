@@ -1,11 +1,19 @@
 import SwiftUI
 import Firebase
+import GoogleSignIn
 
 class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
+        // Configure Firebase as early as possible
         FirebaseApp.configure()
+        print("✅ Firebase configured successfully")
         return true
+    }
+    
+    func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey : Any] = [:]) -> Bool {
+        // Handle Google Sign-In URL scheme
+        return GIDSignIn.sharedInstance.handle(url)
     }
 }
 
@@ -34,39 +42,88 @@ struct SplitSmartApp: App {
 
 struct LoadingView: View {
     @State private var isAnimating = false
+    @State private var loadingText = "Loading..."
+    @State private var dots = ""
     
     var body: some View {
-        VStack(spacing: 30) {
-            Spacer()
+        ZStack {
+            // Gradient background similar to AuthView
+            LinearGradient(
+                gradient: Gradient(colors: [
+                    Color.blue.opacity(0.1),
+                    Color.purple.opacity(0.05),
+                    Color(.systemBackground)
+                ]),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
             
-            // App Icon and Branding
-            VStack(spacing: 20) {
-                // Animated dollar sign icon
-                Image(systemName: "dollarsign.circle.fill")
-                    .font(.system(size: 80))
-                    .foregroundColor(.blue)
-                    .scaleEffect(isAnimating ? 1.1 : 1.0)
+            VStack(spacing: 30) {
+                Spacer()
+                
+                // App Icon and Branding
+                VStack(spacing: 24) {
+                    // Enhanced animated icon
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    gradient: Gradient(colors: [Color.blue, Color.blue.opacity(0.7)]),
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 100, height: 100)
+                            .shadow(color: .blue.opacity(0.3), radius: 15, x: 0, y: 8)
+                            .scaleEffect(isAnimating ? 1.05 : 1.0)
+                        
+                        Image(systemName: "dollarsign.circle.fill")
+                            .font(.system(size: 50, weight: .bold))
+                            .foregroundColor(.white)
+                    }
                     .animation(
-                        Animation.easeInOut(duration: 1.0).repeatForever(autoreverses: true),
+                        Animation.easeInOut(duration: 1.5).repeatForever(autoreverses: true),
                         value: isAnimating
                     )
+                    
+                    VStack(spacing: 12) {
+                        Text("SplitSmart")
+                            .font(.system(size: 32, weight: .bold, design: .rounded))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    gradient: Gradient(colors: [.blue, .purple]),
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                        
+                        Text(loadingText + dots)
+                            .font(.body)
+                            .foregroundColor(.secondary)
+                            .animation(.easeInOut(duration: 0.5), value: dots)
+                    }
+                }
                 
-                Text("SplitSmart")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                    .foregroundColor(.primary)
-                
-                Text("Loading...")
-                    .font(.body)
-                    .foregroundColor(.secondary)
+                Spacer()
             }
-            
-            Spacer()
+            .padding(.horizontal, 32)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemBackground))
         .onAppear {
             isAnimating = true
+            startLoadingAnimation()
+        }
+    }
+    
+    private func startLoadingAnimation() {
+        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { timer in
+            withAnimation {
+                if dots.count >= 3 {
+                    dots = ""
+                } else {
+                    dots += "."
+                }
+            }
         }
     }
 }
