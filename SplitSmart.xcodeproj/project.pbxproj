@@ -356,8 +356,14 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_CFBundleURLTypes = "$(BUNDLE_URL_TYPES)";
-				BUNDLE_URL_TYPES = "({\"CFBundleURLName\": \"GoogleSignIn\", \"CFBundleURLSchemes\": [\"com.googleusercontent.apps.994578888112-6223olgk818d20pf3isoirbq35tr5ut7\"]})";
+				INFOPLIST_KEY_CFBundleURLTypes = (
+					{
+						CFBundleURLName = "GoogleSignIn";
+						CFBundleURLSchemes = (
+							"com.googleusercontent.apps.994578888112-6223olgk818d20pf3isoirbq35tr5ut7",
+						);
+					},
+				);
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks"
@@ -387,8 +393,14 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_CFBundleURLTypes = "$(BUNDLE_URL_TYPES)";
-				BUNDLE_URL_TYPES = "({\"CFBundleURLName\": \"GoogleSignIn\", \"CFBundleURLSchemes\": [\"com.googleusercontent.apps.994578888112-6223olgk818d20pf3isoirbq35tr5ut7\"]})";
+				INFOPLIST_KEY_CFBundleURLTypes = (
+					{
+						CFBundleURLName = "GoogleSignIn";
+						CFBundleURLSchemes = (
+							"com.googleusercontent.apps.994578888112-6223olgk818d20pf3isoirbq35tr5ut7",
+						);
+					},
+				);
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks"
