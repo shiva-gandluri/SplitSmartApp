@@ -1,6 +1,7 @@
 import SwiftUI
 import Firebase
 import FirebaseAuth
+import FirebaseFirestore
 import GoogleSignIn
 import GoogleSignInSwift
 
@@ -72,28 +73,10 @@ class AuthViewModel: ObservableObject {
             return
         }
         
-        // Check Firebase configuration
-        guard let firebaseApp = FirebaseApp.app() else {
-            await MainActor.run {
-                self.errorMessage = "Firebase not configured"
-            }
-            print("❌ Firebase app not found")
-            return
+        await MainActor.run {
+            self.isLoading = true
+            self.errorMessage = ""
         }
-        
-        guard let clientID = firebaseApp.options.clientID else {
-            await MainActor.run {
-                self.errorMessage = "Firebase configuration error - missing client ID"
-            }
-            print("❌ Firebase client ID not found")
-            return
-        }
-        
-        print("✅ Firebase client ID found: \(String(clientID.prefix(10)))...")
-        
-        // Configure Google Sign-In
-        let config = GIDConfiguration(clientID: clientID)
-        GIDSignIn.sharedInstance.configuration = config
         
         // Get root view controller
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
@@ -101,21 +84,17 @@ class AuthViewModel: ObservableObject {
               let rootViewController = window.rootViewController else {
             await MainActor.run {
                 self.errorMessage = "Unable to get root view controller"
+                self.isLoading = false
             }
             print("❌ Root view controller not found")
             return
         }
         
         print("✅ Root view controller found")
-        
-        await MainActor.run {
-            self.isLoading = true
-            self.errorMessage = ""
-        }
-        
         print("🔵 Starting Google Sign-In flow...")
         
         do {
+            // Use the Google Sign-In that's already configured in AppDelegate
             let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: rootViewController)
             print("✅ Google Sign-In completed successfully")
             
@@ -139,6 +118,9 @@ class AuthViewModel: ObservableObject {
             let authResult = try await Auth.auth().signIn(with: credential)
             print("✅ Firebase authentication successful")
             
+            // Create user record in Firestore
+            try await createUserRecord(authResult: authResult)
+            
             await MainActor.run {
                 self.user = authResult.user
                 self.isSignedIn = true
@@ -152,6 +134,35 @@ class AuthViewModel: ObservableObject {
                 self.errorMessage = error.localizedDescription
                 self.isLoading = false
             }
+        }
+    }
+    
+    private func createUserRecord(authResult: AuthDataResult) async throws {
+        let db = Firestore.firestore()
+        let userRef = db.collection("users").document(authResult.user.uid)
+        
+        // Check if user already exists
+        let document = try await userRef.getDocument()
+        
+        if !document.exists {
+            print("🔵 Creating new user record in Firestore...")
+            
+            let userData: [String: Any] = [
+                "uid": authResult.user.uid,
+                "email": authResult.user.email ?? "",
+                "displayName": authResult.user.displayName,
+                "authProvider": "google.com",
+                "createdAt": FieldValue.serverTimestamp(),
+                "lastSignInAt": FieldValue.serverTimestamp()
+            ].compactMapValues { $0 }
+            
+            try await userRef.setData(userData)
+            print("✅ User record created in Firestore")
+        } else {
+            print("ℹ️ User record already exists, updating last sign-in time")
+            try await userRef.updateData([
+                "lastSignInAt": FieldValue.serverTimestamp()
+            ])
         }
     }
     

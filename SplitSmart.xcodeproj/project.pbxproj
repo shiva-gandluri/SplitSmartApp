@@ -13,6 +13,7 @@
 		E0CC6CB05F1EED362EC1D1EB /* GroupsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2BEF984D5B7BED45A1DD054 /* GroupsView.swift */; };
 		EEE166656769437CA8F9D9D7 /* UIComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D9DE7B031454050B7E077CB /* UIComponents.swift */; };
 		77777777777777777777777777777777 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 33333333333333333333333333333333 /* FirebaseAuth */; };
+		88888888888888888888888888888888 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 44444444444444444444444444444444 /* FirebaseFirestore */; };
 		99999999999999999999999999999999 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 55555555555555555555555555555555 /* GoogleSignIn */; };
 		AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 66666666666666666666666666666666 /* GoogleSignInSwift */; };
 		EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE /* AuthViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB /* AuthViewModel.swift */; };
@@ -47,6 +48,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				77777777777777777777777777777777 /* FirebaseAuth in Frameworks */,
+				88888888888888888888888888888888 /* FirebaseFirestore in Frameworks */,
 				99999999999999999999999999999999 /* GoogleSignIn in Frameworks */,
 				AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA /* GoogleSignInSwift in Frameworks */,
 			);
@@ -78,6 +80,11 @@
 		isa = XCSwiftPackageProductDependency;
 		package = 11111111111111111111111111111111 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 		productName = FirebaseAuth;
+	};
+	44444444444444444444444444444444 /* FirebaseFirestore */ = {
+		isa = XCSwiftPackageProductDependency;
+		package = 11111111111111111111111111111111 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+		productName = FirebaseFirestore;
 	};
 	55555555555555555555555555555555 /* GoogleSignIn */ = {
 		isa = XCSwiftPackageProductDependency;
@@ -146,6 +153,7 @@
 			name = SplitSmart;
 			packageProductDependencies = (
 				33333333333333333333333333333333 /* FirebaseAuth */,
+				44444444444444444444444444444444 /* FirebaseFirestore */,
 				55555555555555555555555555555555 /* GoogleSignIn */,
 				66666666666666666666666666666666 /* GoogleSignInSwift */,
 			);
