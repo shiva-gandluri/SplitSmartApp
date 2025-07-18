@@ -1,5 +1,6 @@
 import SwiftUI
 import Firebase
+import FirebaseFirestore
 import GoogleSignIn
 
 class AppDelegate: NSObject, UIApplicationDelegate {
@@ -8,6 +9,19 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         // Configure Firebase as early as possible
         FirebaseApp.configure()
         print("✅ Firebase configured successfully")
+        
+        // Configure Firestore settings only if needed (with error handling)
+        do {
+            let db = Firestore.firestore()
+            let settings = FirestoreSettings()
+            settings.isPersistenceEnabled = true
+            settings.cacheSizeBytes = FirestoreCacheSizeUnlimited
+            db.settings = settings
+            print("✅ Firestore configured with offline persistence")
+        } catch {
+            print("⚠️ Firestore configuration failed: \(error.localizedDescription)")
+            print("ℹ️ App will continue without Firestore features")
+        }
         
         // Configure Google Sign-In with client ID from GoogleService-Info.plist
         guard let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),

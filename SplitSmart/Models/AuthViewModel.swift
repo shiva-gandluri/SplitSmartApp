@@ -78,6 +78,9 @@ class AuthViewModel: ObservableObject {
             self.errorMessage = ""
         }
         
+        // Add small delay to prevent rapid successive calls
+        try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
+        
         // Get root view controller
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let window = windowScene.windows.first,
@@ -97,6 +100,12 @@ class AuthViewModel: ObservableObject {
             // Use the Google Sign-In that's already configured in AppDelegate
             let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: rootViewController)
             print("✅ Google Sign-In completed successfully")
+            
+            // Check if we're still in loading state (user might have cancelled)
+            guard isLoading else {
+                print("ℹ️ Sign-in cancelled or already completed")
+                return
+            }
             
             guard let idToken = result.user.idToken?.tokenString else {
                 await MainActor.run {
@@ -118,8 +127,14 @@ class AuthViewModel: ObservableObject {
             let authResult = try await Auth.auth().signIn(with: credential)
             print("✅ Firebase authentication successful")
             
-            // Create user record in Firestore
-            try await createUserRecord(authResult: authResult)
+            // Create user record in Firestore (with error handling) - non-blocking
+            Task {
+                do {
+                    try await createUserRecord(authResult: authResult)
+                } catch {
+                    print("⚠️ Warning: Failed to create user record, but continuing with auth: \(error.localizedDescription)")
+                }
+            }
             
             await MainActor.run {
                 self.user = authResult.user
@@ -131,38 +146,113 @@ class AuthViewModel: ObservableObject {
         } catch {
             print("❌ Sign-in error: \(error.localizedDescription)")
             await MainActor.run {
-                self.errorMessage = error.localizedDescription
+                // Handle specific error types
+                if let nsError = error as NSError? {
+                    switch nsError.code {
+                    case -5: // User cancelled
+                        self.errorMessage = ""
+                        print("ℹ️ User cancelled sign-in")
+                    default:
+                        self.errorMessage = error.localizedDescription
+                    }
+                } else {
+                    self.errorMessage = error.localizedDescription
+                }
                 self.isLoading = false
             }
         }
     }
     
     private func createUserRecord(authResult: AuthDataResult) async throws {
+        print("🔵 Attempting to create user record in Firestore...")
+        
         let db = Firestore.firestore()
         let userRef = db.collection("users").document(authResult.user.uid)
         
-        // Check if user already exists
-        let document = try await userRef.getDocument()
+        // Set a timeout for Firestore operations to prevent hanging
+        let timeoutTask = Task {
+            try await Task.sleep(nanoseconds: 10_000_000_000) // 10 seconds
+            throw NSError(domain: "FirestoreTimeout", code: -1, userInfo: [NSLocalizedDescriptionKey: "Firestore operation timed out"])
+        }
         
-        if !document.exists {
-            print("🔵 Creating new user record in Firestore...")
-            
-            let userData: [String: Any] = [
-                "uid": authResult.user.uid,
-                "email": authResult.user.email ?? "",
-                "displayName": authResult.user.displayName,
-                "authProvider": "google.com",
-                "createdAt": FieldValue.serverTimestamp(),
-                "lastSignInAt": FieldValue.serverTimestamp()
-            ].compactMapValues { $0 }
-            
-            try await userRef.setData(userData)
-            print("✅ User record created in Firestore")
-        } else {
-            print("ℹ️ User record already exists, updating last sign-in time")
-            try await userRef.updateData([
-                "lastSignInAt": FieldValue.serverTimestamp()
-            ])
+        let firestoreTask = Task {
+            do {
+                // Check if user already exists with offline support
+                let document = try await userRef.getDocument(source: .default)
+                
+                if !document.exists {
+                    print("🔵 Creating new user record in Firestore...")
+                    
+                    let userData: [String: Any] = [
+                        "uid": authResult.user.uid,
+                        "email": authResult.user.email ?? "",
+                        "displayName": authResult.user.displayName,
+                        "authProvider": "google.com",
+                        "createdAt": FieldValue.serverTimestamp(),
+                        "lastSignInAt": FieldValue.serverTimestamp()
+                    ].compactMapValues { $0 }
+                    
+                    try await userRef.setData(userData, merge: true)
+                    print("✅ User record created in Firestore")
+                } else {
+                    print("ℹ️ User record already exists, updating last sign-in time")
+                    try await userRef.updateData([
+                        "lastSignInAt": FieldValue.serverTimestamp()
+                    ])
+                }
+            } catch let error as NSError {
+                // Handle specific Firestore errors
+                if error.domain == FirestoreErrorDomain {
+                    switch error.code {
+                    case FirestoreErrorCode.unavailable.rawValue:
+                        print("⚠️ Firestore unavailable (offline), using setData with merge")
+                        let userData: [String: Any] = [
+                            "uid": authResult.user.uid,
+                            "email": authResult.user.email ?? "",
+                            "displayName": authResult.user.displayName,
+                            "authProvider": "google.com",
+                            "lastSignInAt": FieldValue.serverTimestamp(),
+                            "createdAt": FieldValue.serverTimestamp()
+                        ].compactMapValues { $0 }
+                        
+                        try await userRef.setData(userData, merge: true)
+                        print("✅ User record handled offline with merge")
+                    
+                    case FirestoreErrorCode.permissionDenied.rawValue:
+                        print("⚠️ Firestore permission denied - API may not be enabled")
+                        // Don't throw error, just log it
+                        return
+                    
+                    default:
+                        print("❌ Firestore error: \(error.localizedDescription)")
+                        throw error
+                    }
+                } else {
+                    print("❌ General error: \(error.localizedDescription)")
+                    throw error
+                }
+            }
+        }
+        
+        // Race the timeout against the Firestore operation
+        do {
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    try await timeoutTask.value
+                }
+                group.addTask {
+                    try await firestoreTask.value
+                }
+                
+                // Wait for the first task to complete
+                try await group.next()
+                
+                // Cancel the remaining task
+                group.cancelAll()
+            }
+        } catch {
+            print("⚠️ Firestore operation failed or timed out: \(error.localizedDescription)")
+            // Don't rethrow - we want authentication to succeed even if Firestore fails
         }
     }
     
@@ -173,7 +263,14 @@ class AuthViewModel: ObservableObject {
             self.user = nil
             self.isSignedIn = false
             self.errorMessage = ""
+            self.isLoading = false
+            
+            // Reset initialization state to allow re-checking auth state
+            self.isInitialized = false
+            
+            print("✅ Successfully signed out")
         } catch {
+            print("❌ Sign out error: \(error.localizedDescription)")
             self.errorMessage = error.localizedDescription
         }
     }
