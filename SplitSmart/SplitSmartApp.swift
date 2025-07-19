@@ -10,18 +10,12 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         FirebaseApp.configure()
         print("✅ Firebase configured successfully")
         
-        // Configure Firestore settings only if needed (with error handling)
-        do {
-            let db = Firestore.firestore()
-            let settings = FirestoreSettings()
-            settings.isPersistenceEnabled = true
-            settings.cacheSizeBytes = FirestoreCacheSizeUnlimited
-            db.settings = settings
-            print("✅ Firestore configured with offline persistence")
-        } catch {
-            print("⚠️ Firestore configuration failed: \(error.localizedDescription)")
-            print("ℹ️ App will continue without Firestore features")
-        }
+        // Configure Firestore settings with modern API
+        let db = Firestore.firestore()
+        let settings = FirestoreSettings()
+        settings.cacheSettings = PersistentCacheSettings(sizeBytes: NSNumber(value: FirestoreCacheSizeUnlimited))
+        db.settings = settings
+        print("✅ Firestore configured with offline persistence")
         
         // Configure Google Sign-In with client ID from GoogleService-Info.plist
         guard let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
