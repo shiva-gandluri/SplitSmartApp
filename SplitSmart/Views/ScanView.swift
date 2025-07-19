@@ -1,19 +1,26 @@
 import SwiftUI
 import UIKit
 import AVFoundation
+import Photos
 
 // MARK: - Camera Permission Manager
 class CameraPermissionManager: ObservableObject {
     @Published var cameraPermissionStatus: AVAuthorizationStatus = .notDetermined
+    @Published var photoLibraryPermissionStatus: PHAuthorizationStatus = .notDetermined
     @Published var showPermissionAlert = false
     @Published var permissionMessage = ""
     
     init() {
         checkCameraPermission()
+        checkPhotoLibraryPermission()
     }
     
     func checkCameraPermission() {
         cameraPermissionStatus = AVCaptureDevice.authorizationStatus(for: .video)
+    }
+    
+    func checkPhotoLibraryPermission() {
+        photoLibraryPermissionStatus = PHPhotoLibrary.authorizationStatus()
     }
     
     func requestCameraPermission() {
@@ -21,15 +28,42 @@ class CameraPermissionManager: ObservableObject {
             DispatchQueue.main.async {
                 self?.cameraPermissionStatus = granted ? .authorized : .denied
                 if !granted {
-                    self?.showPermissionDeniedAlert()
+                    self?.showCameraPermissionDeniedAlert()
                 }
             }
         }
     }
     
-    private func showPermissionDeniedAlert() {
+    func requestPhotoLibraryPermission() {
+        PHPhotoLibrary.requestAuthorization { [weak self] status in
+            DispatchQueue.main.async {
+                self?.photoLibraryPermissionStatus = status
+                if status != .authorized && status != .limited {
+                    self?.showPhotoLibraryPermissionDeniedAlert()
+                }
+            }
+        }
+    }
+    
+    private func showCameraPermissionDeniedAlert() {
         permissionMessage = "Camera access is required to scan receipts. Please enable camera access in Settings > Privacy & Security > Camera > SplitSmart."
         showPermissionAlert = true
+    }
+    
+    private func showPhotoLibraryPermissionDeniedAlert() {
+        permissionMessage = "Photo library access is required to upload receipt images. Please enable photo access in Settings > Privacy & Security > Photos > SplitSmart."
+        showPermissionAlert = true
+    }
+    
+    var canUsePhotoLibrary: Bool {
+        switch photoLibraryPermissionStatus {
+        case .authorized, .limited:
+            return true
+        case .notDetermined:
+            return true
+        default:
+            return false
+        }
     }
 }
 
@@ -45,9 +79,15 @@ struct CameraCapture: UIViewControllerRepresentable {
         picker.sourceType = sourceType
         picker.allowsEditing = false
         
+        // Configure media types for JPEG/PNG only
+        picker.mediaTypes = ["public.image"]
+        
         if sourceType == .camera {
             picker.cameraDevice = .rear
             picker.cameraCaptureMode = .photo
+        } else if sourceType == .photoLibrary {
+            // Additional configuration for photo library
+            picker.modalPresentationStyle = .fullScreen
         }
         
         return picker
@@ -187,9 +227,9 @@ struct ImagePreview: View {
 // MARK: - Permission Alert Extension
 extension View {
     func permissionAlert(isPresented: Binding<Bool>, message: String) -> some View {
-        self.alert("Camera Access Required", isPresented: isPresented) {
+        self.alert("Permission Required", isPresented: isPresented) {
             Button("Cancel", role: .cancel) { }
-            Button("Settings") {
+            Button("Open Settings") {
                 if let settingsUrl = URL(string: UIApplication.openSettingsURLString) {
                     UIApplication.shared.open(settingsUrl)
                 }
@@ -278,6 +318,7 @@ struct UIScanScreen: View {
         )
         .onAppear {
             permissionManager.checkCameraPermission()
+            permissionManager.checkPhotoLibraryPermission()
         }
     }
     
@@ -302,7 +343,23 @@ struct UIScanScreen: View {
     }
     
     private func handlePhotoLibrary() {
-        showingPhotoLibrary = true
+        // Check photo library permission before proceeding
+        switch permissionManager.photoLibraryPermissionStatus {
+        case .authorized, .limited:
+            showingPhotoLibrary = true
+        case .notDetermined:
+            permissionManager.requestPhotoLibraryPermission()
+            // Wait for permission result
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                if self.permissionManager.canUsePhotoLibrary {
+                    self.showingPhotoLibrary = true
+                }
+            }
+        case .denied, .restricted:
+            permissionManager.showPermissionAlert = true
+        @unknown default:
+            permissionManager.showPermissionAlert = true
+        }
     }
     
     private func handleImageCaptured() {
@@ -368,36 +425,45 @@ struct CameraInputView: View {
                 .font(.system(size: 48))
                 .foregroundColor(.gray)
             
-            Text("Take a photo of your receipt or upload an image")
+            Text("Take a photo of your receipt or upload from gallery")
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
                 .padding(.horizontal)
             
-            HStack(spacing: 12) {
+            VStack(spacing: 12) {
+                // Primary action: Take Photo
                 Button(action: onScan) {
                     HStack {
-                        Image(systemName: "camera")
+                        Image(systemName: "camera.fill")
                         Text("Take Photo")
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(Color.blue)
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(.white)
-                    .cornerRadius(8)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.blue)
+                    .cornerRadius(12)
                 }
                 
+                // Secondary action: Upload from Gallery
                 Button(action: onUpload) {
                     HStack {
-                        Image(systemName: "photo")
-                        Text("Upload")
+                        Image(systemName: "photo.on.rectangle")
+                        Text("Upload from Gallery")
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(Color.gray.opacity(0.2))
-                    .foregroundColor(.primary)
-                    .cornerRadius(8)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.blue)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.blue.opacity(0.1))
+                    .cornerRadius(12)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+                    )
                 }
             }
+            .padding(.horizontal, 20)
         }
     }
 }
