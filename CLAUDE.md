@@ -26,6 +26,7 @@ Dependencies are managed via Swift Package Manager. The resolved packages are tr
 - **MVVM Architecture**: Clear separation with ViewModels managing state
 - **SwiftUI**: Declarative UI with `@State`, `@StateObject`, `@EnvironmentObject`
 - **Firebase Integration**: Authentication, Firestore, and error handling
+- **Contacts Integration**: Native iOS ContactsUI framework for participant selection
 
 ### Key Components
 
@@ -44,6 +45,13 @@ Dependencies are managed via Swift Package Manager. The resolved packages are tr
 - Contains main screen implementations (Home, Scan, Profile)
 - Mock data for development and testing
 - Receipt scanning simulation flow
+- Participant management with contacts integration
+
+#### Contacts Management (in `UIComponents.swift`)
+- ContactsPermissionManager: Handles contacts permissions and authorization
+- ContactPicker: Wrapper for native contact selection UI
+- CNContact extensions: Helper methods for contact data extraction
+- Supports both manual entry and contact picker workflows
 
 ### Data Flow
 1. App starts → Firebase configuration in `AppDelegate`
@@ -57,6 +65,7 @@ Dependencies are managed via Swift Package Manager. The resolved packages are tr
 1. `GoogleService-Info.plist` must contain valid Firebase project credentials
 2. Firestore API must be enabled in Firebase Console
 3. Google Sign-In must be configured with proper OAuth client ID
+4. Contacts permission must be configured in `Info.plist` with `NSContactsUsageDescription`
 
 ### Error Handling Patterns
 - Firestore operations are non-blocking to prevent UI freezing
@@ -98,7 +107,8 @@ When making changes:
 1. **`AuthViewModel.swift`**: Authentication logic and state management
 2. **`SplitSmartApp.swift`**: App configuration and Firebase setup
 3. **`ContentView.swift`**: Main navigation and view hierarchy
-4. **`UIComponents.swift`**: Screen implementations and UI logic
+4. **`UIComponents.swift`**: Screen implementations, UI logic, and contacts management
+5. **`DataModels.swift`**: Core data models and OCR service
 
 ## Testing Notes
 

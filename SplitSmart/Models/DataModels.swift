@@ -15,21 +15,45 @@ enum OCRError: Error {
 // MARK: - OCR Models
 struct OCRResult {
     let rawText: String
-    let parsedItems: [ReceiptItem]
+    let parsedItems: [ReceiptItem] // Will be empty initially - users add manually
+    let identifiedTotal: Double?
+    let suggestedAmounts: [Double] // Potential item prices for quick selection
     let confidence: Float
     let processingTime: TimeInterval
+}
+
+enum ConfidenceLevel {
+    case high       // Exact match found in OCR text
+    case medium     // Part of close combination
+    case low        // Approximated or uncertain
+    case placeholder // User needs to fill in
 }
 
 struct ReceiptItem: Identifiable, Equatable {
     let id = UUID()
     var name: String
     var price: Double
+    var confidence: ConfidenceLevel = .high
     var isEditable: Bool = true
     
-    init(name: String, price: Double) {
+    // Store original detected values for confidence display
+    let originalDetectedName: String?
+    let originalDetectedPrice: Double?
+    
+    init(name: String, price: Double, confidence: ConfidenceLevel = .high, originalDetectedName: String? = nil, originalDetectedPrice: Double? = nil) {
         self.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         self.price = price
+        self.confidence = confidence
+        self.originalDetectedName = originalDetectedName
+        self.originalDetectedPrice = originalDetectedPrice
     }
+}
+
+struct ReceiptAnalysis {
+    let tax: Double
+    let tip: Double  
+    let total: Double
+    let itemCount: Int
 }
 
 // MARK: - Shared Transaction Models
@@ -57,8 +81,13 @@ struct UIParticipant: Identifiable, Hashable {
 struct UIItem: Identifiable {
     let id: Int
     var name: String
-    let price: Double
+    var price: Double
     var assignedTo: Int?
+    var confidence: ConfidenceLevel
+    
+    // Store original detected values for confidence display
+    let originalDetectedName: String?
+    let originalDetectedPrice: Double?
 }
 
 // MARK: - Summary Screen Models
@@ -114,7 +143,7 @@ class OCRService: ObservableObject {
                 isProcessing = false
                 errorMessage = "Failed to process image"
             }
-            return OCRResult(rawText: "", parsedItems: [], confidence: 0.0, processingTime: 0)
+            return OCRResult(rawText: "", parsedItems: [], identifiedTotal: nil, suggestedAmounts: [], confidence: 0.0, processingTime: 0)
         }
         
         print("✅ CGImage created successfully, size: \(cgImage.width)x\(cgImage.height)")
@@ -126,13 +155,18 @@ class OCRService: ObservableObject {
             let extractedText = try await extractText(from: cgImage)
             
             print("📝 Step 1 Complete: Extracted \(extractedText.count) characters")
+            if extractedText.isEmpty {
+                print("⚠️ WARNING: No text extracted from image - OCR failed completely")
+            } else {
+                print("📝 OCR Text Preview: \(String(extractedText.prefix(100)))...")
+            }
             
             // Step 2: Parse the extracted text
             print("🔍 Step 2: Parsing extracted text...")
             await MainActor.run { progress = 0.7 }
-            let parsedItems = parseReceiptText(extractedText)
+            let (parsedItems, identifiedTotal) = await parseReceiptText(extractedText)
             
-            print("✅ Step 2 Complete: Found \(parsedItems.count) items")
+            print("✅ Step 2 Complete: Found \(parsedItems.count) items, identified total: \(identifiedTotal ?? 0)")
             
             // Step 3: Calculate confidence and finish
             print("📊 Step 3: Calculating confidence...")
@@ -140,9 +174,13 @@ class OCRService: ObservableObject {
             let confidence = calculateConfidence(text: extractedText, items: parsedItems)
             let processingTime = Date().timeIntervalSince(startTime)
             
+            let suggestedAmounts = extractPotentialAmounts(extractedText)
+            
             let result = OCRResult(
                 rawText: extractedText,
                 parsedItems: parsedItems,
+                identifiedTotal: identifiedTotal,
+                suggestedAmounts: suggestedAmounts,
                 confidence: confidence,
                 processingTime: processingTime
             )
@@ -172,7 +210,7 @@ class OCRService: ObservableObject {
                 self.isProcessing = false
                 self.errorMessage = "OCR processing failed: \(error.localizedDescription)"
             }
-            return OCRResult(rawText: "", parsedItems: [], confidence: 0.0, processingTime: Date().timeIntervalSince(startTime))
+            return OCRResult(rawText: "", parsedItems: [], identifiedTotal: nil, suggestedAmounts: [], confidence: 0.0, processingTime: Date().timeIntervalSince(startTime))
         }
     }
     
@@ -192,13 +230,19 @@ class OCRService: ObservableObject {
                 print("🔍 OCR Processing Results:")
                 print("📊 Number of text observations: \(observations.count)")
                 
-                let recognizedText = observations.compactMap { observation in
-                    let topCandidate = observation.topCandidates(3).first?.string
-                    if let text = topCandidate {
-                        print("📝 Detected text: '\(text)' (confidence: \(observation.confidence))")
+                // Filter low-confidence observations and improve text extraction
+                let recognizedText = observations
+                    .filter { $0.confidence > 0.2 } // Filter out very low confidence
+                    .compactMap { observation in
+                        // Get top candidate with better confidence handling
+                        let topCandidate = observation.topCandidates(1).first?.string
+                        if let text = topCandidate, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            print("📝 Detected text: '\(text)' (confidence: \(observation.confidence))")
+                            return text
+                        }
+                        return nil
                     }
-                    return topCandidate
-                }.joined(separator: "\n")
+                    .joined(separator: "\n")
                 
                 print("🔍 OCR Raw Text Output:")
                 print("======================")
@@ -209,12 +253,17 @@ class OCRService: ObservableObject {
                 continuation.resume(returning: recognizedText)
             }
             
+            // Optimized Vision Framework settings for receipts
             request.recognitionLevel = .accurate
-            request.usesLanguageCorrection = false
-            request.recognitionLanguages = ["en-US", "en"]
-            request.minimumTextHeight = 0.01
+            request.usesLanguageCorrection = true // Enable for better accuracy
+            request.recognitionLanguages = ["en-US"] // Focus on English only
+            request.minimumTextHeight = 0.005 // Lower threshold for small receipt text
+            request.automaticallyDetectsLanguage = false // Disable for better performance
             
-            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+            // Optimize image processing options
+            let options: [VNImageOption: Any] = [:]
+            
+            let handler = VNImageRequestHandler(cgImage: cgImage, options: options)
             
             do {
                 try handler.perform([request])
@@ -224,494 +273,486 @@ class OCRService: ObservableObject {
         }
     }
     
-    private func parseReceiptText(_ text: String) -> [ReceiptItem] {
+    private func parseReceiptText(_ text: String) async -> ([ReceiptItem], Double?) {
         print("🔍 OCR Raw Text Length: \(text.count) characters")
-        print("🔍 Using Google Gemini 2.0 Flash for receipt parsing...")
+        print("📝 OCR Raw Text Preview: \(String(text.prefix(200)))")
+        print("🔍 Using comprehensive item detection with amount matching...")
         
-        // Use Google Gemini 2.0 Flash for intelligent parsing
-        return parseReceiptWithLLM(text)
+        // Step 1: Extract total, tax, tip first using regex
+        let extractedTotal = extractReceiptTotal(text)
+        let (taxAmount, tipAmount) = extractTaxAndTip(text)
+        
+        // Step 2: Clean text by removing total/tax/tip lines before sending to Apple Intelligence
+        let cleanedText = removeFinancialSummaryLines(text: text)
+        
+        // Step 3: Use Apple Intelligence for item extraction (excluding financial summary)
+        let detectedItems = await extractItemsWithAppleIntelligence(
+            cleanedText: cleanedText,
+            maxPrice: extractedTotal
+        )
+        
+        // Step 4: Add tax and tip as separate items if detected
+        let allItems = addFinancialSummaryItems(
+            items: detectedItems,
+            tax: taxAmount,
+            tip: tipAmount
+        )
+        
+        print("💰 Detected total: $\(extractedTotal ?? 0)")
+        print("💰 Detected tax: $\(taxAmount ?? 0)")
+        print("💰 Detected tip: $\(tipAmount ?? 0)")
+        print("🍽️ Total items extracted with Apple Intelligence: \(allItems.count)")
+        
+        return (allItems, extractedTotal)
     }
     
-    private func parseReceiptWithLLM(_ text: String) -> [ReceiptItem] {
-        let prompt = """
-        You are analyzing text from a restaurant receipt. Extract ONLY the food/drink items and their prices.
-        
-        Instructions:
-        1. Identify food and beverage items with their prices
-        2. Ignore header information (restaurant name, address, date, server info)
-        3. Ignore footer information (payment method, card numbers, signatures)
-        4. Ignore tax, tip, subtotal, and total lines
-        5. Return ONLY items that customers would actually order
-        6. Look for items where the name and price might be on separate lines
-        
-        Receipt text:
-        \(text)
-        
-        Format your response as a valid JSON array like this:
-        [
-          {"name": "Item Name", "price": 12.50},
-          {"name": "Another Item", "price": 8.99}
-        ]
-        
-        If no food items can be identified, return an empty array: []
-        
-        IMPORTANT: Return ONLY the JSON array, no other text.
-        """
-        
-        // Use Google Gemini 2.0 Flash API for actual LLM processing
-        return parseWithGemini(prompt: prompt, originalText: text)
-    }
+    // MARK: - Smart Total Detection (No LLM Required)
     
-    private func parseWithGemini(prompt: String, originalText: String) -> [ReceiptItem] {
-        print("🤖 Using Google Gemini 2.0 Flash API for receipt parsing...")
+    private func extractReceiptTotal(_ text: String) -> Double? {
+        let lines = text.components(separatedBy: .newlines)
+        var detectedTotals: [(amount: Double, confidence: Int, line: String)] = []
         
-        // Use async/await for the API call
-        let semaphore = DispatchSemaphore(value: 0)
-        var result: [ReceiptItem] = []
-        
-        Task {
-            do {
-                result = try await callGemini(prompt: prompt)
-                if result.isEmpty {
-                    print("⚠️ Gemini returned empty results, using fallback...")
-                    result = createSimpleFallback(originalText)
-                }
-            } catch {
-                print("❌ Gemini API error: \(error)")
-                result = createSimpleFallback(originalText)
+        for line in lines {
+            let cleanLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            // Skip empty lines
+            if cleanLine.isEmpty { continue }
+            
+            // Look for total patterns with different confidence levels
+            if let total = findTotalInLine(cleanLine) {
+                detectedTotals.append(total)
             }
-            semaphore.signal()
         }
         
-        // Wait for the async call to complete (with timeout)
-        let timeout = DispatchTime.now() + .seconds(10)
-        if semaphore.wait(timeout: timeout) == .timedOut {
-            print("⏰ Gemini API timeout")
-            return []
+        // Sort by confidence (highest first), then by amount (highest first)
+        detectedTotals.sort { first, second in
+            if first.confidence != second.confidence {
+                return first.confidence > second.confidence
+            }
+            return first.amount > second.amount
         }
         
-        return result
+        // Return the highest confidence total
+        if let bestTotal = detectedTotals.first {
+            print("✅ Best total match: $\(bestTotal.amount) from '\(bestTotal.line)' (confidence: \(bestTotal.confidence))")
+            return bestTotal.amount
+        }
+        
+        print("⚠️ No total found in receipt")
+        return nil
     }
     
-    private func callGemini(prompt: String) async throws -> [ReceiptItem] {
-        // Google Gemini API configuration
-        guard let apiKey = getGeminiAPIKey() else {
-            throw OCRError.apiError("Google Gemini API key not configured")
-        }
-        let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-001:generateContent")!
+    private func extractTaxAndTip(_ text: String) -> (tax: Double?, tip: Double?) {
+        let lines = text.components(separatedBy: .newlines)
+        var taxAmount: Double? = nil
+        var tipAmount: Double? = nil
         
-        // Create request
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        // Request body for Gemini API
-        let requestBody: [String: Any] = [
-            "contents": [
-                [
-                    "parts": [
-                        [
-                            "text": prompt
-                        ]
-                    ]
-                ]
-            ],
-            "generationConfig": [
-                "temperature": 0.1,
-                "maxOutputTokens": 1000,
-                "responseMimeType": "text/plain"
-            ]
-        ]
-        
-        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
-        
-        // Make API call
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        // Check HTTP response
-        guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200 else {
-            throw OCRError.apiError("HTTP error: \((response as? HTTPURLResponse)?.statusCode ?? 0)")
-        }
-        
-        // Parse Gemini response
-        guard let jsonResponse = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let candidates = jsonResponse["candidates"] as? [[String: Any]],
-              let firstCandidate = candidates.first,
-              let content = firstCandidate["content"] as? [String: Any],
-              let parts = content["parts"] as? [[String: Any]],
-              let firstPart = parts.first,
-              let text = firstPart["text"] as? String else {
-            throw OCRError.parseError("Invalid Gemini API response format")
-        }
-        
-        print("🤖 Gemini Response: \(text)")
-        
-        // Parse the JSON array from LLM response
-        return try parseItemsFromJSON(text)
-    }
-    
-    private func parseItemsFromJSON(_ jsonString: String) throws -> [ReceiptItem] {
-        let cleanedJSON = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        guard let data = cleanedJSON.data(using: .utf8) else {
-            throw OCRError.parseError("Invalid JSON string")
-        }
-        
-        guard let jsonArray = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-            throw OCRError.parseError("JSON is not an array")
-        }
-        
-        var items: [ReceiptItem] = []
-        
-        for itemDict in jsonArray {
-            guard let name = itemDict["name"] as? String,
-                  let price = itemDict["price"] as? Double else {
-                print("⚠️ Skipping invalid item: \(itemDict)")
-                continue
+        for line in lines {
+            let cleanLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            let lowercased = cleanLine.lowercased()
+            
+            // Look for tax patterns
+            if lowercased.contains("tax") && !lowercased.contains("total") {
+                if let amount = extractAmountWithPattern(line: cleanLine, pattern: "tax[:\\s]*\\$?([0-9]+\\.[0-9]{2})") {
+                    taxAmount = amount
+                    print("💰 Found tax: $\(amount)")
+                }
             }
             
-            if price > 0 && price < 1000 && !name.isEmpty {
-                let item = ReceiptItem(name: name, price: price)
-                items.append(item)
-                print("✅ Parsed LLM item: \(item.name) - $\(item.price)")
+            // Look for tip patterns
+            if lowercased.contains("tip") && !lowercased.contains("total") {
+                if let amount = extractAmountWithPattern(line: cleanLine, pattern: "tip[:\\s]*\\$?([0-9]+\\.[0-9]{2})") {
+                    tipAmount = amount
+                    print("💰 Found tip: $\(amount)")
+                }
             }
         }
+        
+        return (taxAmount, tipAmount)
+    }
+    
+    private func findTotalInLine(_ line: String) -> (amount: Double, confidence: Int, line: String)? {
+        let lowercased = line.lowercased()
+        
+        // High confidence patterns (90+ confidence)
+        let highConfidencePatterns = [
+            (pattern: "total[:\\s]*\\$?([0-9]+\\.?[0-9]{0,2})", confidence: 95),
+            (pattern: "amount due[:\\s]*\\$?([0-9]+\\.?[0-9]{0,2})", confidence: 90),
+            (pattern: "grand total[:\\s]*\\$?([0-9]+\\.?[0-9]{0,2})", confidence: 95),
+            (pattern: "final total[:\\s]*\\$?([0-9]+\\.?[0-9]{0,2})", confidence: 90)
+        ]
+        
+        // Check high confidence patterns first
+        for patternInfo in highConfidencePatterns {
+            if let amount = extractAmountWithPattern(line: lowercased, pattern: patternInfo.pattern) {
+                return (amount: amount, confidence: patternInfo.confidence, line: line)
+            }
+        }
+        
+        // Medium confidence patterns (70-80 confidence)
+        let mediumConfidencePatterns = [
+            (pattern: "total[:\\s]*([0-9]+\\.[0-9]{2})", confidence: 80),
+            (pattern: "\\$([0-9]+\\.[0-9]{2})\\s*total", confidence: 75),
+            (pattern: "([0-9]+\\.[0-9]{2})\\s*total", confidence: 70)
+        ]
+        
+        for patternInfo in mediumConfidencePatterns {
+            if let amount = extractAmountWithPattern(line: lowercased, pattern: patternInfo.pattern) {
+                return (amount: amount, confidence: patternInfo.confidence, line: line)
+            }
+        }
+        
+        // Low confidence: Large dollar amounts at end of line
+        if let amount = extractAmountWithPattern(line: line, pattern: "\\$?([0-9]+\\.[0-9]{2})\\s*$") {
+            if amount >= 10.0 && amount <= 500.0 { // Reasonable restaurant total range
+                return (amount: amount, confidence: 50, line: line)
+            }
+        }
+        
+        return nil
+    }
+    
+    private func extractAmountWithPattern(line: String, pattern: String) -> Double? {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return nil
+        }
+        
+        let matches = regex.matches(in: line, options: [], range: NSRange(location: 0, length: line.count))
+        
+        for match in matches {
+            if match.numberOfRanges > 1 {
+                let range = match.range(at: 1)
+                if let swiftRange = Range(range, in: line) {
+                    let amountString = String(line[swiftRange])
+                    if let amount = Double(amountString), amount > 0 {
+                        return amount
+                    }
+                }
+            }
+        }
+        
+        return nil
+    }
+    
+    // MARK: - Text Preprocessing for Apple Intelligence
+    
+    private func removeFinancialSummaryLines(text: String) -> String {
+        let lines = text.components(separatedBy: .newlines)
+        var cleanedLines: [String] = []
+        
+        for line in lines {
+            let lowercased = line.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            // Skip lines containing financial summary keywords
+            let financialKeywords = [
+                "total", "subtotal", "sub total", "grand total",
+                "tax", "sales tax", "tip", "gratuity", "service charge",
+                "amount due", "balance", "change", "payment"
+            ]
+            
+            var shouldSkip = false
+            for keyword in financialKeywords {
+                if lowercased.contains(keyword) {
+                    shouldSkip = true
+                    print("🚫 Filtering out financial line: '\(line.trimmingCharacters(in: .whitespacesAndNewlines))'")
+                    break
+                }
+            }
+            
+            if !shouldSkip {
+                cleanedLines.append(line)
+            }
+        }
+        
+        let cleanedText = cleanedLines.joined(separator: "\n")
+        print("📝 Cleaned text for Apple Intelligence (\(cleanedLines.count) lines):")
+        print(cleanedText)
+        
+        return cleanedText
+    }
+    
+    private func addFinancialSummaryItems(
+        items: [ReceiptItem],
+        tax: Double?,
+        tip: Double?
+    ) -> [ReceiptItem] {
+        
+        var allItems = items
+        
+        // Add tax as a separate item if detected
+        if let taxAmount = tax, taxAmount > 0 {
+            allItems.append(ReceiptItem(name: "Tax", price: taxAmount))
+            print("💰 Added tax item: $\(taxAmount)")
+        }
+        
+        // Add tip as a separate item if detected
+        if let tipAmount = tip, tipAmount > 0 {
+            allItems.append(ReceiptItem(name: "Tip", price: tipAmount))
+            print("💰 Added tip item: $\(tipAmount)")
+        }
+        
+        return allItems
+    }
+    
+    // MARK: - Apple Intelligence Item Detection
+    
+    private func extractItemsWithAppleIntelligence(
+        cleanedText: String,
+        maxPrice: Double?
+    ) async -> [ReceiptItem] {
+        
+        print("🧠 Using Apple Intelligence for item parsing...")
+        print("💰 Max price filter: $\(maxPrice ?? 999)")
+        
+        // First, use Apple Intelligence to detect tax/tip values for filtering
+        let (detectedTaxTotal, detectedTipTotal) = await detectTaxTipWithAppleIntelligence(text: cleanedText)
+        
+        print("🧾 Apple Intelligence detected:")
+        if detectedTaxTotal > 0 {
+            print("   Tax: $\(detectedTaxTotal)")
+        }
+        if detectedTipTotal > 0 {
+            print("   Tip: $\(detectedTipTotal)")
+        }
+        
+        // Use Natural Language framework for intelligent text analysis
+        let items = await parseReceiptWithNaturalLanguage(
+            text: cleanedText, 
+            maxPrice: maxPrice,
+            excludeTaxAmount: detectedTaxTotal > 0 ? detectedTaxTotal : nil,
+            excludeTipAmount: detectedTipTotal > 0 ? detectedTipTotal : nil
+        )
         
         return items
     }
     
-    private func getGeminiAPIKey() -> String? {
-        // Priority 1: Check environment variable (most secure for CI/CD)
-        if let envKey = ProcessInfo.processInfo.environment["GEMINI_API_KEY"],
-           !envKey.isEmpty && envKey != "YOUR_GEMINI_API_KEY" {
-            return envKey
-        }
+    private func parseReceiptWithNaturalLanguage(
+        text: String, 
+        maxPrice: Double?,
+        excludeTaxAmount: Double? = nil,
+        excludeTipAmount: Double? = nil
+    ) async -> [ReceiptItem] {
+        print("🔍 Analyzing receipt text with Natural Language framework...")
         
-        // Priority 2: Check secure APIKeys.plist (local development)
-        if let path = Bundle.main.path(forResource: "APIKeys", ofType: "plist"),
-           let plist = NSDictionary(contentsOfFile: path),
-           let apiKey = plist["GEMINI_API_KEY"] as? String,
-           !apiKey.isEmpty && apiKey != "YOUR_GEMINI_API_KEY_HERE" {
-            return apiKey
-        }
+        var extractedItems: [ReceiptItem] = []
+        var placeholderIndex = 1
         
-        // Priority 3: Check Info.plist (fallback - not recommended for production)
-        if let path = Bundle.main.path(forResource: "Info", ofType: "plist"),
-           let plist = NSDictionary(contentsOfFile: path),
-           let apiKey = plist["GEMINI_API_KEY"] as? String,
-           !apiKey.isEmpty && apiKey != "YOUR_GEMINI_API_KEY" {
-            print("⚠️ Warning: API key found in Info.plist. Consider moving to APIKeys.plist for better security.")
-            return apiKey
-        }
-        
-        print("❌ Gemini API key not configured. Please:")
-        print("   1. Add GEMINI_API_KEY to your environment variables, OR")
-        print("   2. Create APIKeys.plist with your key, OR") 
-        print("   3. Add key to Info.plist (not recommended for production)")
-        
-        return nil
-    }
-    
-    // Simple fallback if LLM fails - creates single item from receipt
-    private func createSimpleFallback(_ text: String) -> [ReceiptItem] {
-        print("⚠️ LLM failed, creating simple fallback item...")
-        
-        // Find any reasonable total amount in the text
-        let numberPattern = #"(\d{2,3}\.\d{2})"#
-        let regex = try? NSRegularExpression(pattern: numberPattern, options: [])
-        var amounts: [Double] = []
-        
-        let matches = regex?.matches(in: text, options: [], range: NSRange(location: 0, length: text.count)) ?? []
-        for match in matches {
-            if let range = Range(match.range(at: 1), in: text) {
-                let amountStr = String(text[range])
-                if let amount = Double(amountStr), amount >= 10.0 && amount <= 999.0 {
-                    amounts.append(amount)
-                }
-            }
-        }
-        
-        // Use the highest reasonable amount
-        if let maxAmount = amounts.max() {
-            let item = ReceiptItem(name: "Restaurant Order", price: maxAmount)
-            print("✅ Created fallback item: \(item.name) - $\(item.price)")
-            return [item]
-        }
-        
-        return []
-    }
-    
-    private func isHeaderOrFooterLine(_ line: String) -> Bool {
-        let lowercased = line.lowercased()
-        let headerFooterKeywords = [
-            "guest", "check", "table", "server", "receipt", "welcome", "thank",
-            "address", "phone", "www", ".com", "card", "signature", "approved",
-            "transaction", "account", "income", "tax", "total", "subtotal",
-            "angeles", "blvd", "7733"
-        ]
-        
-        return headerFooterKeywords.contains { lowercased.contains($0) }
-    }
-    
-    private func extractFoodItem(from line: String) -> ReceiptItem? {
-        // Simple but effective patterns for food items
-        let patterns = [
-            #"^(.+?)\s+(\d+\.?\d*)-?$"#,  // "Item name 12-" or "Item name 12.50"
-            #"^(.+?)\s+\$(\d+\.?\d*)$"#,   // "Item name $12.50"
-        ]
-        
-        for pattern in patterns {
-            if let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
-               let match = regex.firstMatch(in: line, options: [], range: NSRange(location: 0, length: line.count)) {
-                
-                let nameRange = Range(match.range(at: 1), in: line)
-                let priceRange = Range(match.range(at: 2), in: line)
-                
-                if let nameRange = nameRange, let priceRange = priceRange {
-                    let itemName = String(line[nameRange]).trimmingCharacters(in: .whitespacesAndNewlines)
-                    let priceString = String(line[priceRange])
-                    
-                    if let price = Double(priceString),
-                       price >= 1.0 && price <= 100.0,
-                       itemName.count >= 3 && itemName.count <= 50,
-                       !isHeaderOrFooterLine(itemName) {
-                        
-                        return ReceiptItem(name: itemName, price: price)
-                    }
-                }
-            }
-        }
-        
-        return nil
-    }
-    
-    private func createFallbackItem(from text: String) -> [ReceiptItem] {
-        print("🍽️ Creating fallback item from receipt total...")
-        
-        // Find the highest reasonable number in the receipt
-        let numberPattern = #"(\d+\.?\d*)"#
-        let regex = try? NSRegularExpression(pattern: numberPattern, options: [])
-        var amounts: [Double] = []
-        
-        let matches = regex?.matches(in: text, options: [], range: NSRange(location: 0, length: text.count)) ?? []
-        for match in matches {
-            if let range = Range(match.range(at: 1), in: text) {
-                let amountStr = String(text[range])
-                if let amount = Double(amountStr), amount >= 10.0 && amount <= 999.0 {
-                    amounts.append(amount)
-                }
-            }
-        }
-        
-        // Use the highest amount as the total
-        if let maxAmount = amounts.max() {
-            let restaurantName = extractRestaurantName(from: text)
-            let item = ReceiptItem(name: restaurantName, price: maxAmount)
-            print("✅ Created fallback item: \(item.name) - $\(item.price)")
-            return [item]
-        }
-        
-        return []
-    }
-    
-    private func extractRestaurantName(from text: String) -> String {
+        // Split text into logical lines for analysis
         let lines = text.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
         
-        // Look for restaurant indicators
+        // Use NL framework to understand each line
         for line in lines {
-            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.lowercased().contains("restaurant") || 
-               trimmed.lowercased().contains("eats") ||
-               trimmed.lowercased().contains("cafe") {
-                return trimmed
+            if let item = await analyzeLineForItem(
+                line: line, 
+                maxPrice: maxPrice,
+                excludeTaxAmount: excludeTaxAmount,
+                excludeTipAmount: excludeTipAmount,
+                placeholderIndex: &placeholderIndex
+            ) {
+                extractedItems.append(item)
+                print("🍽️ Extracted: '\(item.name)' - $\(item.price)")
             }
         }
         
-        // Use first non-empty line as restaurant name
-        for line in lines {
-            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty && trimmed.count > 3 {
-                return trimmed
-            }
+        print("✅ Natural Language analysis complete: \(extractedItems.count) items found")
+        return extractedItems
+    }
+    
+    private func analyzeLineForItem(
+        line: String, 
+        maxPrice: Double?,
+        excludeTaxAmount: Double? = nil,
+        excludeTipAmount: Double? = nil,
+        placeholderIndex: inout Int
+    ) async -> ReceiptItem? {
+        
+        // Skip obvious non-item lines
+        if shouldSkipLineForIntelligentAnalysis(line) {
+            return nil
         }
         
-        return "Restaurant Order"
+        // Extract price pattern first
+        guard let price = extractPriceFromLine(line) else {
+            return nil
+        }
+        
+        // Apply price filtering - exclude items >= total (duplicate totals on receipt)
+        if let maxPrice = maxPrice, price >= maxPrice {
+            print("🚫 Excluding item with price $\(price) >= total $\(maxPrice)")
+            return nil
+        }
+        
+        // Exclude items that match detected tax amounts
+        if let taxAmount = excludeTaxAmount, abs(price - taxAmount) < 0.01 {
+            print("🚫 Excluding item with price $\(price) matching tax amount $\(taxAmount)")
+            return nil
+        }
+        
+        // Exclude items that match detected tip amounts  
+        if let tipAmount = excludeTipAmount, abs(price - tipAmount) < 0.01 {
+            print("🚫 Excluding item with price $\(price) matching tip amount $\(tipAmount)")
+            return nil
+        }
+        
+        // Use Apple Intelligence (Natural Language) to extract item name
+        print("🤖 Processing line: '\(line)' with price $\(price)")
+        let itemName = await extractItemNameWithAppleIntelligence(line: line, price: price)
+        
+        let finalItemName: String
+        if let name = itemName, !name.isEmpty && name.count >= 3 {
+            // Apple Intelligence found a meaningful item name
+            finalItemName = name
+            print("🧠 Apple Intelligence detected name: '\(name)' from line: '\(line)'")
+        } else {
+            // No clear name detected, use placeholder
+            finalItemName = "Item \(placeholderIndex)"
+            placeholderIndex += 1
+            print("🔤 Using placeholder name: '\(finalItemName)' for line: '\(line)'")
+        }
+        
+        return ReceiptItem(name: finalItemName, price: price)
     }
     
-    private func isPotentialFoodName(_ line: String) -> Bool {
-        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func shouldSkipLineForIntelligentAnalysis(_ line: String) -> Bool {
+        let lowercased = line.lowercased()
         
-        // Must have some letters
-        guard trimmed.rangeOfCharacter(from: .letters) != nil else { return false }
-        
-        // Reasonable length
-        guard trimmed.count >= 3 && trimmed.count <= 50 else { return false }
-        
-        // Skip if it's obviously not food
-        if isHeaderOrFooterLine(trimmed) { return false }
-        
-        // Skip pure price lines
-        if extractPriceOnly(from: trimmed) != nil { return false }
-        
-        // Skip lines with only numbers/symbols
-        let hasEnoughLetters = trimmed.filter { $0.isLetter }.count >= 2
-        guard hasEnoughLetters else { return false }
-        
-        print("  🍽️ Potential food name: '\(trimmed)'")
-        return true
-    }
-    
-    private func extractPriceOnly(from line: String) -> Double? {
-        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        // Patterns for standalone prices
-        let pricePatterns = [
-            #"^(\d{1,2})-$"#,              // "14-"
-            #"^(\d{1,2}\.\d{2})$"#,        // "12.50"
-            #"^\$(\d{1,2}\.\d{2})$"#,      // "$12.50"
-            #"^(\d{1,2})$"#,               // "12"
-            #"^(\d{1,2})\s*-\s*$"#         // "3 -"
+        // Skip header/footer patterns
+        let skipPatterns = [
+            "receipt", "thank you", "visit", "address", "phone", "store",
+            "location", "cashier", "register", "server", "table",
+            "date", "time", "order #", "transaction", "card ending",
+            "auth", "ref", "batch"
         ]
         
-        for pattern in pricePatterns {
-            if let regex = try? NSRegularExpression(pattern: pattern, options: []),
-               let match = regex.firstMatch(in: trimmed, options: [], range: NSRange(location: 0, length: trimmed.count)) {
-                
-                let priceRange = Range(match.range(at: 1), in: trimmed)
-                if let priceRange = priceRange {
-                    let priceString = String(trimmed[priceRange])
-                    if let price = Double(priceString), price >= 1.0 && price <= 99.0 {
-                        print("  💰 Extracted standalone price: $\(price) from '\(trimmed)'")
-                        return price
-                    }
-                }
+        for pattern in skipPatterns {
+            if lowercased.contains(pattern) {
+                return true
             }
         }
         
-        return nil
+        // Skip very short lines
+        if line.count < 3 {
+            return true
+        }
+        
+        // Skip lines that are only numbers/symbols
+        if line.allSatisfy({ $0.isNumber || $0.isPunctuation || $0.isWhitespace }) {
+            return true
+        }
+        
+        return false
     }
     
-    private func extractItemAndPrice(from line: String) -> ReceiptItem? {
-        print("  🔍 Processing line: '\(line)'")
-        
-        // Skip obvious header/footer lines but be less restrictive
-        let lowercaseLine = line.lowercased()
-        let skipKeywords = ["receipt #", "transaction #", "card #", "www.", ".com", "thank you", "cashier:", "server:"]
-        
-        for keyword in skipKeywords {
-            if lowercaseLine.contains(keyword) {
-                print("  ⏭️ Skipping line - contains keyword: '\(keyword)'")
-                return nil
-            }
-        }
-        
-        // More flexible patterns - looking for any text followed by a price
-        let patterns = [
-            // Standard format: item name + price with $
-            #"(.+?)\s+\$(\d+\.?\d*)$"#,
-            // Standard format: item name + price without $
-            #"(.+?)\s+(\d+\.\d{1,2})$"#,
-            // Quantity format: 1x item + price
-            #"(\d+x?\s+.+?)\s+\$?(\d+\.?\d*)$"#,
-            // Flexible: any text with price at end
-            #"(.+?)\s+(\d+\.?\d*)\s*$"#,
-            // Price anywhere in line
-            #"(.+?)\s+.*?(\d+\.\d{1,2}).*$"#,
-            // Simple: word(s) followed by number
-            #"([a-zA-Z][a-zA-Z\s]+?)\s+(\d+\.?\d*)$"#,
-            // Very loose: any text + any decimal number
-            #"(.+?)\s+(\d*\.?\d+).*$"#
+    private func extractItemNameWithAppleIntelligence(line: String, price: Double) async -> String? {
+        // Remove the price from the line to isolate potential item name
+        let priceStrings = [
+            "$\(String(format: "%.2f", price))", 
+            String(format: "%.2f", price),
+            "$\(Int(price))",
+            String(Int(price))
         ]
         
-        print("  🔍 Trying \(patterns.count) patterns...")
+        var cleanLine = line
+        for priceString in priceStrings {
+            cleanLine = cleanLine.replacingOccurrences(of: priceString, with: " ")
+        }
         
-        for (patternIndex, pattern) in patterns.enumerated() {
-            print("    Pattern \(patternIndex + 1): \(pattern)")
+        // Clean up the remaining text
+        cleanLine = cleanLine.trimmingCharacters(in: .whitespacesAndNewlines)
+        cleanLine = cleanLine.replacingOccurrences(of: "  +", with: " ", options: .regularExpression)
+        cleanLine = cleanLine.trimmingCharacters(in: CharacterSet(charactersIn: ".-_*()[]{}"))
+        
+        // Skip if too short or only numbers
+        guard cleanLine.count >= 3 else { return nil }
+        guard cleanLine.contains(where: { $0.isLetter }) else { return nil }
+        
+        // Use Natural Language framework to analyze the text semantically
+        let analysis = await analyzeTextWithNaturalLanguage(cleanLine)
+        
+        if analysis {
+            let cleanedName = cleanLine.capitalized
+                .replacingOccurrences(of: "  +", with: " ", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
             
-            if let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
-               let match = regex.firstMatch(in: line, options: [], range: NSRange(location: 0, length: line.count)) {
-                
-                let nameRange = Range(match.range(at: 1), in: line)
-                let priceRange = Range(match.range(at: 2), in: line)
-                
-                if let nameRange = nameRange, let priceRange = priceRange {
-                    let itemName = String(line[nameRange]).trimmingCharacters(in: .whitespacesAndNewlines)
-                    let priceString = String(line[priceRange])
-                    
-                    print("    ✅ Pattern \(patternIndex + 1) MATCHED - Name: '\(itemName)', Price: '\(priceString)'")
-                    
-                    // More lenient price validation - increased upper limit
-                    if let price = Double(priceString), price > 0.01 && price < 9999.99 {
-                        let cleanName = cleanItemName(itemName)
-                        // More lenient name validation
-                        if !cleanName.isEmpty && cleanName.count >= 1 && !isOnlyNumbers(cleanName) {
-                            print("    ✅ Valid item created: '\(cleanName)' - $\(price)")
-                            return ReceiptItem(name: cleanName, price: price)
-                        } else {
-                            print("    ❌ Item name invalid: '\(cleanName)' (empty: \(cleanName.isEmpty), length: \(cleanName.count), onlyNumbers: \(isOnlyNumbers(cleanName)))")
-                        }
-                    } else {
-                        let parsedPrice = Double(priceString) ?? -1
-                        print("    ❌ Price invalid: '\(priceString)' -> \(parsedPrice) (must be between 0.01 and 9999.99)")
-                    }
-                } else {
-                    print("    ❌ Pattern matched but couldn't extract name/price ranges")
-                }
-            } else {
-                print("    ❌ Pattern \(patternIndex + 1) no match")
-            }
-        }
-        
-        print("  ❌ No valid item found for line: '\(line)'")
-        return nil
-    }
-    
-    private func isOnlyNumbers(_ text: String) -> Bool {
-        return text.trimmingCharacters(in: .decimalDigits).isEmpty
-    }
-    
-    private func extractJustPrice(from line: String) -> Double? {
-        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        // Pattern for just a price like "14-", "$12.50", "8.93" - but NOT large numbers
-        let pricePatterns = [
-            #"^(\d{1,2})-$"#,           // "14-" (1-2 digits only)
-            #"^\$?(\d{1,2}\.\d{2})$"#,  // "$12.50" or "12.50" (reasonable food prices)
-            #"^\$?(\d{1,2})$"#,         // "$12" or "12" (1-2 digits only)
-        ]
-        
-        for pattern in pricePatterns {
-            if let regex = try? NSRegularExpression(pattern: pattern, options: []),
-               let match = regex.firstMatch(in: trimmed, options: [], range: NSRange(location: 0, length: trimmed.count)) {
-                
-                let priceRange = Range(match.range(at: 1), in: trimmed)
-                if let priceRange = priceRange {
-                    let priceString = String(trimmed[priceRange])
-                    if let price = Double(priceString), price >= 1.0 && price <= 50.0 {
-                        print("  💰 Extracted valid food price: $\(price) from '\(trimmed)'")
-                        return price
-                    }
-                }
-            }
+            return cleanedName
         }
         
         return nil
     }
     
-    private func isPurePrice(_ line: String) -> Bool {
-        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func analyzeTextWithNaturalLanguage(_ text: String) async -> Bool {
+        print("🔬 Analyzing text: '\(text)'")
         
-        // Check if line contains ONLY a price pattern - no other text
-        let pricePatternsOnly = [
-            #"^(\d{1,2})-$"#,           // "14-"
-            #"^\$?(\d{1,2}\.\d{2})$"#,  // "$12.50" or "12.50"
-            #"^\$?(\d{1,2})$"#,         // "$12" or "12"
+        // Use NLTagger for semantic analysis
+        let tagger = NLTagger(tagSchemes: [.lexicalClass, .nameType])
+        tagger.string = text
+        
+        let options: NLTagger.Options = [.omitWhitespace, .omitPunctuation]
+        var hasNouns = false
+        var hasProperNouns = false
+        var wordCount = 0
+        
+        // Analyze lexical classes (nouns, adjectives, etc.)
+        tagger.enumerateTags(in: text.startIndex..<text.endIndex, unit: .word, scheme: .lexicalClass, options: options) { tag, range in
+            wordCount += 1
+            
+            if tag == .noun {
+                hasNouns = true
+            } else if tag == .adjective {
+                hasNouns = true  // Adjectives often describe products
+            }
+            
+            return true
+        }
+        
+        // Analyze for proper nouns (brand names, etc.)
+        tagger.enumerateTags(in: text.startIndex..<text.endIndex, unit: .word, scheme: .nameType, options: options) { tag, range in
+            if tag == .organizationName || tag == .placeName {
+                hasProperNouns = true
+            }
+            return true
+        }
+        
+        // Check for common food/product keywords
+        let productKeywords = [
+            "sandwich", "salad", "burger", "pizza", "pasta", "chicken", "beef", "fish",
+            "soup", "appetizer", "dessert", "cake", "pie", "drink", "coffee", "tea",
+            "special", "combo", "meal", "plate", "bowl", "cup", "bottle", "glass"
         ]
         
-        for pattern in pricePatternsOnly {
-            if trimmed.range(of: pattern, options: .regularExpression) != nil {
+        let lowercased = text.lowercased()
+        let hasProductKeywords = productKeywords.contains { lowercased.contains($0) }
+        
+        // Decision logic: Is this likely a product name?
+        let isLikelyProduct = (hasNouns || hasProperNouns || hasProductKeywords) && 
+                             wordCount >= 1 && 
+                             wordCount <= 6 &&
+                             !isObviousNonProduct(text)
+        
+        print("📊 Analysis result for '\(text)':")
+        print("   - Has nouns: \(hasNouns)")
+        print("   - Has proper nouns: \(hasProperNouns)")
+        print("   - Has product keywords: \(hasProductKeywords)")
+        print("   - Word count: \(wordCount)")
+        print("   - Is obvious non-product: \(isObviousNonProduct(text))")
+        print("   - Final decision: \(isLikelyProduct ? "✅ PRODUCT" : "❌ NOT PRODUCT")")
+        
+        return isLikelyProduct
+    }
+    
+    private func isObviousNonProduct(_ text: String) -> Bool {
+        let lowercased = text.lowercased()
+        
+        // Skip obvious non-product text
+        let nonProductPatterns = [
+            "qty", "quantity", "each", "ea", "lb", "oz", "gal", "ct", "pk",
+            "server", "table", "order", "receipt", "thank", "visit"
+        ]
+        
+        for pattern in nonProductPatterns {
+            if lowercased.contains(pattern) {
                 return true
             }
         }
@@ -719,76 +760,784 @@ class OCRService: ObservableObject {
         return false
     }
     
-    private func isValidFoodName(_ name: String) -> Bool {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let lowercased = trimmed.lowercased()
+    private func isLikelyProductName(_ text: String) -> Bool {
+        // Must have reasonable length
+        guard text.count >= 2 && text.count <= 50 else { return false }
         
-        // Must have letters
-        guard trimmed.rangeOfCharacter(from: .letters) != nil else { 
-            print("  ❌ Food name validation failed: no letters in '\(trimmed)'")
-            return false 
+        // Must contain letters
+        guard text.contains(where: { $0.isLetter }) else { return false }
+        
+        // Use Natural Language to check if it's meaningful text
+        let tagger = NLTagger(tagSchemes: [.lexicalClass])
+        tagger.string = text
+        
+        let options: NLTagger.Options = [.omitWhitespace, .omitPunctuation]
+        var hasNouns = false
+        
+        tagger.enumerateTags(in: text.startIndex..<text.endIndex, unit: .word, scheme: .lexicalClass, options: options) { tag, _ in
+            if tag == .noun || tag == .adjective {
+                hasNouns = true
+                return false // Stop enumeration
+            }
+            return true
         }
         
-        // Must be reasonable length for food items
-        guard trimmed.count >= 3 && trimmed.count <= 30 else { 
-            print("  ❌ Food name validation failed: bad length (\(trimmed.count)) for '\(trimmed)'")
-            return false 
-        }
+        return hasNouns || text.split(separator: " ").count >= 2
+    }
+    
+    // MARK: - Apple Intelligence Tax/Tip Detection
+    
+    private func detectTaxTipWithAppleIntelligence(text: String) async -> (taxTotal: Double, tipTotal: Double) {
+        print("🧾 Detecting tax/tip with hybrid approach...")
         
-        // Skip obvious non-food lines (expanded list)
-        let skipKeywords = [
-            "guest", "table", "server", "receipt", "tax", "total", "subtotal", 
-            "check", "guests", "seaver", "income", "expense", "account", "as",
-            "blvd", "angeles", "phone", "7733", "approved", "purchase"
+        // Step 1: Use regex for primary detection (fast, reliable)
+        let regexTaxAmounts = extractTaxAmountsWithRegex(text)
+        let regexTipAmounts = extractTipAmountsWithRegex(text)
+        
+        print("🔍 Regex detected:")
+        print("   Tax amounts: \(regexTaxAmounts)")
+        print("   Tip amounts: \(regexTipAmounts)")
+        
+        // Step 2: Use Apple Intelligence for validation and edge cases
+        let aiResults = await validateTaxTipWithAppleIntelligence(
+            text: text,
+            regexTaxAmounts: regexTaxAmounts,
+            regexTipAmounts: regexTipAmounts
+        )
+        
+        // Step 3: Sum the validated results
+        let totalTax = aiResults.validatedTaxAmounts.reduce(0, +)
+        let totalTip = aiResults.validatedTipAmounts.reduce(0, +)
+        
+        print("💡 Final results after Apple Intelligence validation:")
+        print("   Total Tax: $\(totalTax)")
+        print("   Total Tip: $\(totalTip)")
+        
+        return (taxTotal: totalTax, tipTotal: totalTip)
+    }
+    
+    private func extractTaxAmountsWithRegex(_ text: String) -> [Double] {
+        let taxPatterns = [
+            #"(?i)(?:sales?\s*)?tax[\s:]*\$?(\d+\.?\d*)"#,
+            #"(?i)(?:state|local|city)\s*tax[\s:]*\$?(\d+\.?\d*)"#,
+            #"(?i)tax\s*(?:amount|total)[\s:]*\$?(\d+\.?\d*)"#,
+            #"(?i)(?:^|\s)tx[\s:]*\$?(\d+\.?\d*)"#
         ]
         
-        for keyword in skipKeywords {
-            if lowercased.contains(keyword) {
-                print("  ❌ Food name validation failed: contains '\(keyword)' in '\(trimmed)'")
+        return extractAmountsUsingPatterns(text: text, patterns: taxPatterns)
+    }
+    
+    private func extractTipAmountsWithRegex(_ text: String) -> [Double] {
+        let tipPatterns = [
+            #"(?i)tip[\s:]*\$?(\d+\.?\d*)"#,
+            #"(?i)gratuity[\s:]*\$?(\d+\.?\d*)"#,
+            #"(?i)service\s*(?:charge|fee)[\s:]*\$?(\d+\.?\d*)"#,
+            #"(?i)(?:auto|automatic)\s*(?:tip|gratuity)[\s:]*\$?(\d+\.?\d*)"#,
+            #"(?i)(?:^|\s)grat[\s:]*\$?(\d+\.?\d*)"#
+        ]
+        
+        return extractAmountsUsingPatterns(text: text, patterns: tipPatterns)
+    }
+    
+    private func extractAmountsUsingPatterns(text: String, patterns: [String]) -> [Double] {
+        var amounts: [Double] = []
+        
+        for pattern in patterns {
+            let regex = try! NSRegularExpression(pattern: pattern)
+            let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
+            
+            for match in matches {
+                if let range = Range(match.range(at: 1), in: text) {
+                    let amountString = String(text[range])
+                    if let amount = Double(amountString), amount > 0 {
+                        amounts.append(amount)
+                    }
+                }
+            }
+        }
+        
+        return amounts
+    }
+    
+    private func validateTaxTipWithAppleIntelligence(
+        text: String,
+        regexTaxAmounts: [Double],
+        regexTipAmounts: [Double]
+    ) async -> (validatedTaxAmounts: [Double], validatedTipAmounts: [Double]) {
+        
+        print("🤖 Apple Intelligence validating detected amounts...")
+        
+        // If regex found clear results, validate them with AI
+        var validatedTax = regexTaxAmounts
+        var validatedTip = regexTipAmounts
+        
+        // Use Natural Language to look for additional edge cases
+        let additionalTaxTip = await findAdditionalTaxTipWithNL(text: text)
+        
+        // Add any additional amounts found by AI that weren't caught by regex
+        for amount in additionalTaxTip.additionalTax {
+            if !regexTaxAmounts.contains(where: { abs($0 - amount) < 0.01 }) {
+                print("🧠 Apple Intelligence found additional tax: $\(amount)")
+                validatedTax.append(amount)
+            }
+        }
+        
+        for amount in additionalTaxTip.additionalTip {
+            if !regexTipAmounts.contains(where: { abs($0 - amount) < 0.01 }) {
+                print("🧠 Apple Intelligence found additional tip: $\(amount)")
+                validatedTip.append(amount)
+            }
+        }
+        
+        return (validatedTaxAmounts: validatedTax, validatedTipAmounts: validatedTip)
+    }
+    
+    private func findAdditionalTaxTipWithNL(text: String) async -> (additionalTax: [Double], additionalTip: [Double]) {
+        // Use NLTagger to find lines that semantically relate to tax/tip concepts
+        let lines = text.components(separatedBy: .newlines)
+        var additionalTax: [Double] = []
+        var additionalTip: [Double] = []
+        
+        for line in lines {
+            let cleanLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !cleanLine.isEmpty else { continue }
+            
+            // Extract any price from the line first
+            guard let price = extractPriceFromLine(cleanLine) else { continue }
+            
+            // Use semantic analysis to determine if this line relates to tax or tip
+            let isTaxRelated = await isLineTaxRelated(cleanLine)
+            let isTipRelated = await isLineTipRelated(cleanLine)
+            
+            if isTaxRelated {
+                additionalTax.append(price)
+                print("🔬 NL detected tax-related line: '\(cleanLine)' -> $\(price)")
+            } else if isTipRelated {
+                additionalTip.append(price)
+                print("🔬 NL detected tip-related line: '\(cleanLine)' -> $\(price)")
+            }
+        }
+        
+        return (additionalTax: additionalTax, additionalTip: additionalTip)
+    }
+    
+    private func isLineTaxRelated(_ text: String) async -> Bool {
+        // Use semantic concepts to identify tax-related content
+        let taxConcepts = ["tax", "taxation", "levy", "charge", "government", "state", "sales"]
+        let lowercased = text.lowercased()
+        
+        // Check for semantic similarity using NL
+        return taxConcepts.contains { concept in
+            lowercased.contains(concept) || 
+            semanticallyRelated(text: lowercased, concept: concept)
+        }
+    }
+    
+    private func isLineTipRelated(_ text: String) async -> Bool {
+        // Use semantic concepts to identify tip-related content  
+        let tipConcepts = ["tip", "gratuity", "service", "server", "waiter", "staff"]
+        let lowercased = text.lowercased()
+        
+        // Check for semantic similarity using NL
+        return tipConcepts.contains { concept in
+            lowercased.contains(concept) ||
+            semanticallyRelated(text: lowercased, concept: concept)
+        }
+    }
+    
+    private func semanticallyRelated(text: String, concept: String) -> Bool {
+        // Simple semantic similarity check using word embeddings concept
+        // This is a simplified version - in a full implementation you might use
+        // more sophisticated NL techniques
+        
+        let conceptSynonyms: [String: [String]] = [
+            "tax": ["fee", "charge", "levy", "duty"],
+            "tip": ["gratuity", "bonus", "reward", "service"],
+            "service": ["assistance", "help", "support"]
+        ]
+        
+        if let synonyms = conceptSynonyms[concept] {
+            return synonyms.contains { text.contains($0) }
+        }
+        
+        return false
+    }
+    
+    private func validateAndCompleteItems(
+        items: [ReceiptItem],
+        total: Double?,
+        tax: Double?,
+        tip: Double?
+    ) -> [ReceiptItem] {
+        
+        var completeItems = items
+        
+        // Add tax and tip as separate items if detected
+        if let taxAmount = tax, taxAmount > 0 {
+            completeItems.append(ReceiptItem(name: "Tax", price: taxAmount))
+            print("💰 Added tax item: $\(taxAmount)")
+        }
+        
+        if let tipAmount = tip, tipAmount > 0 {
+            completeItems.append(ReceiptItem(name: "Tip", price: tipAmount))
+            print("💰 Added tip item: $\(tipAmount)")
+        }
+        
+        // Validate against total if available
+        if let totalAmount = total {
+            let itemsTotal = completeItems.reduce(0) { $0 + $1.price }
+            let difference = abs(totalAmount - itemsTotal)
+            
+            print("📊 Validation check:")
+            print("   Items total: $\(itemsTotal)")
+            print("   Receipt total: $\(totalAmount)")
+            print("   Difference: $\(difference)")
+            
+            if difference > 1.0 {
+                print("⚠️ Large difference detected - items may be incomplete")
+            } else {
+                print("✅ Items total matches receipt within tolerance")
+            }
+        }
+        
+        return completeItems
+    }
+    
+    // MARK: - Legacy Item Detection (Keep for fallback)
+    
+    private func extractItemsWithNames(_ text: String, maxPrice: Double?) -> [ReceiptItem] {
+        let lines = text.components(separatedBy: .newlines)
+        var detectedItems: [ReceiptItem] = []
+        
+        print("🔍 Processing \(lines.count) lines for item detection...")
+        print("💰 Using max price filter: $\(maxPrice ?? 999)")
+        
+        // Method 1: Same-line parsing (existing patterns)
+        detectedItems.append(contentsOf: parseSameLineItems(lines, maxPrice: maxPrice))
+        
+        // Method 2: Multi-line parsing (name on one line, price on next)
+        detectedItems.append(contentsOf: parseMultiLineItems(lines, maxPrice: maxPrice))
+        
+        // Method 3: Block parsing (all names, then all prices)
+        detectedItems.append(contentsOf: parseBlockItems(lines, maxPrice: maxPrice))
+        
+        print("✅ Total detected items: \(detectedItems.count)")
+        for item in detectedItems {
+            print("🍽️ Item: '\(item.name)' - $\(item.price)")
+        }
+        
+        return detectedItems
+    }
+    
+    private func shouldSkipLine(_ line: String) -> Bool {
+        let lowercased = line.lowercased()
+        
+        // Skip header/footer information
+        let skipPatterns = [
+            "receipt", "thank you", "address", "phone", "store", "location",
+            "cashier", "register", "transaction", "date", "time",
+            "tax", "tip", "total", "subtotal", "amount due", "balance"  // Skip tax/tip/total from items
+        ]
+        
+        for pattern in skipPatterns {
+            if lowercased.contains(pattern) {
+                return true
+            }
+        }
+        
+        // Skip lines that are just numbers or special characters
+        if line.count < 2 || line.allSatisfy({ $0.isNumber || $0.isPunctuation || $0.isWhitespace }) {
+            return true
+        }
+        
+        return false
+    }
+    
+    // Method 1: Same-line parsing
+    private func parseSameLineItems(_ lines: [String], maxPrice: Double?) -> [ReceiptItem] {
+        var items: [ReceiptItem] = []
+        
+        for line in lines {
+            let cleanLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            if cleanLine.isEmpty || shouldSkipLine(cleanLine) {
+                continue
+            }
+            
+            if let item = parseItemFromLine(cleanLine) {
+                if isValidItemPrice(item.price, maxPrice: maxPrice) {
+                    items.append(item)
+                }
+            }
+        }
+        
+        return items
+    }
+    
+    // Method 2: Multi-line parsing (item name, then price on next line)
+    private func parseMultiLineItems(_ lines: [String], maxPrice: Double?) -> [ReceiptItem] {
+        var items: [ReceiptItem] = []
+        
+        for i in 0..<(lines.count - 1) {
+            let currentLine = lines[i].trimmingCharacters(in: .whitespacesAndNewlines)
+            let nextLine = lines[i + 1].trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            // Check if current line looks like an item name and next line looks like a price
+            if isLikelyItemName(currentLine) && isLikelyPrice(nextLine) {
+                if let price = extractPriceFromLine(nextLine) {
+                    if isValidItemPrice(price, maxPrice: maxPrice) {
+                        let itemName = cleanItemName(currentLine)
+                        if !itemName.isEmpty {
+                            let item = ReceiptItem(name: itemName, price: price)
+                            items.append(item)
+                        }
+                    }
+                }
+            }
+        }
+        
+        return items
+    }
+    
+    // Method 3: Block parsing (all items listed, then all prices)
+    private func parseBlockItems(_ lines: [String], maxPrice: Double?) -> [ReceiptItem] {
+        var items: [ReceiptItem] = []
+        var itemNames: [String] = []
+        var prices: [Double] = []
+        
+        // First pass: collect potential item names and prices separately
+        for line in lines {
+            let cleanLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            if cleanLine.isEmpty || shouldSkipLine(cleanLine) {
+                continue
+            }
+            
+            // If line is just a price, add to prices array
+            if let price = extractPriceFromLine(cleanLine), isPurePrice(cleanLine) {
+                if isValidItemPrice(price, maxPrice: maxPrice) {
+                    prices.append(price)
+                }
+            }
+            // If line looks like an item name (has letters, not just price), add to names
+            else if isLikelyItemName(cleanLine) && !isPurePrice(cleanLine) {
+                itemNames.append(cleanItemName(cleanLine))
+            }
+        }
+        
+        // Match names with prices (if counts are similar)
+        let minCount = min(itemNames.count, prices.count)
+        if minCount > 0 && abs(itemNames.count - prices.count) <= 2 {
+            for i in 0..<minCount {
+                let item = ReceiptItem(name: itemNames[i], price: prices[i])
+                items.append(item)
+            }
+        }
+        
+        return items
+    }
+    
+    private func isLikelyItemName(_ line: String) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Must have at least 3 characters and contain letters
+        guard trimmed.count >= 3 && trimmed.contains(where: { $0.isLetter }) else {
+            return false
+        }
+        
+        // Should not be just a price
+        return !isPurePrice(trimmed)
+    }
+    
+    private func isLikelyPrice(_ line: String) -> Bool {
+        return extractPriceFromLine(line) != nil
+    }
+    
+    private func isPurePrice(_ line: String) -> Bool {
+        // Check if line is just a price (with optional $ and spaces)
+        let cleanLine = line.replacingOccurrences(of: " ", with: "")
+        let pricePattern = "^\\$?[0-9]+\\.[0-9]{2}$"
+        
+        guard let regex = try? NSRegularExpression(pattern: pricePattern, options: []) else {
+            return false
+        }
+        
+        let range = NSRange(location: 0, length: cleanLine.count)
+        return regex.firstMatch(in: cleanLine, options: [], range: range) != nil
+    }
+    
+    private func extractPriceFromLine(_ line: String) -> Double? {
+        let pricePattern = "\\$?([0-9]+\\.[0-9]{2})"
+        
+        guard let regex = try? NSRegularExpression(pattern: pricePattern, options: []) else {
+            return nil
+        }
+        
+        let matches = regex.matches(in: line, options: [], range: NSRange(location: 0, length: line.count))
+        
+        for match in matches {
+            if let range = Range(match.range(at: 1), in: line) {
+                let priceString = String(line[range])
+                if let price = Double(priceString) {
+                    return price
+                }
+            }
+        }
+        
+        return nil
+    }
+    
+    private func parseItemFromLine(_ line: String) -> ReceiptItem? {
+        // Pattern 1: Item name followed by price at end of line
+        // Example: "Chicken Sandwich    12.99" or "MILK 1GAL $3.49"
+        let pattern1 = "^(.+?)\\s+\\$?([0-9]+\\.[0-9]{2})\\s*$"
+        
+        if let match = extractWithPattern(line: line, pattern: pattern1) {
+            let itemName = match.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let price = match.price
+            
+            // Validate the extracted data
+            if isValidItemName(itemName) && price > 0 {
+                return ReceiptItem(name: cleanItemName(itemName), price: price)
+            }
+        }
+        
+        // Pattern 2: Price at beginning followed by item name
+        // Example: "$12.99 Chicken Sandwich" or "3.49 MILK 1GAL"
+        let pattern2 = "^\\$?([0-9]+\\.[0-9]{2})\\s+(.+)$"
+        
+        if let match = extractWithPattern(line: line, pattern: pattern2, swapNamePrice: true) {
+            let itemName = match.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let price = match.price
+            
+            if isValidItemName(itemName) && price > 0 {
+                return ReceiptItem(name: cleanItemName(itemName), price: price)
+            }
+        }
+        
+        // Pattern 3: Item name and price separated by multiple spaces or tabs
+        // Example: "Chicken Sandwich        12.99"
+        let pattern3 = "^(.+?)\\s{2,}\\$?([0-9]+\\.[0-9]{2})\\s*$"
+        
+        if let match = extractWithPattern(line: line, pattern: pattern3) {
+            let itemName = match.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let price = match.price
+            
+            if isValidItemName(itemName) && price > 0 {
+                return ReceiptItem(name: cleanItemName(itemName), price: price)
+            }
+        }
+        
+        return nil
+    }
+    
+    private func extractWithPattern(line: String, pattern: String, swapNamePrice: Bool = false) -> (name: String, price: Double)? {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return nil
+        }
+        
+        let matches = regex.matches(in: line, options: [], range: NSRange(location: 0, length: line.count))
+        
+        guard let match = matches.first, match.numberOfRanges >= 3 else {
+            return nil
+        }
+        
+        let range1 = match.range(at: 1)
+        let range2 = match.range(at: 2)
+        
+        guard let swiftRange1 = Range(range1, in: line),
+              let swiftRange2 = Range(range2, in: line) else {
+            return nil
+        }
+        
+        let string1 = String(line[swiftRange1])
+        let string2 = String(line[swiftRange2])
+        
+        if swapNamePrice {
+            // Pattern 2: price comes first, then name
+            guard let price = Double(string1) else { return nil }
+            return (name: string2, price: price)
+        } else {
+            // Pattern 1 & 3: name comes first, then price
+            guard let price = Double(string2) else { return nil }
+            return (name: string1, price: price)
+        }
+    }
+    
+    private func isValidItemName(_ name: String) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Must have at least 2 characters
+        guard trimmed.count >= 2 else { return false }
+        
+        // Must contain at least one letter
+        guard trimmed.contains(where: { $0.isLetter }) else { return false }
+        
+        // Skip obvious non-items
+        let lowercased = trimmed.lowercased()
+        let invalidNames = ["qty", "ea", "each", "lb", "oz", "gal", "ct", "pk"]
+        
+        for invalid in invalidNames {
+            if lowercased == invalid {
                 return false
             }
         }
         
-        // Skip pure numbers or codes
-        if trimmed.range(of: #"^\d+$"#, options: .regularExpression) != nil || 
-           trimmed.range(of: #"^\d+-\d+$"#, options: .regularExpression) != nil {
-            print("  ❌ Food name validation failed: looks like code '\(trimmed)'")
-            return false
-        }
-        
-        // Skip lines that are mostly non-Latin characters (like Cyrillic)
-        let latinCharacters = trimmed.rangeOfCharacter(from: CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"))
-        if latinCharacters == nil && !lowercased.contains("coke") {
-            print("  ❌ Food name validation failed: no Latin characters in '\(trimmed)'")
-            return false
-        }
-        
-        print("  ✅ Food name validation passed: '\(trimmed)'")
         return true
+    }
+    
+    private func isValidItemPrice(_ price: Double, maxPrice: Double?) -> Bool {
+        // Must be positive
+        guard price > 0 else { return false }
+        
+        // If we have a total, price should be less than total (items can't cost more than total bill)
+        if let maxPrice = maxPrice {
+            return price < maxPrice
+        }
+        
+        // Without total reference, accept reasonable range
+        return price <= 500.0
     }
     
     private func cleanItemName(_ name: String) -> String {
         var cleaned = name.trimmingCharacters(in: .whitespacesAndNewlines)
         
-        // Remove common quantity prefixes
-        let quantityPrefixes = ["1x", "2x", "3x", "4x", "5x", "6x", "7x", "8x", "9x", "*"]
-        for prefix in quantityPrefixes {
-            if cleaned.lowercased().hasPrefix(prefix.lowercased() + " ") {
-                cleaned = String(cleaned.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
-                break
+        // Remove common suffixes that aren't part of the item name
+        let suffixesToRemove = ["EA", "LB", "OZ", "GAL", "CT", "PK", "@"]
+        
+        for suffix in suffixesToRemove {
+            if cleaned.hasSuffix(" " + suffix) {
+                cleaned = String(cleaned.dropLast(suffix.count + 1))
             }
         }
         
-        // Remove common unit suffixes
-        let unitSuffixes = [" EA", " LB", " OZ", " CT", " PC", " PCS"]
-        for suffix in unitSuffixes {
-            if cleaned.uppercased().hasSuffix(suffix) {
-                cleaned = String(cleaned.dropLast(suffix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
-                break
+        // Capitalize first letter of each word for better presentation
+        return cleaned.capitalized
+    }
+    
+    // Don't remove duplicates - allow multiple identical items (ordered by different people)
+    private func removeDuplicateItems(_ items: [ReceiptItem]) -> [ReceiptItem] {
+        return items
+    }
+    
+    // MARK: - Comprehensive Item Detection
+    
+    private func completeItemsToMatchTotal(
+        text: String, 
+        itemsWithNames: [ReceiptItem], 
+        total: Double?, 
+        tax: Double?, 
+        tip: Double?
+    ) -> [ReceiptItem] {
+        
+        var allItems = itemsWithNames
+        
+        guard let totalAmount = total else {
+            print("⚠️ No total found, returning items with names only")
+            return allItems
+        }
+        
+        // Calculate what we've already accounted for
+        let namedItemsTotal = itemsWithNames.reduce(0) { $0 + $1.price }
+        let taxAmount = tax ?? 0
+        let tipAmount = tip ?? 0
+        let accountedAmount = namedItemsTotal + taxAmount + tipAmount
+        
+        print("📊 Accounting check:")
+        print("   Named items total: $\(namedItemsTotal)")
+        print("   Tax: $\(taxAmount)")
+        print("   Tip: $\(tipAmount)")
+        print("   Accounted for: $\(accountedAmount)")
+        print("   Receipt total: $\(totalAmount)")
+        print("   Missing: $\(totalAmount - accountedAmount)")
+        
+        // If we're already close to the total, don't add more items
+        if abs(totalAmount - accountedAmount) <= 0.50 {
+            print("✅ Amounts match within $0.50 tolerance")
+            return addTaxAndTipItems(items: allItems, tax: tax, tip: tip)
+        }
+        
+        // Find all dollar amounts in the text that we haven't used yet
+        let usedAmounts = Set(itemsWithNames.map { $0.price })
+        let allAmounts = extractAllAmountsFromText(text, excluding: usedAmounts, maxPrice: totalAmount)
+        
+        // Try to find combination of amounts that gets us close to the total
+        let missingAmount = totalAmount - accountedAmount
+        let additionalItems = findBestAmountCombination(
+            amounts: allAmounts, 
+            targetAmount: missingAmount,
+            startingIndex: itemsWithNames.count + 1
+        )
+        
+        print("🔍 Found \(additionalItems.count) additional items to match total")
+        
+        allItems.append(contentsOf: additionalItems)
+        
+        // Add tax and tip as separate items
+        return addTaxAndTipItems(items: allItems, tax: tax, tip: tip)
+    }
+    
+    private func extractAllAmountsFromText(_ text: String, excluding usedAmounts: Set<Double>, maxPrice: Double) -> [Double] {
+        let lines = text.components(separatedBy: .newlines)
+        var amounts: [Double] = []
+        
+        for line in lines {
+            let cleanLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            // Skip lines that are obviously not items
+            if shouldSkipLineForAmountExtraction(cleanLine) {
+                continue
+            }
+            
+            // Extract all amounts from this line
+            if let lineAmounts = extractAmountsFromLine(cleanLine) {
+                for amount in lineAmounts {
+                    // Only include if we haven't already used this amount and it's reasonable
+                    if !usedAmounts.contains(amount) && amount > 0 && amount < maxPrice {
+                        amounts.append(amount)
+                    }
+                }
             }
         }
         
-        return cleaned
+        // Remove duplicates and sort
+        let uniqueAmounts = Array(Set(amounts)).sorted()
+        print("💰 Available amounts for matching: \(uniqueAmounts)")
+        
+        return uniqueAmounts
+    }
+    
+    private func shouldSkipLineForAmountExtraction(_ line: String) -> Bool {
+        let lowercased = line.lowercased()
+        
+        // Skip obvious non-item lines
+        let skipPatterns = [
+            "receipt", "thank you", "address", "phone", "store", "location",
+            "cashier", "register", "transaction", "date", "time", "card #",
+            "total", "subtotal", "tax", "tip", "change", "cash", "credit"
+        ]
+        
+        for pattern in skipPatterns {
+            if lowercased.contains(pattern) {
+                return true
+            }
+        }
+        
+        return false
+    }
+    
+    private func extractAmountsFromLine(_ line: String) -> [Double]? {
+        let amountPattern = "\\$?([0-9]+\\.[0-9]{2})"
+        guard let regex = try? NSRegularExpression(pattern: amountPattern, options: []) else {
+            return nil
+        }
+        
+        let matches = regex.matches(in: line, options: [], range: NSRange(location: 0, length: line.count))
+        var amounts: [Double] = []
+        
+        for match in matches {
+            if let range = Range(match.range(at: 1), in: line) {
+                let amountString = String(line[range])
+                if let amount = Double(amountString) {
+                    amounts.append(amount)
+                }
+            }
+        }
+        
+        return amounts.isEmpty ? nil : amounts
+    }
+    
+    private func findBestAmountCombination(amounts: [Double], targetAmount: Double, startingIndex: Int) -> [ReceiptItem] {
+        var items: [ReceiptItem] = []
+        var remainingTarget = targetAmount
+        var itemIndex = startingIndex
+        
+        // Sort amounts in descending order to try larger amounts first
+        let sortedAmounts = amounts.sorted(by: >)
+        
+        for amount in sortedAmounts {
+            // If this amount gets us closer to the target, use it
+            if amount <= remainingTarget + 1.0 { // Allow some tolerance
+                let item = ReceiptItem(name: "Item \(itemIndex)", price: amount)
+                items.append(item)
+                remainingTarget -= amount
+                itemIndex += 1
+                
+                print("💡 Added placeholder item: Item \(itemIndex - 1) - $\(amount)")
+                
+                // If we're close enough to the target, stop
+                if abs(remainingTarget) <= 1.0 {
+                    break
+                }
+            }
+        }
+        
+        return items
+    }
+    
+    private func addTaxAndTipItems(items: [ReceiptItem], tax: Double?, tip: Double?) -> [ReceiptItem] {
+        var allItems = items
+        
+        // Add tax as a separate item if detected
+        if let taxAmount = tax, taxAmount > 0 {
+            let taxItem = ReceiptItem(name: "Tax", price: taxAmount)
+            allItems.append(taxItem)
+            print("💰 Added tax item: $\(taxAmount)")
+        }
+        
+        // Add tip as a separate item if detected
+        if let tipAmount = tip, tipAmount > 0 {
+            let tipItem = ReceiptItem(name: "Tip", price: tipAmount)
+            allItems.append(tipItem)
+            print("💰 Added tip item: $\(tipAmount)")
+        }
+        
+        return allItems
+    }
+    
+    private func extractPotentialAmounts(_ text: String) -> [Double] {
+        let lines = text.components(separatedBy: .newlines)
+        var amounts: [Double] = []
+        
+        for line in lines {
+            let cleanLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            // Skip header/footer lines
+            let lowercased = cleanLine.lowercased()
+            if lowercased.contains("receipt") || 
+               lowercased.contains("thank you") ||
+               lowercased.contains("address") ||
+               lowercased.contains("phone") {
+                continue
+            }
+            
+            // Find all dollar amounts in the line
+            let amountPattern = "\\$?([0-9]+\\.[0-9]{2})"
+            if let regex = try? NSRegularExpression(pattern: amountPattern, options: []) {
+                let matches = regex.matches(in: cleanLine, options: [], range: NSRange(location: 0, length: cleanLine.count))
+                
+                for match in matches {
+                    if let range = Range(match.range(at: 1), in: cleanLine) {
+                        let amountString = String(cleanLine[range])
+                        if let amount = Double(amountString) {
+                            // Filter reasonable item prices (not tax rates, tips, etc.)
+                            if amount >= 1.0 && amount <= 100.0 {
+                                amounts.append(amount)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Remove duplicates and sort
+        let uniqueAmounts = Array(Set(amounts)).sorted()
+        
+        for amount in uniqueAmounts {
+            print("💰 Potential item amount: $\(amount)")
+        }
+        
+        return uniqueAmounts
     }
     
     private func calculateConfidence(text: String, items: [ReceiptItem]) -> Float {
@@ -806,25 +1555,1482 @@ class OCRService: ObservableObject {
     }
     
     // Debug method to test parsing with known text
-    func testParsing() -> OCRResult {
-        print("🧪 Testing OCR parsing with known text...")
+    func testParsing() async -> OCRResult {
+        print("🧪 Testing enhanced Apple Intelligence with proper filtering...")
         
-        let testText = """
-        McDonald's Receipt
-        Big Mac        12.99
-        French Fries   4.50
-        Coke          2.75
-        Total         20.24
+        // Test with realistic receipt that has all edge cases
+        let sampleText = """
+        RESTAURANT ABC
+        123 Main Street
+        Order #12345
+        
+        Chicken Sandwich 12.99
+        Caesar Salad 8.50
+        Appetizer Special 6.75
+        4.25
+        Coke 2.99
+        3.45
+        48.05
+        
+        Subtotal 38.93
+        Sales Tax 3.12
+        Tip 6.00
+        
+        Total 48.05
+        Grand Total 48.05
+        Thank you for visiting!
         """
         
-        let items = parseReceiptText(testText)
-        let confidence = calculateConfidence(text: testText, items: items)
+        let (items, total) = await parseReceiptText(sampleText)
+        let suggestedAmounts = extractPotentialAmounts(sampleText)
         
         return OCRResult(
-            rawText: testText,
+            rawText: sampleText,
             parsedItems: items,
-            confidence: confidence,
+            identifiedTotal: total,
+            suggestedAmounts: suggestedAmounts,
+            confidence: 0.9,
             processingTime: 0.1
         )
+    }
+    
+    // MARK: - Confirmation Analysis Methods
+    
+    func analyzeReceiptForConfirmation(text: String) async -> ReceiptAnalysis {
+        print("🔍 Analyzing receipt for confirmation screen...")
+        
+        // Step 1: Use existing regex patterns to detect tax, tip, and total
+        let (detectedTaxOptional, detectedTipOptional) = extractTaxAndTip(text)
+        let detectedTotal = extractReceiptTotal(text)
+        
+        let detectedTax = detectedTaxOptional ?? 0.0
+        let detectedTip = detectedTipOptional ?? 0.0
+        
+        // Step 2: Predict item count using the logic discussed
+        let predictedItemCount = await predictItemCount(text: text)
+        
+        print("📊 Confirmation analysis results:")
+        print("   Tax: $\(detectedTax)")
+        print("   Tip: $\(detectedTip)")  
+        print("   Total: $\(detectedTotal ?? 0)")
+        print("   Predicted items: \(predictedItemCount)")
+        
+        return ReceiptAnalysis(
+            tax: detectedTax,
+            tip: detectedTip,
+            total: detectedTotal ?? 0,
+            itemCount: predictedItemCount
+        )
+    }
+    
+    // MARK: - LLM-based Individual Item Price Extraction
+    
+    private func extractIndividualItemPricesWithFiltering(
+        text: String,
+        targetTotal: Double,
+        expectedCount: Int,
+        excludedAmounts: Set<Double>
+    ) async -> [ReceiptItem] {
+        print("🔍 Extracting individual item prices with tax/tip filtering...")
+        return await extractItemsWithAppleIntelligence(
+            text: text,
+            targetPrice: targetTotal,
+            expectedCount: expectedCount
+        )
+    }
+    
+    private func extractIndividualItemPrices(
+        text: String,
+        targetTotal: Double,
+        expectedCount: Int
+    ) async -> [(name: String, price: Double)] {
+        print("🤖 Using Apple Intelligence to extract individual item prices...")
+        print("   Target total: $\(targetTotal)")
+        print("   Expected items: \(expectedCount)")
+        
+        let itemPrompt = """
+You are analyzing a receipt to find individual food/menu item prices.
+
+GOAL: Extract individual item prices (NOT tax, tip, subtotal, or total) that could sum to approximately $\(String(format: "%.2f", targetTotal)).
+
+RECEIPT TEXT:
+\(text)
+
+INSTRUCTIONS:
+1. Look for individual food/menu item prices only
+2. EXCLUDE: tax, tip, subtotal, total, service charges
+3. INCLUDE: prices that appear to be for individual food items
+4. Return prices as numbers only, one per line
+5. Aim for around \(expectedCount) items but return ALL item prices you find
+6. If you find item names with prices, prioritize those
+
+Return only the prices as numbers (like 12.99), one per line. Do not include explanations.
+"""
+        
+        // Use Natural Language processing to find individual item prices in order
+        let lines = text.components(separatedBy: CharacterSet.newlines)
+            .map { $0.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            
+        var extractedItems: [(name: String, price: Double)] = []
+        
+        for line in lines {
+            // Skip lines that are clearly not individual items
+            if await isLineIndividualItem(line, targetTotal: targetTotal) {
+                if let price = extractPriceFromText(line) {
+                    if price > 0 && price <= targetTotal {
+                        // Extract item name from the line
+                        let itemName = extractItemNameFromLine(line, price: price)
+                        extractedItems.append((name: itemName, price: price))
+                        print("✅ Extracted item: '\(itemName)' - $\(price) from '\(line)'")
+                    }
+                }
+            }
+        }
+        
+        // Keep original order - DO NOT sort
+        print("🎯 Final extracted items in order: \(extractedItems.map { "\($0.name): $\($0.price)" })")
+        print("📊 Total value: $\(extractedItems.reduce(0) { $0 + $1.price })")
+        
+        return extractedItems
+    }
+    
+    private func extractPriceFromText(_ text: String) -> Double? {
+        // Enhanced price extraction that handles various formats
+        let patterns = [
+            #"\$?(\d+\.\d{2})"#,         // $12.99 or 12.99
+            #"\$?(\d+\.?\d*)"#,          // $12 or 12
+        ]
+        
+        for pattern in patterns {
+            let regex = try! NSRegularExpression(pattern: pattern)
+            let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
+            
+            for match in matches {
+                if let range = Range(match.range(at: 1), in: text) {
+                    let priceString = String(text[range])
+                    if let price = Double(priceString) {
+                        return price
+                    }
+                }
+            }
+        }
+        return nil
+    }
+    
+    private func extractItemNameFromLine(_ line: String, price: Double) -> String {
+        // Remove the price from the line to get the item name
+        let priceString = String(format: "%.2f", price)
+        let variations = [
+            "$\(priceString)",
+            priceString,
+            String(format: "%.0f", price), // Without decimal if whole number
+            "$\(String(format: "%.0f", price))"
+        ]
+        
+        var cleanedLine = line
+        
+        // Remove price variations from the line
+        for variation in variations {
+            cleanedLine = cleanedLine.replacingOccurrences(of: variation, with: "")
+        }
+        
+        // Clean up common receipt formatting
+        cleanedLine = cleanedLine.replacingOccurrences(of: "  ", with: " ") // Multiple spaces
+        cleanedLine = cleanedLine.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        
+        // Remove common receipt artifacts
+        let cleanupPatterns = [
+            #"\s*\d+\s*$"#,  // Trailing numbers (quantity)
+            #"^\d+\s*"#,     // Leading numbers (line numbers)
+            #"\s*x\d+\s*$"#, // Quantity like "x2"
+            #"\s*@\s*\d+.*$"#, // @ price indicators
+            #"\s*ea\s*$"#,   // "each" indicators
+        ]
+        
+        for pattern in cleanupPatterns {
+            let regex = try! NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+            cleanedLine = regex.stringByReplacingMatches(
+                in: cleanedLine,
+                options: [],
+                range: NSRange(cleanedLine.startIndex..., in: cleanedLine),
+                withTemplate: ""
+            )
+        }
+        
+        cleanedLine = cleanedLine.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        
+        // If we have a reasonable name, use it; otherwise create generic name
+        if cleanedLine.count >= 2 && cleanedLine.count <= 50 {
+            // Capitalize first letter for better presentation
+            return cleanedLine.prefix(1).uppercased() + cleanedLine.dropFirst()
+        } else {
+            // Fallback to price-based name if extraction failed
+            return "Item ($\(priceString))"
+        }
+    }
+    
+    private func isLineIndividualItem(_ line: String, targetTotal: Double) async -> Bool {
+        let lowercased = line.lowercased()
+        
+        // Exclude lines that are clearly financial summaries
+        let excludeKeywords = [
+            "total", "subtotal", "sub total", "sub-total",
+            "tax", "sales tax", "gst", "hst", "vat",
+            "tip", "gratuity", "service charge", "service fee",
+            "discount", "coupon", "promo", "promotion",
+            "cash", "credit", "card", "payment", "change",
+            "balance", "amount due", "due", "owe",
+            "receipt", "thank you", "visit", "server"
+        ]
+        
+        // If line contains exclude keywords, it's not an individual item
+        for keyword in excludeKeywords {
+            if lowercased.contains(keyword) {
+                return false
+            }
+        }
+        
+        // Must have a price to be considered an item
+        guard let price = extractPriceFromText(line), price > 0 else {
+            return false
+        }
+        
+        // Price shouldn't be too large compared to target (likely total/subtotal)
+        if price > targetTotal * 0.8 {
+            return false
+        }
+        
+        // If it has characteristics of a food item, it's likely an individual item
+        let foodKeywords = [
+            "burger", "pizza", "salad", "sandwich", "drink", "coffee", "tea",
+            "chicken", "beef", "fish", "pasta", "rice", "soup", "appetizer",
+            "dessert", "cake", "ice cream", "fries", "wings", "taco", "burrito"
+        ]
+        
+        let hasFood = foodKeywords.contains { lowercased.contains($0) }
+        if hasFood {
+            return true
+        }
+        
+        // If line has reasonable length (not too short, not too long) and has a price, likely an item
+        let trimmed = line.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        return trimmed.count >= 3 && trimmed.count <= 50
+    }
+    
+    func processWithMathematicalApproach(
+        rawText: String,
+        confirmedTax: Double,
+        confirmedTip: Double,
+        confirmedTotal: Double,
+        expectedItemCount: Int
+    ) async -> [ReceiptItem] {
+        print("🧮 Processing with mathematical approach...")
+        print("   Target price: $\(confirmedTotal - confirmedTax - confirmedTip)")
+        print("   Expected items: \(expectedItemCount)")
+        
+        // Step 1: Calculate the target price for items (Total - Tax - Tip)
+        let targetItemsPrice = confirmedTotal - confirmedTax - confirmedTip
+        
+        guard targetItemsPrice > 0 else {
+            print("❌ Target items price is not positive: $\(targetItemsPrice)")
+            return []
+        }
+        
+        // Step 2: Extract all dollar amounts from the receipt, excluding tax/tip
+        let allAmounts = extractAllDollarAmounts(text: rawText)
+        let taxAmounts = extractTaxAmountsWithRegex(rawText)
+        let tipAmounts = extractTipAmountsWithRegex(rawText)
+        let excludedAmounts = Set(taxAmounts + tipAmounts + [confirmedTax, confirmedTip])
+        
+        // Filter out tax/tip amounts from consideration
+        let filteredAmounts = allAmounts.filter { !excludedAmounts.contains($0) }
+        print("💰 Found \(allAmounts.count) dollar amounts total")
+        print("🚫 Excluding tax/tip amounts: \(excludedAmounts)")
+        print("✅ Using \(filteredAmounts.count) filtered amounts: \(filteredAmounts)")
+        
+        // Step 3: Find combination of amounts that sum to target price with confidence
+        let (combination, confidenceLevels) = findBestPriceCombinationWithConfidence(
+            amounts: filteredAmounts,
+            targetSum: targetItemsPrice,
+            expectedCount: expectedItemCount
+        )
+        
+        // Step 4: Create items from the combination with confidence levels
+        var items: [ReceiptItem] = []
+        
+        if combination.isEmpty {
+            // No perfect combination found - use LLM to extract individual item prices
+            print("📝 No perfect combination found, using LLM to extract individual item prices")
+            
+            // Use Apple Intelligence to specifically extract individual item prices and names with filtering
+            let llmExtractedItems = await extractIndividualItemPricesWithFiltering(
+                text: rawText,
+                targetTotal: targetItemsPrice,
+                expectedCount: expectedItemCount,
+                excludedAmounts: excludedAmounts
+            )
+            
+            if !llmExtractedItems.isEmpty {
+                print("🎯 Using \(llmExtractedItems.count) LLM-extracted items with names")
+                
+                // Use LLM-extracted items up to expected count (preserve order)
+                let usableItems = Array(llmExtractedItems.prefix(expectedItemCount))
+                
+                for itemData in usableItems {
+                    items.append(ReceiptItem(
+                        name: itemData.name,
+                        price: itemData.price,
+                        confidence: .medium,  // Medium confidence - detected but not perfect combination
+                        originalDetectedName: itemData.name,
+                        originalDetectedPrice: itemData.price
+                    ))
+                    print("✅ Created item from LLM extraction: '\(itemData.name)' - $\(itemData.price)")
+                }
+                
+                // Fill remaining with placeholders
+                let remainingCount = expectedItemCount - usableItems.count
+                if remainingCount > 0 {
+                    let usedTotal = usableItems.reduce(0) { $0 + $1.price }
+                    let remainingTotal = max(0, targetItemsPrice - usedTotal)
+                    let avgRemainingPrice = remainingCount > 0 ? remainingTotal / Double(remainingCount) : 0.0
+                    
+                    print("📝 Adding \(remainingCount) placeholder items for remaining $\(remainingTotal)")
+                    
+                    for index in usableItems.count..<expectedItemCount {
+                        // Give placeholders a suggested price based on remaining amount
+                        let suggestedPrice = avgRemainingPrice > 0.50 ? avgRemainingPrice : 0.00
+                        items.append(ReceiptItem(
+                            name: "Item \(index + 1)",
+                            price: suggestedPrice,
+                            confidence: .placeholder
+                        ))
+                    }
+                }
+            } else {
+                // LLM extraction also failed - fall back to basic regex extraction
+                print("⚠️ LLM extraction failed, falling back to basic regex extraction")
+                
+                // Filter out amounts that are likely tax/tip/total to avoid duplication
+                let itemAmounts = allAmounts.filter { amount in
+                    // Exclude amounts that are too close to tax, tip, or total
+                    let taxThreshold = abs(amount - confirmedTax) > 0.50
+                    let tipThreshold = abs(amount - confirmedTip) > 0.50
+                    let totalThreshold = abs(amount - confirmedTotal) > 0.50
+                    return taxThreshold && tipThreshold && totalThreshold && amount <= targetItemsPrice
+                }
+                
+                if !itemAmounts.isEmpty {
+                    print("💰 Using \(itemAmounts.count) filtered regex amounts: \(itemAmounts)")
+                    
+                    // Use detected amounts up to expected count
+                    let usableAmounts = Array(itemAmounts.prefix(expectedItemCount))
+                    
+                    for (index, amount) in usableAmounts.enumerated() {
+                        items.append(ReceiptItem(
+                            name: "Item \(index + 1)",
+                            price: amount,
+                            confidence: .low  // Low confidence since even LLM couldn't find good items
+                        ))
+                        print("✅ Created item from regex fallback: $\(amount)")
+                    }
+                    
+                    // Fill remaining with placeholders
+                    let remainingCount = expectedItemCount - usableAmounts.count
+                    if remainingCount > 0 {
+                        let usedTotal = usableAmounts.reduce(0, +)
+                        let remainingTotal = max(0, targetItemsPrice - usedTotal)
+                        let avgRemainingPrice = remainingCount > 0 ? remainingTotal / Double(remainingCount) : 0.0
+                        
+                        print("📝 Adding \(remainingCount) placeholder items for remaining $\(remainingTotal)")
+                        
+                        for index in usableAmounts.count..<expectedItemCount {
+                            let suggestedPrice = avgRemainingPrice > 0.50 ? avgRemainingPrice : 0.00
+                            items.append(ReceiptItem(
+                                name: "Item \(index + 1)",
+                                price: suggestedPrice,
+                                confidence: .placeholder
+                            ))
+                        }
+                    }
+                } else {
+                    // Last resort - create all placeholders with suggested pricing
+                    print("📝 No amounts found at all, creating placeholder items with suggested pricing")
+                    let avgPrice = targetItemsPrice / Double(expectedItemCount)
+                    
+                    for index in 0..<expectedItemCount {
+                        items.append(ReceiptItem(
+                            name: "Item \(index + 1)",
+                            price: avgPrice > 0.50 ? avgPrice : 0.00,
+                            confidence: .placeholder
+                        ))
+                    }
+                }
+            }
+        } else {
+            // Create items with detected prices and confidence levels
+            for (index, price) in combination.enumerated() {
+                let confidence = confidenceLevels[index]
+                items.append(ReceiptItem(
+                    name: "Item \(index + 1)",
+                    price: price,
+                    confidence: confidence
+                ))
+            }
+            
+            // Fill remaining items with placeholders if needed
+            let remainingCount = expectedItemCount - combination.count
+            if remainingCount > 0 {
+                let remainingTotal = max(0, targetItemsPrice - combination.reduce(0, +))
+                print("📝 Adding \(remainingCount) placeholder items for remaining $\(remainingTotal)")
+                
+                for index in combination.count..<expectedItemCount {
+                    items.append(ReceiptItem(
+                        name: "Item \(index + 1)",
+                        price: 0.00,
+                        confidence: .placeholder
+                    ))
+                }
+            }
+        }
+        
+        // Step 5: Add tax and tip as separate items if they exist
+        if confirmedTax > 0 {
+            items.append(ReceiptItem(name: "Tax", price: confirmedTax, confidence: .high))
+        }
+        if confirmedTip > 0 {
+            items.append(ReceiptItem(name: "Tip", price: confirmedTip, confidence: .high))
+        }
+        
+        print("✅ Created \(items.count) items with mathematical approach")
+        return items
+    }
+    
+    // MARK: - Item Count Prediction
+    
+    private func predictItemCount(text: String) async -> Int {
+        print("🔢 Predicting item count from OCR text...")
+        
+        let lines = text.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        
+        var itemCount = 0
+        var foundFirstPrice = false
+        
+        for line in lines {
+            // Check if line contains financial keywords that end the items section
+            if containsFinancialKeyword(line) {
+                print("📍 Found financial keyword in: '\(line)' - stopping item count")
+                break
+            }
+            
+            // Check if line contains a price
+            if let _ = extractPriceFromLine(line) {
+                if !foundFirstPrice {
+                    foundFirstPrice = true
+                    print("💲 Found first price in: '\(line)' - starting item count")
+                }
+                
+                if foundFirstPrice {
+                    // Use Apple Intelligence to determine if this is likely an item
+                    let isLikelyItem = await analyzeLineForItemCount(line)
+                    if isLikelyItem {
+                        itemCount += 1
+                        print("✅ Counted item: '\(line)'")
+                    } else {
+                        print("❌ Skipped non-item: '\(line)'")
+                    }
+                }
+            }
+        }
+        
+        print("📈 Predicted item count: \(itemCount)")
+        return max(itemCount, 1) // At least 1 item
+    }
+    
+    private func containsFinancialKeyword(_ text: String) -> Bool {
+        let financialKeywords = [
+            "subtotal", "sub total", "sub-total",
+            "total", "amount due", "balance",
+            "tax", "sales tax", "tx",
+            "tip", "gratuity", "service charge", "grat"
+        ]
+        
+        let lowercased = text.lowercased()
+        return financialKeywords.contains { lowercased.contains($0) }
+    }
+    
+    private func analyzeLineForItemCount(_ line: String) async -> Bool {
+        // Use simple heuristics for item count prediction
+        let lowercased = line.lowercased()
+        
+        // Skip obvious non-items
+        let skipKeywords = [
+            "total", "tax", "tip", "gratuity", "subtotal", "balance",
+            "cash", "credit", "change", "payment", "receipt"
+        ]
+        
+        for keyword in skipKeywords {
+            if lowercased.contains(keyword) {
+                return false
+            }
+        }
+        
+        // If it has a price and doesn't contain skip keywords, likely an item
+        return extractPriceFromLine(line) != nil
+    }
+    
+    // MARK: - Dollar Amount Extraction
+    
+    private func extractAllDollarAmounts(text: String) -> [Double] {
+        let patterns = [
+            #"\$(\d+\.?\d*)"#,           // $12.99, $5
+            #"(\d+\.\d{2})"#,            // 12.99, 5.00  
+            #"(\d+)\s*$"#                // 12 at end of line
+        ]
+        
+        var amounts: [Double] = []
+        
+        for pattern in patterns {
+            let regex = try! NSRegularExpression(pattern: pattern)
+            let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
+            
+            for match in matches {
+                if let range = Range(match.range(at: 1), in: text) {
+                    let amountString = String(text[range])
+                    if let amount = Double(amountString), amount > 0 && amount < 1000 {
+                        amounts.append(amount)
+                    }
+                }
+            }
+        }
+        
+        // Remove duplicates and sort
+        amounts = Array(Set(amounts)).sorted()
+        
+        print("💵 Extracted amounts: \(amounts)")
+        return amounts
+    }
+    
+    // MARK: - Price Combination Logic
+    
+    private func findBestPriceCombinationWithConfidence(
+        amounts: [Double],
+        targetSum: Double,
+        expectedCount: Int
+    ) -> ([Double], [ConfidenceLevel]) {
+        print("🎯 Finding best combination for target: $\(targetSum), count: \(expectedCount)")
+        
+        // Try exact match first (highest confidence)
+        if let exact = findExactCombination(amounts: amounts, targetSum: targetSum, count: expectedCount) {
+            print("✅ Found exact combination: \(exact)")
+            let confidences = Array(repeating: ConfidenceLevel.high, count: exact.count)
+            return (exact, confidences)
+        }
+        
+        // Try closest match (medium confidence)
+        if let closest = findClosestCombination(amounts: amounts, targetSum: targetSum, count: expectedCount) {
+            print("📊 Found closest combination: \(closest)")
+            let confidences = Array(repeating: ConfidenceLevel.medium, count: closest.count)
+            return (closest, confidences)
+        }
+        
+        // Try flexible count with lower confidence
+        for count in (max(1, expectedCount - 2)...(expectedCount + 2)) {
+            if let match = findClosestCombination(amounts: amounts, targetSum: targetSum, count: count) {
+                print("🔄 Found alternative combination (count \(count)): \(match)")
+                let confidences = Array(repeating: ConfidenceLevel.low, count: match.count)
+                return (match, confidences)
+            }
+        }
+        
+        // No good combination found
+        print("⚠️ No good combination found")
+        return ([], [])
+    }
+    
+    private func findBestPriceCombination(
+        amounts: [Double],
+        targetSum: Double,
+        expectedCount: Int
+    ) -> [Double] {
+        print("🎯 Finding best combination for target: $\(targetSum), count: \(expectedCount)")
+        
+        // Try different combination strategies
+        
+        // Strategy 1: Exact match with expected count
+        if let exact = findExactCombination(amounts: amounts, targetSum: targetSum, count: expectedCount) {
+            print("✅ Found exact combination: \(exact)")
+            return exact
+        }
+        
+        // Strategy 2: Closest match with expected count
+        if let closest = findClosestCombination(amounts: amounts, targetSum: targetSum, count: expectedCount) {
+            print("📊 Found closest combination: \(closest)")
+            return closest
+        }
+        
+        // Strategy 3: Best match regardless of count (within reasonable range)
+        for count in (max(1, expectedCount - 2)...(expectedCount + 2)) {
+            if let match = findClosestCombination(amounts: amounts, targetSum: targetSum, count: count) {
+                print("🔄 Found alternative combination (count \(count)): \(match)")
+                return match
+            }
+        }
+        
+        // No fallback - return empty array if no good combination found
+        print("⚠️ No good combination found, returning empty array for manual entry")
+        return []
+    }
+    
+    private func findExactCombination(amounts: [Double], targetSum: Double, count: Int) -> [Double]? {
+        // Use recursive backtracking to find exact combinations
+        return findCombinationRecursive(amounts: amounts, targetSum: targetSum, count: count, index: 0, current: [])
+    }
+    
+    private func findCombinationRecursive(
+        amounts: [Double],
+        targetSum: Double,
+        count: Int,
+        index: Int,
+        current: [Double]
+    ) -> [Double]? {
+        // Base cases
+        if current.count == count {
+            let sum = current.reduce(0, +)
+            return abs(sum - targetSum) < 0.01 ? current : nil
+        }
+        
+        if index >= amounts.count || current.count > count {
+            return nil
+        }
+        
+        // Try including current amount
+        if let result = findCombinationRecursive(
+            amounts: amounts,
+            targetSum: targetSum,
+            count: count,
+            index: index + 1,
+            current: current + [amounts[index]]
+        ) {
+            return result
+        }
+        
+        // Try skipping current amount
+        return findCombinationRecursive(
+            amounts: amounts,
+            targetSum: targetSum,
+            count: count,
+            index: index + 1,
+            current: current
+        )
+    }
+    
+    private func findClosestCombination(amounts: [Double], targetSum: Double, count: Int) -> [Double]? {
+        var bestCombination: [Double]?
+        var bestDifference = Double.infinity
+        
+        // Generate all combinations of the specified count
+        let combinations = generateCombinations(amounts: amounts, count: count)
+        
+        for combination in combinations {
+            let sum = combination.reduce(0, +)
+            let difference = abs(sum - targetSum)
+            
+            if difference < bestDifference {
+                bestDifference = difference
+                bestCombination = combination
+            }
+        }
+        
+        // Return if the difference is reasonable (within 20% of target)
+        if bestDifference <= targetSum * 0.2 {
+            return bestCombination
+        }
+        
+        return nil
+    }
+    
+    private func generateCombinations(amounts: [Double], count: Int) -> [[Double]] {
+        if count == 0 { return [[]] }
+        if amounts.isEmpty { return [] }
+        
+        var combinations: [[Double]] = []
+        
+        for i in 0..<amounts.count {
+            let remaining = Array(amounts[(i+1)...])
+            let subCombinations = generateCombinations(amounts: remaining, count: count - 1)
+            
+            for subCombination in subCombinations {
+                combinations.append([amounts[i]] + subCombination)
+            }
+        }
+        
+        return combinations
+    }
+    
+    // MARK: - LLM-based Item Detection for Comparison
+    
+    func processWithLLMApproach(
+        rawText: String,
+        confirmedTax: Double,
+        confirmedTip: Double,
+        confirmedTotal: Double,
+        expectedItemCount: Int
+    ) async -> [ReceiptItem] {
+        print("🤖 Processing with Apple Intelligence approach...")
+        
+        let targetItemsPrice = confirmedTotal - confirmedTax - confirmedTip
+        
+        guard targetItemsPrice > 0 else {
+            print("❌ Target items price is not positive: $\(targetItemsPrice)")
+            return []
+        }
+        
+        let foodItems = await extractItemsWithAppleIntelligence(
+            text: rawText,
+            targetPrice: targetItemsPrice,
+            expectedCount: expectedItemCount
+        )
+        
+        // Add tax and tip items to Apple Intelligence results for complete receipt view
+        var allItems = foodItems
+        
+        if confirmedTax > 0 {
+            allItems.append(ReceiptItem(
+                name: "Tax",
+                price: confirmedTax,
+                confidence: .high,
+                originalDetectedName: "Tax",
+                originalDetectedPrice: confirmedTax
+            ))
+        }
+        
+        if confirmedTip > 0 {
+            allItems.append(ReceiptItem(
+                name: "Tip", 
+                price: confirmedTip,
+                confidence: .high,
+                originalDetectedName: "Tip",
+                originalDetectedPrice: confirmedTip
+            ))
+        }
+        
+        return allItems
+    }
+    
+    // Enhanced Apple Intelligence extraction for LLM comparison
+    private func extractItemsWithAppleIntelligence(
+        text: String,
+        targetPrice: Double,
+        expectedCount: Int
+    ) async -> [ReceiptItem] {
+        print("🧠 Using Apple Intelligence for enhanced item extraction...")
+        
+        // First extract and exclude tax/tip amounts to avoid including them as item prices
+        let (taxAmounts, tipAmounts) = await extractTaxTipAmountsForFiltering(text: text)
+        let excludedAmounts = Set(taxAmounts + tipAmounts)
+        print("🚫 Excluding tax/tip amounts from item detection: \(excludedAmounts)")
+        
+        // NEW APPROACH: Match item names with prices using intelligent pairing
+        let detectedItems = await extractItemsUsingNamePricePairing(
+            text: text, 
+            targetPrice: targetPrice, 
+            expectedCount: expectedCount,
+            excludedAmounts: excludedAmounts
+        )
+        
+        print("✅ Apple Intelligence extracted \(detectedItems.count) items")
+        return detectedItems
+    }
+    
+    // Parse item names from lines containing dollar amounts, preserving exact order
+    private func extractItemsUsingNamePricePairing(
+        text: String,
+        targetPrice: Double, 
+        expectedCount: Int,
+        excludedAmounts: Set<Double>
+    ) async -> [ReceiptItem] {
+        
+        let lines = text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        
+        // Step 1: Find the first line that contains a dollar amount - this is where items start
+        var firstDollarLineIndex: Int? = nil
+        
+        for (index, line) in lines.enumerated() {
+            if extractPriceFromLine(line) != nil {
+                firstDollarLineIndex = index
+                print("💰 Found first dollar amount at line \(index): '\(line)'")
+                break
+            }
+        }
+        
+        guard let startIndex = firstDollarLineIndex else {
+            print("❌ No dollar amounts found in receipt")
+            return []
+        }
+        
+        // Step 2: Extract item section starting from first dollar amount line
+        let itemSection = Array(lines[startIndex...])
+        print("📋 Processing item section (\(itemSection.count) lines) starting from first dollar amount:")
+        for (relativeIndex, line) in itemSection.enumerated() {
+            print("   Line \(startIndex + relativeIndex): '\(line)'")
+        }
+        
+        // Step 3: Use Apple Intelligence to parse items WITH dollar amounts included
+        let itemsWithPrices = await parseItemNamesAndPricesWithAppleIntelligence(
+            itemSection: itemSection, 
+            excludedAmounts: excludedAmounts,
+            targetPrice: targetPrice,
+            expectedCount: expectedCount
+        )
+        
+        print("📊 Apple Intelligence extracted \(itemsWithPrices.count) items with names and prices")
+        return itemsWithPrices
+    }
+    
+    // Use Apple Intelligence to parse item names and prices while preserving order
+    private func parseItemNamesAndPricesWithAppleIntelligence(
+        itemSection: [String],
+        excludedAmounts: Set<Double>,
+        targetPrice: Double,
+        expectedCount: Int
+    ) async -> [ReceiptItem] {
+        
+        print("🧠 Using Apple Intelligence to parse items with preserved order...")
+        
+        var extractedItems: [ReceiptItem] = []
+        
+        // Process each line in order to preserve receipt sequence
+        for (index, line) in itemSection.enumerated() {
+            guard !line.isEmpty else { continue }
+            
+            // Skip financial summary lines
+            if shouldSkipLineForIntelligentAnalysis(line) {
+                print("🚫 Skipping financial line: '\(line)'")
+                continue
+            }
+            
+            // Extract price from this line
+            guard let price = extractPriceFromLine(line) else { continue }
+            
+            // Skip excluded tax/tip amounts  
+            if excludedAmounts.contains(price) {
+                print("🚫 Skipping excluded amount $\(price): '\(line)'")
+                continue
+            }
+            
+            // Skip prices that are too high (likely totals)
+            if price > targetPrice {
+                print("🚫 Skipping price too high $\(price): '\(line)'")
+                continue
+            }
+            
+            // Parse item name from this line or previous line
+            let itemName = await extractItemNameFromLineWithPrice(
+                currentLine: line,
+                previousLine: index > 0 ? itemSection[index - 1] : nil,
+                price: price
+            )
+            
+            let receiptItem = ReceiptItem(
+                name: itemName,
+                price: price,
+                confidence: .high,
+                originalDetectedName: itemName,
+                originalDetectedPrice: price
+            )
+            
+            extractedItems.append(receiptItem)
+            print("✅ Extracted item \(extractedItems.count): '\(itemName)' - $\(price)")
+            
+            // Stop when we reach expected count
+            if extractedItems.count >= expectedCount {
+                break
+            }
+        }
+        
+        return extractedItems
+    }
+    
+    // Extract item name from current line with price, or previous line if needed
+    private func extractItemNameFromLineWithPrice(
+        currentLine: String,
+        previousLine: String?,
+        price: Double
+    ) async -> String {
+        
+        print("🔍 Extracting name from current line: '\(currentLine)' (price: $\(price))")
+        if let prev = previousLine {
+            print("🔍 Previous line available: '\(prev)'")
+        }
+        
+        // Try to extract name from current line first
+        if let nameFromCurrent = await extractItemNameWithEnhancedAppleIntelligence(line: currentLine, price: price) {
+            if nameFromCurrent.count > 3 && !nameFromCurrent.hasPrefix("Item ") {
+                return nameFromCurrent
+            }
+        }
+        
+        // If current line doesn't have a good name, try previous line
+        if let previousLine = previousLine,
+           await isLikelyItemDescription(previousLine) {
+            print("🔄 Using previous line for item name: '\(previousLine)'")
+            return previousLine
+        }
+        
+        // Fallback: try to extract any meaningful text from current line
+        let fallbackName = currentLine
+            .replacingOccurrences(of: String(format: "$%.2f", price), with: "")
+            .replacingOccurrences(of: String(format: "%.2f", price), with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        if !fallbackName.isEmpty && fallbackName.count > 2 {
+            print("🔄 Using fallback name: '\(fallbackName)'")
+            return fallbackName
+        }
+        
+        // Last resort
+        return "Menu Item $\(String(format: "%.2f", price))"
+    }
+    
+    // Check if a line contains an item description (has meaningful text content)
+    private func isLikelyItemDescription(_ line: String) async -> Bool {
+        // Skip lines that are clearly not item descriptions
+        let excludePatterns = [
+            "subtotal", "tax", "total", "cash", "change", "visa", "mastercard", "card",
+            "approval", "entry mode", "account", "acct", "cashier", "order", "receipt"
+        ]
+        
+        let lowercaseLine = line.lowercased()
+        for pattern in excludePatterns {
+            if lowercaseLine.contains(pattern) {
+                return false
+            }
+        }
+        
+        // Must contain letters (not just numbers)
+        guard line.rangeOfCharacter(from: CharacterSet.letters) != nil else { return false }
+        
+        // Should have some meaningful length
+        guard line.count >= 3 else { return false }
+        
+        // Use Apple Intelligence Natural Language to check if it looks like a product description
+        let tagger = NLTagger(tagSchemes: [.lexicalClass])
+        tagger.string = line
+        
+        var hasNounsOrFood = false
+        
+        tagger.enumerateTags(in: line.startIndex..<line.endIndex,
+                           unit: .word,
+                           scheme: .lexicalClass,
+                           options: [.omitWhitespace, .omitPunctuation]) { tag, range in
+            
+            let word = String(line[range])
+            
+            if let tag = tag {
+                switch tag {
+                case .noun, .adjective:
+                    hasNounsOrFood = true
+                case .other:
+                    // Check if it might be a food-related word
+                    if isLikelyFoodWordSync(word) {
+                        hasNounsOrFood = true
+                    }
+                default:
+                    break
+                }
+            } else {
+                // Even if NL can't classify it, check if it looks like food
+                if isLikelyFoodWordSync(word) {
+                    hasNounsOrFood = true
+                }
+            }
+            
+            return true
+        }
+        
+        return hasNounsOrFood
+    }
+    
+    private func analyzeLineForItemWithAppleIntelligence(_ line: String, targetPrice: Double, excludedAmounts: Set<Double>) async -> Bool {
+        // Use Natural Language processing to determine if this is likely a food item
+        guard let price = extractPriceFromLine(line) else { return false }
+        
+        // Skip if this price is a known tax/tip amount
+        if excludedAmounts.contains(price) {
+            print("🚫 Skipping price $\(price) as it's a tax/tip amount")
+            return false
+        }
+        
+        let hasItemName = await isLikelyProductName(line.replacingOccurrences(of: "\\$[0-9.]+", with: "", options: .regularExpression))
+        
+        return hasItemName
+    }
+    
+    private func parseItemLineWithAppleIntelligence(_ line: String, lineIndex: Int, excludedAmounts: Set<Double>) async -> ReceiptItem? {
+        guard let price = extractPriceFromLine(line) else { return nil }
+        
+        // Skip if this price is a known tax/tip amount
+        if excludedAmounts.contains(price) {
+            print("🚫 Skipping item creation for price $\(price) as it's a tax/tip amount")
+            return nil
+        }
+        
+        // Extract item name using enhanced Apple Intelligence
+        let itemName = await extractItemNameWithEnhancedAppleIntelligence(line: line, price: price) ?? "Item \(lineIndex + 1)"
+        
+        return ReceiptItem(
+            name: itemName,
+            price: price,
+            confidence: .high,
+            originalDetectedName: itemName,
+            originalDetectedPrice: price
+        )
+    }
+    
+    // Extract tax and tip amounts for filtering purposes
+    private func extractTaxTipAmountsForFiltering(text: String) async -> ([Double], [Double]) {
+        let taxAmounts = extractTaxAmountsWithRegex(text)
+        let tipAmounts = extractTipAmountsWithRegex(text)
+        
+        print("📊 Found tax amounts for filtering: \(taxAmounts)")
+        print("📊 Found tip amounts for filtering: \(tipAmounts)")
+        
+        return (taxAmounts, tipAmounts)
+    }
+    
+    // Enhanced item name extraction using Apple Intelligence
+    private func extractItemNameWithEnhancedAppleIntelligence(line: String, price: Double) async -> String? {
+        print("🔍 Enhanced Apple Intelligence analyzing line: '\(line)' with price: $\(price)")
+        
+        var cleanedLine = line
+        
+        // Remove the specific price value patterns
+        let specificPricePatterns = [
+            String(format: "$%.2f", price),
+            String(format: "%.2f$", price), 
+            String(format: "$ %.2f", price),
+            String(format: "%.2f $", price),
+            String(format: " %.2f", price) + "$",
+            "$" + String(format: " %.2f", price),
+            String(format: "%.2f", price) // Also try without currency symbol
+        ]
+        
+        for pattern in specificPricePatterns {
+            cleanedLine = cleanedLine.replacingOccurrences(of: pattern, with: " ")
+        }
+        
+        // Clean up extra spaces and basic formatting
+        cleanedLine = cleanedLine.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        cleanedLine = cleanedLine.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        print("🔍 After price removal: '\(cleanedLine)'")
+        
+        // If we have any meaningful text left, return it
+        if !cleanedLine.isEmpty {
+            let words = cleanedLine.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+            
+            // Accept any text that has at least one non-purely-numeric word
+            let hasValidContent = words.contains { word in
+                // Accept words with letters, mixed alphanumeric, or single characters
+                return word.rangeOfCharacter(from: CharacterSet.letters) != nil || 
+                       (word.count >= 2 && !word.allSatisfy(\.isWholeNumber))
+            }
+            
+            if hasValidContent {
+                let finalName = cleanedLine
+                print("✅ Extracted item name: '\(finalName)' from line: '\(line)'")
+                return finalName
+            }
+        }
+        
+        // If price removal left us with nothing useful, try using the original line minus just numbers at the end
+        let fallbackName = line.replacingOccurrences(of: #"\s*\$?\d+\.?\d*\$?\s*$"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        if !fallbackName.isEmpty && fallbackName.count >= 2 {
+            print("🔄 Using fallback extraction: '\(fallbackName)' from line: '\(line)'")
+            return fallbackName
+        }
+        
+        // Last resort: return the original line if it has any non-numeric content
+        if line.rangeOfCharacter(from: CharacterSet.letters) != nil {
+            print("🆘 Last resort: using original line '\(line)'")
+            return line.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        
+        print("❌ No meaningful item name found in line: '\(line)'")
+        return nil
+    }
+    
+    // Helper method to enhance item names using Natural Language processing
+    private func enhanceItemNameWithNaturalLanguage(_ text: String) async -> String? {
+        // Use NLTagger to identify if we can improve the text
+        let tagger = NLTagger(tagSchemes: [.lexicalClass])
+        tagger.string = text
+        
+        var words: [String] = []
+        
+        // Extract words, preserving structure but identifying meaningful parts
+        tagger.enumerateTags(in: text.startIndex..<text.endIndex,
+                           unit: .word,
+                           scheme: .lexicalClass,
+                           options: [.omitWhitespace, .omitPunctuation]) { tag, range in
+            
+            let word = String(text[range])
+            
+            // Include most words, but enhance known food/product patterns
+            if word.count >= 1 {
+                words.append(word)
+            }
+            
+            return true
+        }
+        
+        // If NL processing gives us something useful, return it; otherwise return original
+        let processedName = words.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        return processedName.isEmpty ? nil : processedName
+    }
+    
+    private func isLikelyFoodWordSync(_ word: String) -> Bool {
+        let lowercased = word.lowercased()
+        let foodKeywords = [
+            // Food categories
+            "sandwich", "burger", "pizza", "pasta", "salad", "soup", "chicken", "beef",
+            "fish", "shrimp", "bacon", "cheese", "bread", "rice", "noodles", "wrap",
+            "taco", "burrito", "wings", "fries", "onion", "mushroom", "pepper", "tomato",
+            
+            // Beverages
+            "coffee", "tea", "soda", "juice", "water", "beer", "wine", "latte", "cappuccino",
+            "smoothie", "shake", "cola", "sprite", "pepsi", "coke",
+            
+            // Cooking methods
+            "grilled", "fried", "baked", "roasted", "steamed", "sauteed", "crispy", "fresh",
+            
+            // Portions and styles
+            "large", "small", "medium", "regular", "special", "classic", "deluxe", "combo"
+        ]
+        
+        return foodKeywords.contains { lowercased.contains($0) }
+    }
+    
+    private func aggressiveItemExtractionWithAppleIntelligence(
+        text: String,
+        existingItems: [ReceiptItem],
+        targetCount: Int,
+        targetPrice: Double,
+        excludedAmounts: Set<Double>
+    ) async -> [ReceiptItem] {
+        let lines = text.components(separatedBy: .newlines)
+        var additionalCandidates: [(lineIndex: Int, item: ReceiptItem)] = []
+        let usedPrices = Set(existingItems.map { $0.price })
+        
+        for (index, line) in lines.enumerated() {
+            guard additionalCandidates.count < (targetCount - existingItems.count) else { break }
+            
+            let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedLine.isEmpty else { continue }
+            
+            // Look for any price that hasn't been used and isn't tax/tip
+            if let price = extractPriceFromLine(trimmedLine),
+               !usedPrices.contains(price),
+               !excludedAmounts.contains(price),
+               price <= targetPrice {
+                
+                let itemName = await extractItemNameWithEnhancedAppleIntelligence(line: trimmedLine, price: price) ?? "Item \(existingItems.count + additionalCandidates.count + 1)"
+                
+                let item = ReceiptItem(
+                    name: itemName,
+                    price: price,
+                    confidence: .medium,
+                    originalDetectedName: itemName,
+                    originalDetectedPrice: price
+                )
+                
+                additionalCandidates.append((lineIndex: index, item: item))
+            }
+        }
+        
+        // Sort by line order to preserve receipt order
+        return additionalCandidates.sorted { $0.lineIndex < $1.lineIndex }.map { $0.item }
+    }
+}
+
+// MARK: - Bill Split Session Management
+class BillSplitSession: ObservableObject {
+    // OCR Results
+    @Published var scannedItems: [ReceiptItem] = []
+    @Published var rawReceiptText: String = ""
+    @Published var ocrConfidence: Float = 0.0
+    @Published var identifiedTotal: Double? = nil
+    @Published var capturedReceiptImage: UIImage? = nil
+    
+    // Comparison Results - Regex vs LLM
+    @Published var regexDetectedItems: [ReceiptItem] = []
+    @Published var llmDetectedItems: [ReceiptItem] = []
+    @Published var confirmedTax: Double = 0.0
+    @Published var confirmedTip: Double = 0.0
+    @Published var confirmedTotal: Double = 0.0
+    @Published var expectedItemCount: Int = 0
+    
+    // Participants
+    @Published var participants: [UIParticipant] = [
+        UIParticipant(id: 1, name: "You", color: .blue) // Always start with "You"
+    ]
+    
+    // Item assignments
+    @Published var assignedItems: [UIItem] = []
+    
+    // Session state
+    @Published var sessionState: SessionState = .home
+    @Published var isSessionActive: Bool = false
+    
+    enum SessionState {
+        case home
+        case scanning
+        case assigning
+        case reviewing
+        case complete
+    }
+    
+    let colors: [Color] = [.blue, .green, .purple, .pink, .yellow, .red, .orange, .cyan]
+    
+    func startNewSession() {
+        print("🆕 Starting new bill split session")
+        resetSession()
+        isSessionActive = true
+        sessionState = .scanning
+    }
+    
+    func resetSession() {
+        print("🔄 Resetting bill split session")
+        print("   - Previous regexDetectedItems count: \(regexDetectedItems.count)")
+        print("   - Previous llmDetectedItems count: \(llmDetectedItems.count)")
+        print("   - Previous confirmedTotal: \(confirmedTotal)")
+        
+        scannedItems.removeAll()
+        rawReceiptText = ""
+        ocrConfidence = 0.0
+        identifiedTotal = nil
+        capturedReceiptImage = nil
+        
+        // Clear comparison results
+        regexDetectedItems.removeAll()
+        llmDetectedItems.removeAll()
+        confirmedTax = 0.0
+        confirmedTip = 0.0
+        confirmedTotal = 0.0
+        expectedItemCount = 0
+        
+        print("✅ Session reset complete - all state cleared")
+        
+        // Keep "You" but remove other participants
+        participants = [UIParticipant(id: 1, name: "You", color: .blue)]
+        assignedItems.removeAll()
+        
+        sessionState = .home
+        isSessionActive = false
+    }
+    
+    func updateOCRResults(_ items: [ReceiptItem], rawText: String, confidence: Float, identifiedTotal: Double?, suggestedAmounts: [Double] = [], image: UIImage? = nil, confirmedTax: Double = 0, confirmedTip: Double = 0, confirmedTotal: Double = 0, expectedItemCount: Int = 0) {
+        print("📄 Updating OCR results: \(items.count) items, confidence: \(confidence), identifiedTotal: \(identifiedTotal ?? 0)")
+        print("💡 Suggested amounts for quick entry: \(suggestedAmounts)")
+        
+        scannedItems = items
+        rawReceiptText = rawText
+        ocrConfidence = confidence
+        self.identifiedTotal = identifiedTotal
+        self.capturedReceiptImage = image
+        
+        // Store confirmed values for dual processing
+        self.confirmedTax = confirmedTax
+        self.confirmedTip = confirmedTip
+        self.confirmedTotal = confirmedTotal > 0 ? confirmedTotal : identifiedTotal ?? 0
+        self.expectedItemCount = expectedItemCount
+        
+        // Convert ReceiptItems to UIItems for the assign screen
+        assignedItems = items.enumerated().map { index, receiptItem in
+            UIItem(
+                id: index + 1,
+                name: receiptItem.name,
+                price: receiptItem.price,
+                assignedTo: nil,  // Start unassigned
+                confidence: receiptItem.confidence,
+                originalDetectedName: receiptItem.originalDetectedName,
+                originalDetectedPrice: receiptItem.originalDetectedPrice
+            )
+        }
+        
+        print("✅ Converted \(items.count) ReceiptItems to UIItems for assignment")
+        
+        // Go directly to assignment screen
+        sessionState = .assigning
+    }
+    
+    func addParticipant(name: String) -> UIParticipant? {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        guard !trimmedName.isEmpty else { return nil }
+        
+        // Check for duplicates (case-insensitive)
+        if participants.contains(where: { $0.name.lowercased() == trimmedName.lowercased() }) {
+            print("⚠️ Participant \(trimmedName) already exists")
+            return nil
+        }
+        
+        let newId = (participants.map { $0.id }.max() ?? 0) + 1
+        let colorIndex = participants.count % colors.count
+        
+        let newParticipant = UIParticipant(
+            id: newId,
+            name: trimmedName,
+            color: colors[colorIndex]
+        )
+        
+        participants.append(newParticipant)
+        print("✅ Added participant: \(trimmedName)")
+        return newParticipant
+    }
+    
+    func removeParticipant(_ participant: UIParticipant) {
+        // Don't allow removing "You"
+        guard participant.name != "You" else { return }
+        
+        // Remove from participants
+        participants.removeAll { $0.id == participant.id }
+        
+        // Unassign any items assigned to this participant
+        for index in assignedItems.indices {
+            if assignedItems[index].assignedTo == participant.id {
+                assignedItems[index].assignedTo = nil
+            }
+        }
+        
+        print("🗑️ Removed participant: \(participant.name)")
+    }
+    
+    func assignItem(itemId: Int, to participantId: Int?) {
+        if let index = assignedItems.firstIndex(where: { $0.id == itemId }) {
+            assignedItems[index].assignedTo = participantId
+            
+            let participantName = participants.first { $0.id == participantId }?.name ?? "Unassigned"
+            print("📝 Assigned \(assignedItems[index].name) to \(participantName)")
+        }
+    }
+    
+    func completeAssignment() {
+        sessionState = .reviewing
+        
+        // Auto-assign shared items (Tax, Tip) equally
+        splitSharedItems()
+    }
+    
+    private func splitSharedItems() {
+        for index in assignedItems.indices {
+            if assignedItems[index].assignedTo == nil && 
+               (assignedItems[index].name.lowercased().contains("tax") || 
+                assignedItems[index].name.lowercased().contains("tip")) {
+                assignedItems[index].name += " (Split equally)"
+            }
+        }
+    }
+    
+    func completeSession() {
+        sessionState = .complete
+        print("🎉 Bill split session completed")
+    }
+    
+    // MARK: - Dual Processing Methods
+    
+    func processWithBothApproaches(
+        confirmedTax: Double,
+        confirmedTip: Double,
+        confirmedTotal: Double,
+        expectedItemCount: Int
+    ) async {
+        print("🔄 Processing with both regex and LLM approaches...")
+        
+        await MainActor.run {
+            self.confirmedTax = confirmedTax
+            self.confirmedTip = confirmedTip
+            self.confirmedTotal = confirmedTotal
+            self.expectedItemCount = expectedItemCount
+        }
+        
+        let ocrService = OCRService()
+        
+        // Process with regex approach (current mathematical approach)
+        await MainActor.run {
+            print("📊 Starting regex processing...")
+        }
+        
+        let regexItems = await ocrService.processWithMathematicalApproach(
+            rawText: rawReceiptText,
+            confirmedTax: confirmedTax,
+            confirmedTip: confirmedTip,
+            confirmedTotal: confirmedTotal,
+            expectedItemCount: expectedItemCount
+        )
+        
+        await MainActor.run {
+            self.regexDetectedItems = regexItems
+            print("✅ Regex processing complete: \(regexItems.count) items")
+        }
+        
+        // Process with LLM approach
+        await MainActor.run {
+            print("🤖 Starting LLM processing...")
+        }
+        
+        let llmItems = await ocrService.processWithLLMApproach(
+            rawText: rawReceiptText,
+            confirmedTax: confirmedTax,
+            confirmedTip: confirmedTip,
+            confirmedTotal: confirmedTotal,
+            expectedItemCount: expectedItemCount
+        )
+        
+        await MainActor.run {
+            self.llmDetectedItems = llmItems
+            print("✅ LLM processing complete: \(llmItems.count) items")
+        }
+    }
+    
+    // MARK: - Summary Data
+    var totalAmount: Double {
+        assignedItems.reduce(0) { $0 + $1.price }
+    }
+    
+    var participantSummaries: [UISummaryParticipant] {
+        return participants.enumerated().map { index, participant in
+            let assignedToParticipant = assignedItems.filter { $0.assignedTo == participant.id }
+            let totalOwed = assignedToParticipant.reduce(0) { $0 + $1.price }
+            
+            return UISummaryParticipant(
+                id: participant.id,
+                name: participant.name,
+                color: participant.color,
+                owes: participant.name == "You" ? 0.0 : totalOwed,
+                gets: participant.name == "You" ? totalOwed : 0.0
+            )
+        }
+    }
+    
+    var breakdownSummaries: [UIBreakdown] {
+        return participants.map { participant in
+            let assignedToParticipant = assignedItems.filter { $0.assignedTo == participant.id }
+            let items = assignedToParticipant.map { item in
+                UIBreakdownItem(name: item.name, price: item.price)
+            }
+            
+            return UIBreakdown(
+                id: participant.id,
+                name: participant.name,
+                color: participant.color,
+                items: items
+            )
+        }
     }
 }

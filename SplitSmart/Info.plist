@@ -29,6 +29,8 @@
 	<string>SplitSmart needs access to your camera to scan receipts and bills. This allows you to quickly capture and split expenses with your friends.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>SplitSmart needs access to your photo library to import receipt images. This allows you to upload existing photos of receipts for expense splitting.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>SplitSmart needs access to your contacts to quickly add participants to bill splits. This allows you to easily select friends from your contact list instead of typing their names manually.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

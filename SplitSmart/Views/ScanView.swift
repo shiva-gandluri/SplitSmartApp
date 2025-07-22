@@ -124,37 +124,23 @@ struct CameraCapture: UIViewControllerRepresentable {
 struct ImagePreview: View {
     let image: UIImage
     let onRetake: () -> Void
-    let onConfirm: () -> Void
+    let onConfirm: (UIImage) -> Void
     
     @State private var scale: CGFloat = 1.0
     @State private var lastScale: CGFloat = 1.0
+    @State private var offset = CGSize.zero
+    @State private var lastOffset = CGSize.zero
     
     var body: some View {
-        VStack(spacing: 20) {
-            // Header with actions
-            HStack {
-                Button("Retake") {
-                    onRetake()
-                }
-                .foregroundColor(.blue)
-                
-                Spacer()
-                
-                Text("Preview")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                
-                Spacer()
-                
-                Button("Use Photo") {
-                    onConfirm()
-                }
-                .foregroundColor(.blue)
-                .fontWeight(.semibold)
-            }
-            .padding()
+        VStack(spacing: 24) {
+            // Simplified header
+            Text("Review Photo")
+                .font(.title2)
+                .fontWeight(.bold)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal)
             
-            // Image preview with zoom and pan
+            // Simple reliable image viewer
             ZStack {
                 Rectangle()
                     .fill(Color.gray.opacity(0.1))
@@ -164,21 +150,35 @@ struct ImagePreview: View {
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .scaleEffect(scale)
+                    .offset(offset)
                     .gesture(
                         MagnificationGesture()
                             .onChanged { value in
                                 let delta = value / lastScale
                                 lastScale = value
-                                scale = min(max(scale * delta, 0.5), 3.0) // Limit zoom between 0.5x and 3x
+                                scale = min(max(scale * delta, 1.0), 5.0)
                             }
                             .onEnded { _ in
                                 lastScale = 1.0
                             }
                     )
+                    .gesture(
+                        DragGesture()
+                            .onChanged { value in
+                                offset = CGSize(
+                                    width: lastOffset.width + value.translation.width,
+                                    height: lastOffset.height + value.translation.height
+                                )
+                            }
+                            .onEnded { _ in
+                                lastOffset = offset
+                            }
+                    )
                     .onTapGesture(count: 2) {
-                        // Double tap to reset zoom
                         withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
                             scale = 1.0
+                            offset = .zero
+                            lastOffset = .zero
                         }
                     }
             }
@@ -186,42 +186,295 @@ struct ImagePreview: View {
             .padding(.horizontal)
             .clipped()
             
-            // Zoom instructions
-            Text("Double tap to reset • Pinch to zoom")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .padding(.horizontal)
-            
-            VStack(spacing: 12) {
-                Button(action: onConfirm) {
-                    HStack {
-                        Image(systemName: "checkmark")
-                        Text("Use This Photo")
-                    }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.blue)
-                    .cornerRadius(12)
-                }
+            // Enhanced instructions
+            VStack(spacing: 4) {
+                Text("Double tap to reset • Pinch to zoom • Drag to pan")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
                 
+                Text("Position the receipt for best OCR accuracy")
+                    .font(.caption2)
+                    .foregroundColor(.blue)
+            }
+            .padding(.horizontal)
+            
+            HStack(spacing: 16) {
                 Button(action: onRetake) {
                     HStack {
                         Image(systemName: "camera.rotate")
-                        Text("Retake Photo")
+                        Text("Retake")
                     }
+                    .font(.body)
+                    .fontWeight(.medium)
                     .foregroundColor(.blue)
                     .frame(maxWidth: .infinity)
-                    .padding()
+                    .padding(.vertical, 12)
                     .background(Color.blue.opacity(0.1))
-                    .cornerRadius(12)
+                    .cornerRadius(10)
+                }
+                
+                Button(action: {
+                    // Capture the current view state as an image
+                    let finalImage = captureImageWithCurrentTransform()
+                    onConfirm(finalImage)
+                }) {
+                    HStack {
+                        Image(systemName: "arrow.right")
+                        Text("Continue")
+                    }
+                    .font(.body)
+                    .fontWeight(.medium)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.blue)
+                    .cornerRadius(10)
                 }
             }
-            .padding()
+            .padding(.horizontal)
             
             Spacer()
         }
         .background(Color(.systemBackground))
+    }
+    
+    // Helper functions for constrained image viewing
+    private func getImageSize(for image: UIImage, in containerSize: CGSize) -> CGSize {
+        let imageAspectRatio = image.size.width / image.size.height
+        let containerAspectRatio = containerSize.width / containerSize.height
+        
+        let width: CGFloat
+        let height: CGFloat
+        
+        if imageAspectRatio > containerAspectRatio {
+            // Image is wider than container - fit to width
+            width = containerSize.width
+            height = width / imageAspectRatio
+        } else {
+            // Image is taller than container - fit to height
+            height = containerSize.height
+            width = height * imageAspectRatio
+        }
+        
+        return CGSize(width: width, height: height)
+    }
+    
+    private func constrainOffset(
+        offset: CGSize,
+        scale: CGFloat,
+        imageSize: CGSize,
+        containerSize: CGSize
+    ) -> CGSize {
+        // Calculate the scaled image size
+        let scaledImageSize = CGSize(
+            width: imageSize.width * scale,
+            height: imageSize.height * scale
+        )
+        
+        // Calculate maximum allowed offset to prevent empty space
+        let maxOffsetX = max(0, (scaledImageSize.width - containerSize.width) / 2)
+        let maxOffsetY = max(0, (scaledImageSize.height - containerSize.height) / 2)
+        
+        // Constrain the offset
+        let constrainedX = min(maxOffsetX, max(-maxOffsetX, offset.width))
+        let constrainedY = min(maxOffsetY, max(-maxOffsetY, offset.height))
+        
+        return CGSize(width: constrainedX, height: constrainedY)
+    }
+    
+    private func captureImageWithCurrentTransform() -> UIImage {
+        // If no significant transformation was applied, return original image
+        if abs(scale - 1.0) < 0.1 && abs(offset.width) < 10 && abs(offset.height) < 10 {
+            return image
+        }
+        
+        // Use the container size (400 height) that the app provides instead of original image aspect ratio
+        let containerSize = CGSize(width: UIScreen.main.bounds.width - 32, height: 400) // Matching the frame in the UI
+        
+        // Create a renderer with the container size (not the original image size)
+        let renderer = UIGraphicsImageRenderer(size: containerSize)
+        
+        return renderer.image { context in
+            // Fill the container background
+            context.cgContext.setFillColor(UIColor.systemBackground.cgColor)
+            context.cgContext.fill(CGRect(origin: .zero, size: containerSize))
+            
+            // Calculate how the image fits in the container (aspect fill)
+            let imageSize = getImageSize(for: image, in: containerSize)
+            let imageRect = CGRect(
+                x: (containerSize.width - imageSize.width) / 2,
+                y: (containerSize.height - imageSize.height) / 2,
+                width: imageSize.width,
+                height: imageSize.height
+            )
+            
+            // Apply user transformations
+            context.cgContext.saveGState()
+            
+            // Translate to center, apply scale and offset, then translate back
+            context.cgContext.translateBy(x: containerSize.width / 2, y: containerSize.height / 2)
+            context.cgContext.scaleBy(x: scale, y: scale)
+            context.cgContext.translateBy(x: offset.width, y: offset.height)
+            context.cgContext.translateBy(x: -containerSize.width / 2, y: -containerSize.height / 2)
+            
+            // Draw the image in the calculated rect
+            image.draw(in: imageRect)
+            
+            context.cgContext.restoreGState()
+        }
+    }
+}
+
+// MARK: - Interactive Image View (Photos app-like)
+struct InteractiveImageView: UIViewRepresentable {
+    let image: UIImage
+    
+    func makeUIView(context: Context) -> UIScrollView {
+        let scrollView = UIScrollView()
+        let imageView = UIImageView(image: image)
+        
+        // Configure scroll view
+        scrollView.delegate = context.coordinator
+        scrollView.maximumZoomScale = 5.0
+        scrollView.minimumZoomScale = 1.0
+        scrollView.showsVerticalScrollIndicator = false
+        scrollView.showsHorizontalScrollIndicator = false
+        scrollView.backgroundColor = UIColor.clear
+        scrollView.contentInsetAdjustmentBehavior = .never
+        
+        // Configure image view
+        imageView.contentMode = .scaleAspectFit
+        imageView.isUserInteractionEnabled = true
+        
+        // Add double tap gesture
+        let doubleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleDoubleTap(_:)))
+        doubleTap.numberOfTapsRequired = 2
+        imageView.addGestureRecognizer(doubleTap)
+        
+        scrollView.addSubview(imageView)
+        context.coordinator.imageView = imageView
+        context.coordinator.scrollView = scrollView
+        
+        return scrollView
+    }
+    
+    func updateUIView(_ uiView: UIScrollView, context: Context) {
+        DispatchQueue.main.async {
+            context.coordinator.updateImageLayout()
+        }
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, UIScrollViewDelegate {
+        let parent: InteractiveImageView
+        weak var scrollView: UIScrollView?
+        weak var imageView: UIImageView?
+        
+        init(_ parent: InteractiveImageView) {
+            self.parent = parent
+        }
+        
+        func viewForZooming(in scrollView: UIScrollView) -> UIView? {
+            return imageView
+        }
+        
+        func scrollViewDidZoom(_ scrollView: UIScrollView) {
+            centerImageView()
+        }
+        
+        func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
+            // Optional: Add haptic feedback
+            if scale == scrollView.minimumZoomScale {
+                let impact = UIImpactFeedbackGenerator(style: .light)
+                impact.impactOccurred()
+            }
+        }
+        
+        @objc func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
+            guard let scrollView = scrollView else { return }
+            
+            if scrollView.zoomScale == scrollView.minimumZoomScale {
+                // Zoom in to 2x at tap location
+                let tapLocation = gesture.location(in: imageView)
+                let zoomRect = zoomRectForScale(2.0, center: tapLocation)
+                scrollView.zoom(to: zoomRect, animated: true)
+            } else {
+                // Zoom out to fit
+                scrollView.setZoomScale(scrollView.minimumZoomScale, animated: true)
+            }
+            
+            // Haptic feedback
+            let impact = UIImpactFeedbackGenerator(style: .medium)
+            impact.impactOccurred()
+        }
+        
+        func updateImageLayout() {
+            guard let scrollView = scrollView,
+                  let imageView = imageView,
+                  scrollView.bounds.size.width > 0,
+                  scrollView.bounds.size.height > 0 else { return }
+            
+            // Calculate image size to fit scroll view
+            let scrollViewSize = scrollView.bounds.size
+            let imageSize = parent.image.size
+            
+            guard imageSize.width > 0 && imageSize.height > 0 else { return }
+            
+            let widthScale = scrollViewSize.width / imageSize.width
+            let heightScale = scrollViewSize.height / imageSize.height
+            let scale = min(widthScale, heightScale)
+            
+            let imageViewSize = CGSize(
+                width: imageSize.width * scale,
+                height: imageSize.height * scale
+            )
+            
+            imageView.frame = CGRect(origin: .zero, size: imageViewSize)
+            scrollView.contentSize = imageViewSize
+            
+            // Center the image
+            centerImageView()
+            
+            // Reset zoom
+            scrollView.zoomScale = 1.0
+        }
+        
+        private func centerImageView() {
+            guard let scrollView = scrollView,
+                  let imageView = imageView else { return }
+            
+            let scrollViewSize = scrollView.bounds.size
+            let imageViewSize = imageView.frame.size
+            
+            let horizontalInset = max(0, (scrollViewSize.width - imageViewSize.width) / 2)
+            let verticalInset = max(0, (scrollViewSize.height - imageViewSize.height) / 2)
+            
+            scrollView.contentInset = UIEdgeInsets(
+                top: verticalInset,
+                left: horizontalInset,
+                bottom: verticalInset,
+                right: horizontalInset
+            )
+        }
+        
+        private func zoomRectForScale(_ scale: CGFloat, center: CGPoint) -> CGRect {
+            guard let scrollView = scrollView else { return .zero }
+            
+            let zoomSize = CGSize(
+                width: scrollView.bounds.width / scale,
+                height: scrollView.bounds.height / scale
+            )
+            
+            return CGRect(
+                x: center.x - zoomSize.width / 2,
+                y: center.y - zoomSize.height / 2,
+                width: zoomSize.width,
+                height: zoomSize.height
+            )
+        }
     }
 }
 
@@ -242,6 +495,7 @@ extension View {
 }
 
 struct UIScanScreen: View {
+    let session: BillSplitSession
     let onContinue: () -> Void
     
     @State private var scanComplete = false
@@ -255,13 +509,6 @@ struct UIScanScreen: View {
     @StateObject private var permissionManager = CameraPermissionManager()
     @StateObject private var ocrService = OCRService()
     
-    let mockReceiptItems = [
-        ("Pasta Carbonara", 16.95),
-        ("Caesar Salad", 12.50),
-        ("Garlic Bread", 5.95),
-        ("Tiramisu", 8.75)
-    ]
-    
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
@@ -272,13 +519,15 @@ struct UIScanScreen: View {
                     .padding(.horizontal)
                 
                 if showingOCRResults, let result = ocrResult {
-                    OCRResultsView(
-                        items: result.parsedItems,
-                        rawText: result.rawText,
-                        confidence: result.confidence,
-                        onContinue: { items in
-                            // Convert OCR items to final receipt items and continue
-                            onContinue()
+                    // Show confirmation screen for Tax/Tip/Total/ItemCount before processing
+                    OCRConfirmationView(
+                        result: result,
+                        image: capturedImage,
+                        onConfirm: { confirmedData in
+                            // Process with confirmed values and continue to assign page
+                            Task {
+                                await processWithConfirmedData(result: result, confirmedData: confirmedData)
+                            }
                         },
                         onRetry: handleRetryOCR
                     )
@@ -293,17 +542,39 @@ struct UIScanScreen: View {
                         progress: ocrService.progress,
                         status: scanningStatus
                     )
-                } else if !scanComplete {
-                    ScanInputSection(
-                        scanningStatus: scanningStatus,
-                        onScan: handleScanReceipt,
-                        onUpload: handlePhotoLibrary
-                    )
                 } else {
-                    ReceiptResultSection(
-                        mockReceiptItems: mockReceiptItems,
-                        onContinue: onContinue
-                    )
+                    VStack(spacing: 16) {
+                        ScanInputSection(
+                            scanningStatus: scanningStatus,
+                            onScan: handleScanReceipt,
+                            onUpload: handlePhotoLibrary
+                        )
+                        
+                        // Temporary debug button for testing comprehensive detection
+                        Button(action: {
+                            scanningStatus = "Testing comprehensive item detection..."
+                            Task {
+                                let result = await ocrService.testParsing()
+                                await MainActor.run {
+                                    self.ocrResult = result
+                                    self.showingOCRResults = true
+                                    self.scanningStatus = ""
+                                }
+                            }
+                        }) {
+                            HStack {
+                                Image(systemName: "doc.text.magnifyingglass")
+                                Text("TEST: Comprehensive Detection")
+                            }
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.green)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
+                            .background(Color.green.opacity(0.1))
+                            .cornerRadius(6)
+                        }
+                        .padding(.horizontal)
+                    }
                 }
             }
             .padding(.top)
@@ -386,16 +657,17 @@ struct UIScanScreen: View {
         showingImagePreview = true
     }
     
-    private func handleImageConfirmed() {
+    private func handleImageConfirmed(_ finalImage: UIImage) {
         showingImagePreview = false
         
-        guard let image = capturedImage else { return }
+        // Update capturedImage to use the cropped/transformed version
+        capturedImage = finalImage
         
         // Start OCR processing
         scanningStatus = "Processing image with OCR..."
         
         Task {
-            let result = await ocrService.processImage(image)
+            let result = await ocrService.processImage(finalImage)
             
             await MainActor.run {
                 self.ocrResult = result
@@ -418,6 +690,35 @@ struct UIScanScreen: View {
         capturedImage = nil
         scanningStatus = ""
     }
+    
+    private func processWithConfirmedData(result: OCRResult, confirmedData: ConfirmedReceiptData) async {
+        // Use mathematical approach to find item combinations
+        let ocrService = OCRService()
+        let processedItems = await ocrService.processWithMathematicalApproach(
+            rawText: result.rawText,
+            confirmedTax: confirmedData.tax,
+            confirmedTip: confirmedData.tip,
+            confirmedTotal: confirmedData.total,
+            expectedItemCount: confirmedData.itemCount
+        )
+        
+        await MainActor.run {
+            session.updateOCRResults(
+                processedItems,
+                rawText: result.rawText,
+                confidence: result.confidence,
+                identifiedTotal: confirmedData.total,
+                suggestedAmounts: [],
+                image: capturedImage,
+                confirmedTax: confirmedData.tax,
+                confirmedTip: confirmedData.tip,
+                confirmedTotal: confirmedData.total,
+                expectedItemCount: confirmedData.itemCount
+            )
+            onContinue()
+        }
+    }
+    
 }
 
 // MARK: - Supporting Views
@@ -736,6 +1037,8 @@ struct OCRResultsView: View {
     @State var items: [ReceiptItem]
     let rawText: String
     let confidence: Float
+    let identifiedTotal: Double?
+    let suggestedAmounts: [Double]
     let onContinue: ([ReceiptItem]) -> Void
     let onRetry: () -> Void
     
@@ -754,6 +1057,8 @@ struct OCRResultsView: View {
             if items.isEmpty {
                 // No items found - show manual entry option
                 OCREmptyStateView(
+                    identifiedTotal: identifiedTotal,
+                    suggestedAmounts: suggestedAmounts,
                     onManualEntry: { showingManualEntry = true },
                     onRetry: onRetry
                 )
@@ -761,15 +1066,33 @@ struct OCRResultsView: View {
                 // Items found - show editable list
                 OCRItemListView(
                     items: $items,
-                    onContinue: { onContinue(items) }
+                    identifiedTotal: identifiedTotal,
+                    suggestedAmounts: suggestedAmounts,
+                    onContinue: { onContinue(items) },
+                    onAddMore: { showingManualEntry = true }
                 )
+            }
+        }
+        .onAppear {
+            // Debug info
+            if items.isEmpty {
+                print("🐛 DEBUG: items.isEmpty = true, showing empty state")
+            } else {
+                print("🐛 DEBUG: items.count = \(items.count), showing item list")
+                for (index, item) in items.enumerated() {
+                    print("🐛 DEBUG: Item \(index): '\(item.name)' - $\(item.price)")
+                }
             }
         }
         .sheet(isPresented: $showRawText) {
             RawTextView(text: rawText)
         }
         .sheet(isPresented: $showingManualEntry) {
-            ManualItemEntryView { newItem in
+            ManualItemEntryView(
+                suggestedAmounts: suggestedAmounts,
+                identifiedTotal: identifiedTotal,
+                currentTotal: items.reduce(0) { $0 + $1.price }
+            ) { newItem in
                 items.append(newItem)
             }
         }
@@ -851,19 +1174,46 @@ struct ConfidenceIndicator: View {
 // MARK: - OCR Item List View
 struct OCRItemListView: View {
     @Binding var items: [ReceiptItem]
+    let identifiedTotal: Double?
+    let suggestedAmounts: [Double]
     let onContinue: () -> Void
+    let onAddMore: () -> Void
     
     var totalAmount: Double {
-        items.reduce(0) { $0 + $1.price }
+        let total = items.reduce(0) { $0 + $1.price }
+        print("💰 TOTAL CALCULATION DEBUG:")
+        print("   Number of items: \(items.count)")
+        for (index, item) in items.enumerated() {
+            print("   Item \(index + 1): '\(item.name)' - $\(item.price)")
+        }
+        print("   Calculated total: $\(total)")
+        return total
+    }
+    
+    var totalValidationColor: Color {
+        guard let detectedTotal = identifiedTotal else { return .blue }
+        let difference = abs(totalAmount - detectedTotal)
+        return difference <= 0.01 ? .green : .orange
     }
     
     var body: some View {
         VStack(spacing: 0) {
-            Text("Review and edit the detected items below. Tap to modify or swipe to delete.")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .padding()
-                .background(Color(.systemGroupedBackground))
+            VStack(spacing: 8) {
+                Text("Found \(items.count) items! Tap any item to edit its name or price.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                
+                Button(action: onAddMore) {
+                    HStack {
+                        Image(systemName: "plus.circle.fill")
+                        Text("Add More Items")
+                    }
+                    .font(.caption)
+                    .foregroundColor(.blue)
+                }
+            }
+            .padding()
+            .background(Color(.systemGroupedBackground))
             
             List {
                 ForEach(items.indices, id: \.self) { index in
@@ -879,17 +1229,78 @@ struct OCRItemListView: View {
             .listStyle(PlainListStyle())
             
             VStack(spacing: 16) {
-                HStack {
-                    Text("Total")
-                        .font(.headline)
-                        .fontWeight(.semibold)
+                // Total comparison section
+                VStack(spacing: 8) {
+                    HStack {
+                        Text("Items Total")
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                        
+                        Spacer()
+                        
+                        Text("$\(totalAmount, specifier: "%.2f")")
+                            .font(.headline)
+                            .fontWeight(.bold)
+                            .foregroundColor(totalValidationColor)
+                    }
                     
-                    Spacer()
-                    
-                    Text("$\(totalAmount, specifier: "%.2f")")
-                        .font(.headline)
-                        .fontWeight(.bold)
-                        .foregroundColor(.blue)
+                    // Show comparison with detected total if available
+                    if let detectedTotal = identifiedTotal {
+                        HStack {
+                            Text("Receipt Total")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            
+                            Spacer()
+                            
+                            Text("$\(detectedTotal, specifier: "%.2f")")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        // Show difference and balance remaining
+                        let difference = totalAmount - detectedTotal
+                        if abs(difference) > 0.01 {
+                            if difference < 0 {
+                                // Need to add more items
+                                HStack {
+                                    Text("Remaining to add")
+                                        .font(.caption)
+                                        .foregroundColor(.blue)
+                                    
+                                    Spacer()
+                                    
+                                    Text("$\(abs(difference), specifier: "%.2f")")
+                                        .font(.caption)
+                                        .fontWeight(.medium)
+                                        .foregroundColor(.blue)
+                                }
+                            } else {
+                                // Total exceeds receipt total
+                                HStack {
+                                    Text("Over by")
+                                        .font(.caption)
+                                        .foregroundColor(.orange)
+                                    
+                                    Spacer()
+                                    
+                                    Text("$\(difference, specifier: "%.2f")")
+                                        .font(.caption)
+                                        .foregroundColor(.orange)
+                                }
+                            }
+                        } else {
+                            HStack {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                Text("Totals match!")
+                                    .font(.caption)
+                                    .foregroundColor(.green)
+                                
+                                Spacer()
+                            }
+                        }
+                    }
                 }
                 .padding(.horizontal)
                 
@@ -923,92 +1334,125 @@ struct EditableItemRow: View {
     @Binding var item: ReceiptItem
     let onDelete: () -> Void
     
-    @State private var isEditing = false
+    @State private var isEditingName = false
+    @State private var isEditingPrice = false
     @State private var editName = ""
     @State private var editPrice = ""
+    @FocusState private var isNameFieldFocused: Bool
+    @FocusState private var isPriceFieldFocused: Bool
     
     var body: some View {
-        HStack {
-            if isEditing {
-                VStack(spacing: 8) {
+        HStack(spacing: 12) {
+            // Item name section
+            VStack(alignment: .leading, spacing: 4) {
+                if isEditingName {
                     TextField("Item name", text: $editName)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
-                    
-                    HStack {
-                        Text("$")
-                        TextField("0.00", text: $editPrice)
-                            .keyboardType(.decimalPad)
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                    }
-                }
-                
-                VStack(spacing: 8) {
-                    Button("Save") {
-                        saveChanges()
-                    }
-                    .foregroundColor(.blue)
-                    .font(.caption)
-                    
-                    Button("Cancel") {
-                        cancelEditing()
-                    }
-                    .foregroundColor(.secondary)
-                    .font(.caption)
-                }
-            } else {
-                VStack(alignment: .leading, spacing: 4) {
+                        .focused($isNameFieldFocused)
+                        .onSubmit {
+                            saveNameEdit()
+                        }
+                } else {
                     Text(item.name)
                         .font(.body)
                         .lineLimit(2)
+                        .onTapGesture {
+                            startNameEditing()
+                        }
                     
-                    Text("Tap to edit")
-                        .font(.caption)
+                    Text("Tap name to edit")
+                        .font(.caption2)
                         .foregroundColor(.secondary)
                 }
-                
-                Spacer()
-                
-                Text("$\(item.price, specifier: "%.2f")")
-                    .font(.body)
-                    .fontWeight(.medium)
-                    .foregroundColor(.blue)
+            }
+            
+            Spacer()
+            
+            // Price section
+            VStack(alignment: .trailing, spacing: 4) {
+                if isEditingPrice {
+                    HStack {
+                        Text("$")
+                            .font(.body)
+                        TextField("0.00", text: $editPrice)
+                            .keyboardType(.decimalPad)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .frame(width: 80)
+                            .focused($isPriceFieldFocused)
+                            .onSubmit {
+                                savePriceEdit()
+                            }
+                    }
+                } else {
+                    Text("$\(item.price, specifier: "%.2f")")
+                        .font(.body)
+                        .fontWeight(.medium)
+                        .foregroundColor(.blue)
+                        .onTapGesture {
+                            startPriceEditing()
+                        }
+                    
+                    Text("Tap price to edit")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
             }
         }
         .padding(.vertical, 8)
-        .onTapGesture {
-            if !isEditing {
-                startEditing()
-            }
-        }
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button("Delete", role: .destructive) {
                 onDelete()
             }
         }
+        // Dismiss editing when tapping outside
+        .onTapGesture {
+            if isEditingName {
+                saveNameEdit()
+            }
+            if isEditingPrice {
+                savePriceEdit()
+            }
+        }
     }
     
-    private func startEditing() {
+    private func startNameEditing() {
         editName = item.name
-        editPrice = String(format: "%.2f", item.price)
-        isEditing = true
+        isEditingName = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            isNameFieldFocused = true
+        }
     }
     
-    private func saveChanges() {
+    private func startPriceEditing() {
+        editPrice = String(format: "%.2f", item.price)
+        isEditingPrice = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            isPriceFieldFocused = true
+        }
+    }
+    
+    private func saveNameEdit() {
         let trimmedName = editName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmedName.isEmpty, let price = Double(editPrice), price > 0 {
+        if !trimmedName.isEmpty {
             item.name = trimmedName
+        }
+        isEditingName = false
+        isNameFieldFocused = false
+    }
+    
+    private func savePriceEdit() {
+        if let price = Double(editPrice), price > 0 {
             item.price = price
         }
-        isEditing = false
-    }
-    
-    private func cancelEditing() {
-        isEditing = false
+        isEditingPrice = false
+        isPriceFieldFocused = false
     }
 }
 
 // MARK: - OCR Empty State View
 struct OCREmptyStateView: View {
+    let identifiedTotal: Double?
+    let suggestedAmounts: [Double]
     let onManualEntry: () -> Void
     let onRetry: () -> Void
     
@@ -1016,20 +1460,70 @@ struct OCREmptyStateView: View {
         VStack(spacing: 24) {
             Spacer()
             
-            Image(systemName: "doc.text.magnifyingglass")
-                .font(.system(size: 64))
-                .foregroundColor(.gray)
-            
-            VStack(spacing: 12) {
-                Text("No Items Detected")
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                
-                Text("The OCR couldn't identify any items from the receipt. You can try taking another photo or add items manually.")
-                    .font(.body)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
+            // Show success if we found a total
+            if let total = identifiedTotal {
+                VStack(spacing: 16) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 64))
+                        .foregroundColor(.green)
+                    
+                    VStack(spacing: 8) {
+                        Text("Total Found: $\(total, specifier: "%.2f")")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.green)
+                        
+                        Text("Now add items manually to split the bill")
+                            .font(.body)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    
+                    // Show suggested amounts if available
+                    if !suggestedAmounts.isEmpty {
+                        VStack(spacing: 8) {
+                            Text("Suggested amounts found:")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundColor(.blue)
+                            
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: min(suggestedAmounts.count, 4)), spacing: 8) {
+                                ForEach(suggestedAmounts.prefix(8), id: \.self) { amount in
+                                    Text("$\(amount, specifier: "%.2f")")
+                                        .font(.caption)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(Color.blue.opacity(0.1))
+                                        .foregroundColor(.blue)
+                                        .cornerRadius(6)
+                                }
+                            }
+                        }
+                        .padding()
+                        .background(Color.blue.opacity(0.05))
+                        .cornerRadius(12)
+                        .padding(.horizontal)
+                    }
+                }
+            } else {
+                // Show failure state
+                VStack(spacing: 16) {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.system(size: 64))
+                        .foregroundColor(.gray)
+                    
+                    VStack(spacing: 12) {
+                        Text("No Items Detected")
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                        
+                        Text("The OCR couldn't identify any items from the receipt. You can try taking another photo or add items manually.")
+                            .font(.body)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                    }
+                }
             }
             
             VStack(spacing: 12) {
@@ -1094,6 +1588,9 @@ struct RawTextView: View {
 
 // MARK: - Manual Item Entry View
 struct ManualItemEntryView: View {
+    let suggestedAmounts: [Double]
+    let identifiedTotal: Double?
+    let currentTotal: Double
     let onAdd: (ReceiptItem) -> Void
     @Environment(\.dismiss) private var dismiss
     
@@ -1101,39 +1598,133 @@ struct ManualItemEntryView: View {
     @State private var itemPrice = ""
     @FocusState private var isNameFieldFocused: Bool
     
+    var remainingToAdd: Double? {
+        guard let total = identifiedTotal else { return nil }
+        return max(0, total - currentTotal)
+    }
+    
     var body: some View {
         NavigationView {
-            VStack(spacing: 24) {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Add New Item")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                    
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Item Name")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
+            VStack(spacing: 0) {
+                // Header with total reference
+                if let total = identifiedTotal {
+                    VStack(spacing: 8) {
+                        Text("Receipt Total: $\(total, specifier: "%.2f")")
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.green)
                         
-                        TextField("Enter item name", text: $itemName)
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                            .focused($isNameFieldFocused)
+                        Text("Add items that sum to this total")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        
+                        // Show quick calculation helper
+                        if let remainingAmount = remainingToAdd {
+                            if remainingAmount > 0 {
+                                Text("Remaining: $\(remainingAmount, specifier: "%.2f")")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.blue)
+                            }
+                        }
                     }
-                    
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Price")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
+                    .padding()
+                    .background(Color.green.opacity(0.1))
+                }
+                
+                ScrollView {
+                    VStack(spacing: 24) {
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text("Add New Item")
+                                .font(.title2)
+                                .fontWeight(.semibold)
+                            
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Item Name")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                
+                                TextField("Enter item name", text: $itemName)
+                                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                                    .focused($isNameFieldFocused)
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Price")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                
+                                HStack {
+                                    Text("$")
+                                        .font(.body)
+                                    TextField("0.00", text: $itemPrice)
+                                        .keyboardType(.decimalPad)
+                                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                                }
+                            }
+                        }
+                        .padding()
                         
-                        HStack {
-                            Text("$")
-                                .font(.body)
-                            TextField("0.00", text: $itemPrice)
-                                .keyboardType(.decimalPad)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                        // Quick amount selection
+                        if !suggestedAmounts.isEmpty {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("Quick Price Selection")
+                                    .font(.headline)
+                                    .fontWeight(.medium)
+                                    .padding(.horizontal)
+                                
+                                Text("Tap any amount to use as price:")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                    .padding(.horizontal)
+                                
+                                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 12) {
+                                    // Add remaining amount as first option if available
+                                    if let remaining = remainingToAdd, remaining > 0 && remaining <= 100 {
+                                        Button(action: {
+                                            itemPrice = String(format: "%.2f", remaining)
+                                        }) {
+                                            VStack(spacing: 4) {
+                                                Text("Remaining")
+                                                    .font(.caption)
+                                                    .foregroundColor(.green)
+                                                Text("$\(remaining, specifier: "%.2f")")
+                                                    .font(.body)
+                                                    .fontWeight(.semibold)
+                                                    .foregroundColor(.green)
+                                            }
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 12)
+                                            .background(Color.green.opacity(0.1))
+                                            .cornerRadius(8)
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 8)
+                                                    .stroke(Color.green.opacity(0.3), lineWidth: 1)
+                                            )
+                                        }
+                                    }
+                                    
+                                    ForEach(suggestedAmounts, id: \.self) { amount in
+                                        Button(action: {
+                                            itemPrice = String(format: "%.2f", amount)
+                                        }) {
+                                            Text("$\(amount, specifier: "%.2f")")
+                                                .font(.body)
+                                                .fontWeight(.medium)
+                                                .foregroundColor(.blue)
+                                                .frame(maxWidth: .infinity)
+                                                .padding(.vertical, 12)
+                                                .background(Color.blue.opacity(0.1))
+                                                .cornerRadius(8)
+                                        }
+                                    }
+                                }
+                                .padding(.horizontal)
+                            }
+                            .padding(.bottom)
                         }
                     }
                 }
-                .padding()
                 
                 Spacer()
                 
@@ -1176,5 +1767,442 @@ struct ManualItemEntryView: View {
             onAdd(newItem)
             dismiss()
         }
+    }
+}
+
+// MARK: - Confirmation Data Structure
+struct ConfirmedReceiptData {
+    let tax: Double
+    let tip: Double
+    let total: Double
+    let itemCount: Int
+}
+
+// MARK: - OCR Confirmation View
+struct OCRConfirmationView: View {
+    let result: OCRResult
+    let image: UIImage?
+    let onConfirm: (ConfirmedReceiptData) -> Void
+    let onRetry: () -> Void
+    
+    @State private var taxInput = ""
+    @State private var tipInput = ""
+    @State private var totalInput = ""
+    @State private var itemCountInput = ""
+    
+    @State private var detectedTax: Double = 0.0
+    @State private var detectedTip: Double = 0.0
+    @State private var detectedTotal: Double = 0.0
+    @State private var detectedItemCount: Int = 0
+    
+    @State private var isLoading = true
+    @State private var showingImagePopup = false
+    @FocusState private var focusedField: ConfirmationField?
+    
+    enum ConfirmationField {
+        case tax, tip, total, itemCount
+    }
+    
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 24) {
+                // Header with image preview
+                HStack {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Confirm Receipt Details")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                        
+                        Text("Please review and confirm the detected values")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    // Image preview thumbnail
+                    if let image = image {
+                        Button(action: {
+                            showingImagePopup = true
+                        }) {
+                            Image(uiImage: image)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 60, height: 60)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(Color.blue, lineWidth: 2)
+                                )
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                }
+                .padding(.horizontal)
+                
+                if isLoading {
+                    VStack(spacing: 16) {
+                        ProgressView()
+                            .scaleEffect(1.5)
+                        Text("Analyzing receipt data...")
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(height: 200)
+                } else {
+                    VStack(spacing: 20) {
+                        // Tax input
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Tax Amount")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                
+                                Spacer()
+                                
+                                if detectedTax > 0 {
+                                    Text("Detected: $\(detectedTax, specifier: "%.2f")")
+                                        .font(.caption)
+                                        .foregroundColor(.green)
+                                }
+                            }
+                            
+                            HStack {
+                                Text("$")
+                                    .font(.body)
+                                TextField("0.00", text: $taxInput)
+                                    .keyboardType(.numbersAndPunctuation)
+                                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                                    .focused($focusedField, equals: .tax)
+                                    .submitLabel(.done)
+                                    .onSubmit {
+                                        focusedField = nil
+                                    }
+                            }
+                        }
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(12)
+                        
+                        // Tip input
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Tip Amount")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                
+                                Spacer()
+                                
+                                if detectedTip > 0 {
+                                    Text("Detected: $\(detectedTip, specifier: "%.2f")")
+                                        .font(.caption)
+                                        .foregroundColor(.green)
+                                }
+                            }
+                            
+                            HStack {
+                                Text("$")
+                                    .font(.body)
+                                TextField("0.00", text: $tipInput)
+                                    .keyboardType(.numbersAndPunctuation)
+                                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                                    .focused($focusedField, equals: .tip)
+                                    .submitLabel(.done)
+                                    .onSubmit {
+                                        focusedField = nil
+                                    }
+                            }
+                        }
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(12)
+                        
+                        // Total input
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Total Amount")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                
+                                Text("*")
+                                    .foregroundColor(.red)
+                                
+                                Spacer()
+                                
+                                if detectedTotal > 0 {
+                                    Text("Detected: $\(detectedTotal, specifier: "%.2f")")
+                                        .font(.caption)
+                                        .foregroundColor(.green)
+                                }
+                            }
+                            
+                            HStack {
+                                Text("$")
+                                    .font(.body)
+                                TextField("0.00", text: $totalInput)
+                                    .keyboardType(.numbersAndPunctuation)
+                                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                                    .focused($focusedField, equals: .total)
+                                    .submitLabel(.done)
+                                    .onSubmit {
+                                        focusedField = nil
+                                    }
+                            }
+                        }
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(12)
+                        
+                        // Item count input
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Number of Items")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                
+                                Text("*")
+                                    .foregroundColor(.red)
+                                
+                                Spacer()
+                                
+                                if detectedItemCount > 0 {
+                                    Text("Detected: \(detectedItemCount) items")
+                                        .font(.caption)
+                                        .foregroundColor(.green)
+                                }
+                            }
+                            
+                            TextField("0", text: $itemCountInput)
+                                .keyboardType(.numbersAndPunctuation)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .focused($focusedField, equals: .itemCount)
+                                .submitLabel(.done)
+                                .onSubmit {
+                                    focusedField = nil
+                                }
+                        }
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(12)
+                        
+                        // Calculation summary
+                        CalculationSummaryView(
+                            tax: Double(taxInput) ?? 0,
+                            tip: Double(tipInput) ?? 0,
+                            total: Double(totalInput) ?? 0
+                        )
+                    }
+                    .padding(.horizontal)
+                }
+                
+                // Action buttons
+                VStack(spacing: 12) {
+                    Button(action: handleConfirm) {
+                        HStack {
+                            Image(systemName: "checkmark")
+                            Text("Confirm & Continue")
+                        }
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(canConfirm ? Color.blue : Color.gray)
+                        .cornerRadius(12)
+                    }
+                    .disabled(!canConfirm)
+                    
+                    Button(action: onRetry) {
+                        HStack {
+                            Image(systemName: "camera.rotate")
+                            Text("Try Another Photo")
+                        }
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.blue)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(12)
+                    }
+                }
+                .padding(.horizontal)
+            }
+            .padding(.top)
+        }
+        .task {
+            await analyzeReceiptData()
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    focusedField = nil
+                }
+                .foregroundColor(.blue)
+            }
+        }
+        .fullScreenCover(isPresented: $showingImagePopup) {
+            if let image = image {
+                ImagePopupView(image: image) {
+                    showingImagePopup = false
+                }
+            }
+        }
+    }
+    
+    private var canConfirm: Bool {
+        let total = Double(totalInput) ?? 0
+        let itemCount = Int(itemCountInput) ?? 0
+        return total > 0 && itemCount > 0
+    }
+    
+    private func analyzeReceiptData() async {
+        // Use OCR service to detect tax, tip, total, and item count
+        let ocrService = OCRService()
+        
+        let analysis = await ocrService.analyzeReceiptForConfirmation(text: result.rawText)
+        
+        await MainActor.run {
+            detectedTax = analysis.tax
+            detectedTip = analysis.tip
+            detectedTotal = analysis.total
+            detectedItemCount = analysis.itemCount
+            
+            // Pre-populate inputs with detected values
+            taxInput = detectedTax > 0 ? String(format: "%.2f", detectedTax) : ""
+            tipInput = detectedTip > 0 ? String(format: "%.2f", detectedTip) : ""
+            totalInput = detectedTotal > 0 ? String(format: "%.2f", detectedTotal) : ""
+            itemCountInput = detectedItemCount > 0 ? String(detectedItemCount) : ""
+            
+            isLoading = false
+        }
+    }
+    
+    private func handleConfirm() {
+        let confirmedData = ConfirmedReceiptData(
+            tax: Double(taxInput) ?? 0,
+            tip: Double(tipInput) ?? 0,
+            total: Double(totalInput) ?? 0,
+            itemCount: Int(itemCountInput) ?? 0
+        )
+        onConfirm(confirmedData)
+    }
+}
+
+// MARK: - Image Popup View
+struct ImagePopupView: View {
+    let image: UIImage
+    let onDismiss: () -> Void
+    
+    var body: some View {
+        ZStack {
+            // Black background
+            Color.black
+                .ignoresSafeArea()
+                .onTapGesture {
+                    onDismiss()
+                }
+            
+            VStack {
+                // Close button
+                HStack {
+                    Spacer()
+                    Button(action: onDismiss) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(.white)
+                            .background(Color.black.opacity(0.5))
+                            .clipShape(Circle())
+                    }
+                    .padding()
+                }
+                
+                Spacer()
+                
+                // Full screen image viewer
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .onTapGesture {
+                        onDismiss()
+                    }
+                
+                Spacer()
+                
+                // Instructions
+                Text("Tap outside image to close")
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.7))
+                    .padding(.bottom)
+            }
+        }
+    }
+}
+
+// MARK: - Calculation Summary View
+struct CalculationSummaryView: View {
+    let tax: Double
+    let tip: Double
+    let total: Double
+    
+    var actualItemsPrice: Double {
+        return max(0, total - tax - tip)
+    }
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            Text("Calculation Summary")
+                .font(.headline)
+                .fontWeight(.semibold)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            
+            VStack(spacing: 8) {
+                HStack {
+                    Text("Total Amount")
+                    Spacer()
+                    Text("$\(total, specifier: "%.2f")")
+                        .fontWeight(.medium)
+                }
+                
+                if tax > 0 {
+                    HStack {
+                        Text("Less: Tax")
+                        Spacer()
+                        Text("-$\(tax, specifier: "%.2f")")
+                            .foregroundColor(.red)
+                    }
+                }
+                
+                if tip > 0 {
+                    HStack {
+                        Text("Less: Tip")
+                        Spacer()
+                        Text("-$\(tip, specifier: "%.2f")")
+                            .foregroundColor(.red)
+                    }
+                }
+                
+                Divider()
+                
+                HStack {
+                    Text("Items Price Target")
+                        .fontWeight(.semibold)
+                    Spacer()
+                    Text("$\(actualItemsPrice, specifier: "%.2f")")
+                        .font(.title3)
+                        .fontWeight(.bold)
+                        .foregroundColor(.blue)
+                }
+            }
+            .font(.subheadline)
+            
+            if actualItemsPrice > 0 {
+                Text("The app will find item combinations that sum to $\(actualItemsPrice, specifier: "%.2f")")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding()
+        .background(Color.blue.opacity(0.05))
+        .cornerRadius(12)
     }
 }

@@ -1,50 +1,135 @@
 import SwiftUI
+import Contacts
+import ContactsUI
+
+// MARK: - Contacts Permission Manager
+class ContactsPermissionManager: ObservableObject {
+    @Published var contactsPermissionStatus: CNAuthorizationStatus = .notDetermined
+    @Published var showPermissionAlert = false
+    @Published var permissionMessage = ""
+    
+    init() {
+        checkContactsPermission()
+    }
+    
+    func checkContactsPermission() {
+        contactsPermissionStatus = CNContactStore.authorizationStatus(for: .contacts)
+    }
+    
+    func requestContactsPermission() {
+        let store = CNContactStore()
+        store.requestAccess(for: .contacts) { [weak self] granted, error in
+            DispatchQueue.main.async {
+                self?.contactsPermissionStatus = granted ? .authorized : .denied
+                if !granted {
+                    self?.showContactsPermissionDeniedAlert()
+                }
+            }
+        }
+    }
+    
+    private func showContactsPermissionDeniedAlert() {
+        permissionMessage = "Contacts access is required to add participants from your contact list. Please enable contacts access in Settings > Privacy & Security > Contacts > SplitSmart."
+        showPermissionAlert = true
+    }
+    
+    var canAccessContacts: Bool {
+        switch contactsPermissionStatus {
+        case .authorized:
+            return true
+        case .notDetermined:
+            return true
+        default:
+            return false
+        }
+    }
+}
+
+// MARK: - Contact Picker Wrapper
+struct ContactPicker: UIViewControllerRepresentable {
+    @Binding var isPresented: Bool
+    let onContactSelected: ([CNContact]) -> Void
+    
+    func makeUIViewController(context: Context) -> CNContactPickerViewController {
+        let picker = CNContactPickerViewController()
+        picker.delegate = context.coordinator
+        
+        // Configure what properties we want to fetch
+        picker.displayedPropertyKeys = [
+            CNContactGivenNameKey,
+            CNContactFamilyNameKey,
+            CNContactPhoneNumbersKey,
+            CNContactEmailAddressesKey
+        ]
+        
+        // Allow multiple selection
+        picker.predicateForEnablingContact = NSPredicate(value: true)
+        picker.predicateForSelectionOfContact = NSPredicate(value: true)
+        
+        return picker
+    }
+    
+    func updateUIViewController(_ uiViewController: CNContactPickerViewController, context: Context) {}
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, CNContactPickerDelegate {
+        let parent: ContactPicker
+        
+        init(_ parent: ContactPicker) {
+            self.parent = parent
+        }
+        
+        // Handle single contact selection
+        func contactPicker(_ picker: CNContactPickerViewController, didSelect contact: CNContact) {
+            parent.onContactSelected([contact])
+            parent.isPresented = false
+        }
+        
+        // Handle multiple contact selection
+        func contactPicker(_ picker: CNContactPickerViewController, didSelect contacts: [CNContact]) {
+            parent.onContactSelected(contacts)
+            parent.isPresented = false
+        }
+        
+        // Handle cancellation
+        func contactPickerDidCancel(_ picker: CNContactPickerViewController) {
+            parent.isPresented = false
+        }
+    }
+}
+
+// MARK: - Contact Helper Extensions
+extension CNContact {
+    var displayName: String {
+        let formatter = CNContactFormatter()
+        formatter.style = .fullName
+        return formatter.string(from: self) ?? "Unknown Contact"
+    }
+    
+    var primaryPhoneNumber: String? {
+        return phoneNumbers.first?.value.stringValue
+    }
+    
+    var primaryEmail: String? {
+        return emailAddresses.first?.value as String?
+    }
+}
 
 // MARK: - UI Components matching React designs exactly
 
 struct UIHomeScreen: View {
+    let session: BillSplitSession
     let onCreateNew: () -> Void
     
-    // Simulate multiple transactions per person to show aggregated amounts
-    private let allTransactions = [
-        UITransaction(personName: "Sarah Chen", amount: 15.75, description: "Dinner at Olive Garden"),
-        UITransaction(personName: "Sarah Chen", amount: 12.38, description: "Movie tickets"),
-        UITransaction(personName: "Mike Johnson", amount: 25.00, description: "Grocery shopping"),
-        UITransaction(personName: "Mike Johnson", amount: 17.50, description: "Gas split"),
-        UITransaction(personName: "David Kim", amount: 8.25, description: "Coffee and Snacks"),
-        UITransaction(personName: "David Kim", amount: 7.50, description: "Lunch yesterday")
-    ]
-    
-    // People who owe me (I paid, they owe me back) - aggregated amounts
-    private var peopleWhoOweMe: [UIPersonDebt] {
-        let oweMeNames = ["Sarah Chen", "Mike Johnson"]
-        return oweMeNames.map { name in
-            let total = allTransactions
-                .filter { $0.personName == name }
-                .reduce(0) { $0 + $1.amount }
-            let color: Color = name == "Sarah Chen" ? .green : .purple
-            return UIPersonDebt(name: name, total: total, color: color)
-        }
-    }
-    
-    // People I owe (they paid, I owe them back) - aggregated amounts
-    private var peopleIOwe: [UIPersonDebt] {
-        let iOweNames = ["David Kim"]
-        return iOweNames.map { name in
-            let total = allTransactions
-                .filter { $0.personName == name }
-                .reduce(0) { $0 + $1.amount }
-            return UIPersonDebt(name: name, total: total, color: .yellow)
-        }
-    }
-    
-    var totalOwed: Double {
-        peopleWhoOweMe.reduce(0) { $0 + $1.total }
-    }
-    
-    var totalOwe: Double {
-        peopleIOwe.reduce(0) { $0 + $1.total }
-    }
+    // For now, show empty state until we have real transaction history
+    // TODO: Replace with actual transaction history from Firebase/persistence
+    private var totalOwed: Double { 0.0 }
+    private var totalOwe: Double { 0.0 }
+    private var peopleWhoOweMe: [UIPersonDebt] { [] }
+    private var peopleIOwe: [UIPersonDebt] { [] }
     
     var body: some View {
         ScrollView {
@@ -235,35 +320,63 @@ struct UIHomeScreen: View {
 // MARK: - Assign Screen
 
 struct UIAssignScreen: View {
+    @ObservedObject var session: BillSplitSession
     let onContinue: () -> Void
-    
-    @State private var participants: [UIParticipant] = [
-        UIParticipant(id: 1, name: "You", color: .blue),
-        UIParticipant(id: 2, name: "Sarah", color: .green)
-    ]
-    
-    @State private var items: [UIItem] = [
-        UIItem(id: 1, name: "Pasta Carbonara", price: 16.95, assignedTo: nil),
-        UIItem(id: 2, name: "Caesar Salad", price: 12.50, assignedTo: nil),
-        UIItem(id: 3, name: "Garlic Bread", price: 5.95, assignedTo: nil),
-        UIItem(id: 4, name: "Tiramisu", price: 8.75, assignedTo: nil),
-        UIItem(id: 5, name: "Tax", price: 3.53, assignedTo: nil),
-        UIItem(id: 6, name: "Tip (18%)", price: 7.95, assignedTo: nil)
-    ]
     
     @State private var newParticipantName = ""
     @State private var showAddParticipant = false
+    @State private var showContactPicker = false
+    @State private var showAddParticipantOptions = false
+    @State private var showingImagePopup = false
+    @StateObject private var contactsPermissionManager = ContactsPermissionManager()
     
-    let colors: [Color] = [.blue, .green, .purple, .pink, .yellow, .red]
+    // Check if totals match within reasonable tolerance
+    private var totalsMatch: Bool {
+        guard let identifiedTotal = session.identifiedTotal else { return true }
+        return abs(session.totalAmount - identifiedTotal) <= 0.01
+    }
+    
+    // Check if Continue button should be enabled
+    private var canContinue: Bool {
+        return !session.assignedItems.isEmpty && totalsMatch
+    }
     
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-                Text("Assign Items")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal)
+                // Header with image preview
+                HStack {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Assign Items")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                        
+                        Text("Drag items to assign them to participants")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    // Image preview thumbnail
+                    if let image = session.capturedReceiptImage {
+                        Button(action: {
+                            showingImagePopup = true
+                        }) {
+                            Image(uiImage: image)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 60, height: 60)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(Color.blue, lineWidth: 2)
+                                )
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                }
+                .padding(.horizontal)
                 
                 // Participants Section
                 VStack(alignment: .leading, spacing: 12) {
@@ -275,121 +388,609 @@ struct UIAssignScreen: View {
                         Spacer()
                         
                         Button(action: {
-                            showAddParticipant = true
+                            showAddParticipantOptions = true
                         }) {
-                            HStack(spacing: 4) {
+                            HStack(spacing: 6) {
                                 Image(systemName: "person.badge.plus")
-                                    .font(.caption)
-                                Text("Add")
-                                    .font(.caption)
+                                    .font(.body)
+                                Text("Add Participant")
+                                    .font(.body)
+                                    .fontWeight(.medium)
                             }
-                            .foregroundColor(.blue)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(Color.blue)
+                            .cornerRadius(10)
                         }
                     }
                     .padding(.horizontal)
                     
-                    if showAddParticipant {
-                        HStack {
-                            TextField("Enter name", text: $newParticipantName)
-                                .textFieldStyle(.roundedBorder)
-                                .font(.caption)
-                            
-                            Button("Add") {
-                                handleAddParticipant()
+                    // Add Participant Options
+                    if showAddParticipantOptions {
+                        VStack(spacing: 12) {
+                            // Option 1: From Contacts
+                            Button(action: handleChooseFromContacts) {
+                                HStack {
+                                    Circle()
+                                        .fill(Color.blue.opacity(0.1))
+                                        .frame(width: 40, height: 40)
+                                        .overlay(
+                                            Image(systemName: "person.crop.circle")
+                                                .font(.title3)
+                                                .foregroundColor(.blue)
+                                        )
+                                    
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Choose from Contacts")
+                                            .font(.body)
+                                            .fontWeight(.medium)
+                                            .foregroundColor(.primary)
+                                        Text("Select from your contact list")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    Image(systemName: "chevron.right")
+                                        .font(.body)
+                                        .foregroundColor(.secondary)
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
+                                .background(Color(.systemBackground))
+                                .cornerRadius(12)
+                                .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
                             }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(Color.blue)
-                            .foregroundColor(.white)
-                            .cornerRadius(6)
-                            .font(.caption)
+                            
+                            // Option 2: Manual Entry
+                            Button(action: {
+                                showAddParticipantOptions = false
+                                showAddParticipant = true
+                            }) {
+                                HStack {
+                                    Circle()
+                                        .fill(Color.green.opacity(0.1))
+                                        .frame(width: 40, height: 40)
+                                        .overlay(
+                                            Image(systemName: "pencil")
+                                                .font(.title3)
+                                                .foregroundColor(.green)
+                                        )
+                                    
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Enter Manually")
+                                            .font(.body)
+                                            .fontWeight(.medium)
+                                            .foregroundColor(.primary)
+                                        Text("Type the participant's name")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    Image(systemName: "chevron.right")
+                                        .font(.body)
+                                        .foregroundColor(.secondary)
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
+                                .background(Color(.systemBackground))
+                                .cornerRadius(12)
+                                .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
+                            }
                         }
                         .padding(.horizontal)
                     }
                     
-                    // Participants chips
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: 8) {
-                        ForEach(participants) { participant in
-                            HStack(spacing: 6) {
-                                Circle()
-                                    .fill(participant.color)
-                                    .frame(width: 24, height: 24)
-                                    .overlay(
-                                        Image(systemName: "person.fill")
-                                            .foregroundColor(.white)
-                                            .font(.caption2)
-                                    )
-                                Text(participant.name)
-                                    .font(.caption)
-                                Spacer()
+                    if showAddParticipant {
+                        VStack(spacing: 12) {
+                            TextField("Enter participant name", text: $newParticipantName)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.body)
+                                .padding(.horizontal, 16)
+                                .onSubmit {
+                                    handleAddParticipant()
+                                }
+                            
+                            HStack(spacing: 12) {
+                                Button("Cancel") {
+                                    showAddParticipant = false
+                                    newParticipantName = ""
+                                }
+                                .font(.body)
+                                .fontWeight(.medium)
+                                .foregroundColor(.secondary)
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 10)
+                                .background(Color(.systemGray5))
+                                .cornerRadius(10)
+                                
+                                Button("Add Participant") {
+                                    handleAddParticipant()
+                                }
+                                .font(.body)
+                                .fontWeight(.medium)
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 10)
+                                .background(Color.blue)
+                                .cornerRadius(10)
+                                .disabled(newParticipantName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color(.systemBackground))
-                            .cornerRadius(16)
-                            .shadow(color: .black.opacity(0.1), radius: 1, x: 0, y: 1)
+                            .padding(.horizontal, 16)
+                        }
+                        .padding(.vertical, 12)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(12)
+                        .padding(.horizontal)
+                    }
+                    
+                    // Participants chips with delete functionality
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: 12) {
+                        ForEach(session.participants) { participant in
+                            ParticipantChip(
+                                participant: participant,
+                                canDelete: participant.name != "You", // Can't delete yourself
+                                onDelete: {
+                                    session.removeParticipant(participant)
+                                }
+                            )
                         }
                     }
                     .padding(.horizontal)
                 }
                 
-                // Items Section
+                // Regex Approach Section
                 VStack(alignment: .leading, spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Receipt Items")
+                        Text("Receipt Items (based on Regex)")
                             .font(.body)
                             .fontWeight(.medium)
-                        Text("Drag items to assign them or tap to select")
+                        Text("Mathematical approach using regex patterns")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
                     .padding(.horizontal)
                     
-                    ForEach($items) { $item in
-                        UIItemAssignCard(item: $item, participants: participants)
+                    if session.regexDetectedItems.isEmpty {
+                        VStack(spacing: 12) {
+                            ProgressView()
+                                .scaleEffect(1.2)
+                            Text("Processing with regex approach...")
+                                .font(.body)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.vertical, 20)
+                        .padding(.horizontal)
+                    } else {
+                        ForEach(convertReceiptItemsToUIItems(session.regexDetectedItems).indices, id: \.self) { index in
+                            let uiItems = convertReceiptItemsToUIItems(session.regexDetectedItems)
+                            EditableRegexItemCard(
+                                item: Binding(
+                                    get: { uiItems[index] },
+                                    set: { newValue in
+                                        // Update the session's regex items when edited
+                                        session.regexDetectedItems[index] = ReceiptItem(
+                                            name: newValue.name,
+                                            price: newValue.price,
+                                            confidence: newValue.confidence,
+                                            originalDetectedName: newValue.originalDetectedName,
+                                            originalDetectedPrice: newValue.originalDetectedPrice
+                                        )
+                                    }
+                                ),
+                                participants: session.participants
+                            )
                             .padding(.horizontal)
+                        }
                     }
                 }
                 
-                Button(action: {
-                    splitSharedItems()
-                    onContinue()
-                }) {
-                    HStack {
-                        Text("Continue to Summary")
-                        Image(systemName: "arrow.right")
+                // Regex Totals Section
+                if !session.regexDetectedItems.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Regex Totals")
+                            .font(.body)
+                            .fontWeight(.medium)
+                            .padding(.horizontal)
+                        
+                        VStack(spacing: 8) {
+                            HStack {
+                                Text("Identified Total")
+                                    .font(.body)
+                                Spacer()
+                                Text(String(format: "$%.2f", session.confirmedTotal))
+                                    .font(.body)
+                                    .fontWeight(.bold)
+                            }
+                            
+                            HStack {
+                                Text("Calculated Total")
+                                    .font(.body)
+                                Spacer()
+                                let regexTotal = session.regexDetectedItems.reduce(0) { $0 + $1.price }
+                                Text(String(format: "$%.2f", regexTotal))
+                                    .font(.body)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(abs(regexTotal - session.confirmedTotal) > 0.01 ? .red : .primary)
+                            }
+                        }
+                        .padding()
+                        .background(Color.gray.opacity(0.1))
+                        .cornerRadius(12)
+                        .padding(.horizontal)
                     }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.blue)
-                    .cornerRadius(12)
+                    
+                    VStack(spacing: 8) {
+                        let regexTotal = session.regexDetectedItems.reduce(0) { $0 + $1.price }
+                        let regexTotalsMatch = abs(regexTotal - session.confirmedTotal) <= 0.01
+                        
+                        Button(action: {
+                            // Set regex items as the active assignment
+                            session.assignedItems = session.regexDetectedItems.enumerated().map { index, receiptItem in
+                                UIItem(
+                                    id: index + 1,
+                                    name: receiptItem.name,
+                                    price: receiptItem.price,
+                                    assignedTo: nil,
+                                    confidence: receiptItem.confidence,
+                                    originalDetectedName: receiptItem.originalDetectedName,
+                                    originalDetectedPrice: receiptItem.originalDetectedPrice
+                                )
+                            }
+                            splitSharedItems()
+                            onContinue()
+                        }) {
+                            HStack {
+                                Text("Continue with Regex Results")
+                                Image(systemName: "arrow.right")
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(regexTotalsMatch ? Color.blue : Color.gray)
+                            .cornerRadius(12)
+                        }
+                        .disabled(!regexTotalsMatch)
+                        .padding(.horizontal)
+                        
+                        if !regexTotalsMatch {
+                            HStack {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.red)
+                                Text("Totals do not match.")
+                                    .font(.caption)
+                                    .foregroundColor(.red)
+                            }
+                            .padding(.horizontal)
+                        }
+                    }
                 }
-                .padding(.horizontal)
+                
+                // LLM Approach Section
+                VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Receipt Items (based on Apple Intelligence)")
+                            .font(.body)
+                            .fontWeight(.medium)
+                        Text("AI-powered approach using Apple's Natural Language framework")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal)
+                    
+                    if session.llmDetectedItems.isEmpty {
+                        VStack(spacing: 12) {
+                            ProgressView()
+                                .scaleEffect(1.2)
+                            Text("Processing with Apple Intelligence...")
+                                .font(.body)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.vertical, 20)
+                        .padding(.horizontal)
+                    } else {
+                        ForEach(session.llmDetectedItems.indices, id: \.self) { index in
+                            let item = session.llmDetectedItems[index]
+                            LLMItemCard(
+                                item: item,
+                                participants: session.participants
+                            )
+                            .padding(.horizontal)
+                        }
+                    }
+                }
+                
+                // LLM Totals Section
+                if !session.llmDetectedItems.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Apple Intelligence Totals")
+                            .font(.body)
+                            .fontWeight(.medium)
+                            .padding(.horizontal)
+                        
+                        VStack(spacing: 8) {
+                            HStack {
+                                Text("Identified Total")
+                                    .font(.body)
+                                Spacer()
+                                Text(String(format: "$%.2f", session.confirmedTotal))
+                                    .font(.body)
+                                    .fontWeight(.bold)
+                            }
+                            
+                            HStack {
+                                Text("Calculated Total")
+                                    .font(.body)
+                                Spacer()
+                                let llmTotal = session.llmDetectedItems.reduce(0) { $0 + $1.price }
+                                Text(String(format: "$%.2f", llmTotal))
+                                    .font(.body)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(abs(llmTotal - session.confirmedTotal) > 0.01 ? .red : .primary)
+                            }
+                        }
+                        .padding()
+                        .background(Color.gray.opacity(0.1))
+                        .cornerRadius(12)
+                        .padding(.horizontal)
+                    }
+                    
+                    VStack(spacing: 8) {
+                        let llmTotal = session.llmDetectedItems.reduce(0) { $0 + $1.price }
+                        let llmTotalsMatch = abs(llmTotal - session.confirmedTotal) <= 0.01
+                        
+                        Button(action: {
+                            // Set LLM items as the active assignment
+                            session.assignedItems = session.llmDetectedItems.enumerated().map { index, receiptItem in
+                                UIItem(
+                                    id: index + 1,
+                                    name: receiptItem.name,
+                                    price: receiptItem.price,
+                                    assignedTo: nil,
+                                    confidence: receiptItem.confidence,
+                                    originalDetectedName: receiptItem.originalDetectedName,
+                                    originalDetectedPrice: receiptItem.originalDetectedPrice
+                                )
+                            }
+                            splitSharedItems()
+                            onContinue()
+                        }) {
+                            HStack {
+                                Text("Continue with Apple Intelligence Results")
+                                Image(systemName: "arrow.right")
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(llmTotalsMatch ? Color.blue : Color.gray)
+                            .cornerRadius(12)
+                        }
+                        .disabled(!llmTotalsMatch)
+                        .padding(.horizontal)
+                        
+                        if !llmTotalsMatch {
+                            HStack {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.red)
+                                Text("Totals do not match.")
+                                    .font(.caption)
+                                    .foregroundColor(.red)
+                            }
+                            .padding(.horizontal)
+                        }
+                    }
+                }
             }
             .padding(.top)
         }
+        .onAppear {
+            // Always trigger dual processing when screen appears to ensure fresh results
+            // Clear any existing results first to prevent showing stale data
+            Task {
+                await MainActor.run {
+                    session.regexDetectedItems.removeAll()
+                    session.llmDetectedItems.removeAll()
+                }
+                
+                // Only process if we have the necessary data from the current session
+                if session.confirmedTotal > 0 && !session.rawReceiptText.isEmpty && session.expectedItemCount > 0 {
+                    print("🔄 UIAssignScreen: Triggering dual processing for new bill")
+                    print("   - confirmedTotal: \(session.confirmedTotal)")
+                    print("   - expectedItemCount: \(session.expectedItemCount)")
+                    print("   - rawReceiptText length: \(session.rawReceiptText.count)")
+                    
+                    await session.processWithBothApproaches(
+                        confirmedTax: session.confirmedTax,
+                        confirmedTip: session.confirmedTip,
+                        confirmedTotal: session.confirmedTotal,
+                        expectedItemCount: session.expectedItemCount
+                    )
+                } else {
+                    print("❌ UIAssignScreen: Not processing - missing required data")
+                    print("   - confirmedTotal: \(session.confirmedTotal)")
+                    print("   - expectedItemCount: \(session.expectedItemCount)")
+                    print("   - rawReceiptText isEmpty: \(session.rawReceiptText.isEmpty)")
+                }
+            }
+        }
+        .onTapGesture {
+            hideKeyboard()
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    hideKeyboard()
+                }
+            }
+        }
+        .sheet(isPresented: $showContactPicker) {
+            ContactPicker(isPresented: $showContactPicker) { contacts in
+                handleContactsSelected(contacts)
+            }
+        }
+        .fullScreenCover(isPresented: $showingImagePopup) {
+            if let image = session.capturedReceiptImage {
+                ImagePopupView(image: image) {
+                    showingImagePopup = false
+                }
+            }
+        }
+        .alert("Permission Required", isPresented: $contactsPermissionManager.showPermissionAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Open Settings") {
+                if let settingsUrl = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(settingsUrl)
+                }
+            }
+        } message: {
+            Text(contactsPermissionManager.permissionMessage)
+        }
+    }
+    
+    private func hideKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+    
+    private func handleChooseFromContacts() {
+        // Check contacts permission before proceeding
+        switch contactsPermissionManager.contactsPermissionStatus {
+        case .authorized:
+            showAddParticipantOptions = false
+            showContactPicker = true
+        case .notDetermined:
+            contactsPermissionManager.requestContactsPermission()
+            // Wait for permission result
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                if contactsPermissionManager.contactsPermissionStatus == .authorized {
+                    showAddParticipantOptions = false
+                    showContactPicker = true
+                }
+            }
+        case .denied, .restricted, .limited:
+            contactsPermissionManager.showPermissionAlert = true
+        @unknown default:
+            contactsPermissionManager.showPermissionAlert = true
+        }
+    }
+    
+    // Helper function to convert ReceiptItems to UIItems
+    private func convertReceiptItemsToUIItems(_ receiptItems: [ReceiptItem]) -> [UIItem] {
+        return receiptItems.enumerated().map { index, receiptItem in
+            UIItem(
+                id: index + 1,
+                name: receiptItem.name,
+                price: receiptItem.price,
+                assignedTo: nil,
+                confidence: receiptItem.confidence,
+                originalDetectedName: receiptItem.originalDetectedName,
+                originalDetectedPrice: receiptItem.originalDetectedPrice
+            )
+        }
+    }
+    
+    private func handleContactsSelected(_ contacts: [CNContact]) {
+        print("📱 Selected \(contacts.count) contacts from picker")
+        
+        for contact in contacts {
+            let contactName = contact.displayName
+            
+            // Use session to add participant
+            if let _ = session.addParticipant(name: contactName) {
+                print("✅ Added participant: \(contactName)")
+            } else {
+                print("⚠️ Participant \(contactName) already exists, skipping")
+            }
+        }
+        
+        showContactPicker = false
+        showAddParticipantOptions = false
+    }
+    
+    private func deleteParticipant(_ participant: UIParticipant) {
+        // Use session to remove participant (handles item unassignment automatically)
+        session.removeParticipant(participant)
     }
     
     private func handleAddParticipant() {
-        if !newParticipantName.trimmingCharacters(in: .whitespaces).isEmpty {
-            let newId = (participants.map { $0.id }.max() ?? 0) + 1
-            let colorIndex = participants.count % colors.count
-            participants.append(UIParticipant(
-                id: newId,
-                name: newParticipantName.trimmingCharacters(in: .whitespaces),
-                color: colors[colorIndex]
-            ))
+        let trimmedName = newParticipantName.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        if !trimmedName.isEmpty {
+            if let _ = session.addParticipant(name: trimmedName) {
+                print("✅ Added participant manually: \(trimmedName)")
+            } else {
+                print("⚠️ Participant \(trimmedName) already exists")
+            }
+            
             newParticipantName = ""
             showAddParticipant = false
+            showAddParticipantOptions = false
         }
     }
     
     private func splitSharedItems() {
-        for index in items.indices {
-            if items[index].assignedTo == nil && (items[index].name == "Tax" || items[index].name == "Tip (18%)") {
-                items[index].name += " (Split equally)"
+        for index in session.assignedItems.indices {
+            if session.assignedItems[index].assignedTo == nil && 
+               (session.assignedItems[index].name.lowercased().contains("tax") || 
+                session.assignedItems[index].name.lowercased().contains("tip")) {
+                session.assignedItems[index].name += " (Split equally)"
             }
+        }
+    }
+}
+
+// MARK: - Participant Chip Component
+struct ParticipantChip: View {
+    let participant: UIParticipant
+    let canDelete: Bool
+    let onDelete: () -> Void
+    
+    @State private var showDeleteConfirmation = false
+    
+    var body: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(participant.color)
+                .frame(width: 32, height: 32)
+                .overlay(
+                    Image(systemName: "person.fill")
+                        .foregroundColor(.white)
+                        .font(.caption)
+                )
+            
+            Text(participant.name)
+                .font(.body)
+                .fontWeight(.medium)
+                .lineLimit(1)
+            
+            Spacer()
+            
+            if canDelete {
+                Button(action: {
+                    showDeleteConfirmation = true
+                }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.red.opacity(0.8))
+                        .font(.title3)
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(.systemBackground))
+        .cornerRadius(20)
+        .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
+        .alert("Remove Participant", isPresented: $showDeleteConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Remove", role: .destructive) {
+                onDelete()
+            }
+        } message: {
+            Text("Are you sure you want to remove \(participant.name) from this bill split? Any items assigned to them will become unassigned.")
         }
     }
 }
@@ -404,18 +1005,87 @@ struct UIItemAssignCard: View {
         participants.first { $0.id == item.assignedTo }
     }
     
+    // Confidence display properties
+    var confidenceColor: Color {
+        switch item.confidence {
+        case .high: return .green
+        case .medium: return .orange
+        case .low: return .red
+        case .placeholder: return .gray
+        }
+    }
+    
+    var confidenceText: String {
+        switch item.confidence {
+        case .high: 
+            if let originalPrice = item.originalDetectedPrice {
+                return "Detected: $\(String(format: "%.2f", originalPrice))"
+            } else {
+                return "Detected: $\(String(format: "%.2f", item.price))"
+            }
+        case .medium: 
+            if let originalPrice = item.originalDetectedPrice {
+                return "Detected: $\(String(format: "%.2f", originalPrice))"
+            } else {
+                return "Detected: $\(String(format: "%.2f", item.price))"
+            }
+        case .low: return "Low confidence"
+        case .placeholder: return "Please verify"
+        }
+    }
+    
+    var confidenceIcon: String {
+        switch item.confidence {
+        case .high: return "checkmark.circle.fill"
+        case .medium: return "exclamationmark.triangle.fill"
+        case .low: return "exclamationmark.triangle.fill"
+        case .placeholder: return "questionmark.circle.fill"
+        }
+    }
+    
+    @FocusState private var isNameFieldFocused: Bool
+    @FocusState private var isPriceFieldFocused: Bool
+    
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(item.name)
+            HStack(alignment: .center, spacing: 12) {
+                // Editable Item Name
+                VStack(alignment: .leading, spacing: 4) {
+                    TextField("Item Name", text: $item.name)
                         .fontWeight(.medium)
-                    Text("$\(item.price, specifier: "%.2f")")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .focused($isNameFieldFocused)
+                        .onSubmit {
+                            isNameFieldFocused = false
+                        }
+                    
+                    // Confidence indicator
+                    HStack(spacing: 4) {
+                        Image(systemName: confidenceIcon)
+                            .font(.caption2)
+                            .foregroundColor(confidenceColor)
+                        
+                        Text(confidenceText)
+                            .font(.caption2)
+                            .foregroundColor(confidenceColor)
+                    }
                 }
                 
                 Spacer()
+                
+                // Editable Price
+                HStack(spacing: 4) {
+                    Text("$")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    TextField("Price", value: $item.price, format: .number)
+                        .keyboardType(.numbersAndPunctuation)
+                        .fixedSize()
+                        .focused($isPriceFieldFocused)
+                        .onSubmit {
+                            isPriceFieldFocused = false
+                        }
+                }
                 
                 if let assigned = assignedParticipant {
                     HStack(spacing: 4) {
@@ -465,36 +1135,303 @@ struct UIItemAssignCard: View {
     }
 }
 
+// MARK: - Regex Item Card (Read-only display)
+struct RegexItemCard: View {
+    let item: ReceiptItem
+    let participants: [UIParticipant]
+    
+    // Confidence display properties
+    var confidenceColor: Color {
+        switch item.confidence {
+        case .high: return .green
+        case .medium: return .orange
+        case .low: return .red
+        case .placeholder: return .gray
+        }
+    }
+    
+    var confidenceText: String {
+        switch item.confidence {
+        case .high: 
+            if let originalPrice = item.originalDetectedPrice {
+                return "Detected: $\(String(format: "%.2f", originalPrice))"
+            } else {
+                return "Detected: $\(String(format: "%.2f", item.price))"
+            }
+        case .medium: 
+            if let originalPrice = item.originalDetectedPrice {
+                return "Detected: $\(String(format: "%.2f", originalPrice))"
+            } else {
+                return "Detected: $\(String(format: "%.2f", item.price))"
+            }
+        case .low: return "Low confidence"
+        case .placeholder: return "Please verify"
+        }
+    }
+    
+    var confidenceIcon: String {
+        switch item.confidence {
+        case .high: return "checkmark.circle.fill"
+        case .medium: return "exclamationmark.triangle.fill"
+        case .low: return "exclamationmark.triangle.fill"
+        case .placeholder: return "questionmark.circle.fill"
+        }
+    }
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .center, spacing: 12) {
+                // Item Name (Read-only)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.name)
+                        .fontWeight(.medium)
+                        .foregroundColor(.primary)
+                    
+                    // Confidence indicator
+                    HStack(spacing: 4) {
+                        Image(systemName: confidenceIcon)
+                            .font(.caption2)
+                            .foregroundColor(confidenceColor)
+                        
+                        Text(confidenceText)
+                            .font(.caption2)
+                            .foregroundColor(confidenceColor)
+                    }
+                }
+                
+                Spacer()
+                
+                // Price (Read-only)
+                Text("$\(String(format: "%.2f", item.price))")
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                
+                // Regex badge
+                Text("REGEX")
+                    .font(.caption2)
+                    .fontWeight(.bold)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.orange.opacity(0.2))
+                    .foregroundColor(.orange)
+                    .cornerRadius(4)
+            }
+            .padding()
+        }
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+        )
+    }
+}
+
+// MARK: - Editable Regex Item Card
+struct EditableRegexItemCard: View {
+    @Binding var item: UIItem
+    let participants: [UIParticipant]
+    
+    // Confidence display properties
+    var confidenceColor: Color {
+        switch item.confidence {
+        case .high: return .green
+        case .medium: return .orange
+        case .low: return .red
+        case .placeholder: return .gray
+        }
+    }
+    
+    var confidenceText: String {
+        switch item.confidence {
+        case .high: 
+            if let originalPrice = item.originalDetectedPrice {
+                return "Detected: $\(String(format: "%.2f", originalPrice))"
+            } else {
+                return "Detected: $\(String(format: "%.2f", item.price))"
+            }
+        case .medium: 
+            if let originalPrice = item.originalDetectedPrice {
+                return "Detected: $\(String(format: "%.2f", originalPrice))"
+            } else {
+                return "Detected: $\(String(format: "%.2f", item.price))"
+            }
+        case .low: return "Low confidence"
+        case .placeholder: return "Please verify"
+        }
+    }
+    
+    var confidenceIcon: String {
+        switch item.confidence {
+        case .high: return "checkmark.circle.fill"
+        case .medium: return "exclamationmark.triangle.fill"
+        case .low: return "exclamationmark.triangle.fill"
+        case .placeholder: return "questionmark.circle.fill"
+        }
+    }
+    
+    @FocusState private var isNameFieldFocused: Bool
+    @FocusState private var isPriceFieldFocused: Bool
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .center, spacing: 12) {
+                // Editable Item Name
+                VStack(alignment: .leading, spacing: 4) {
+                    TextField("Item Name", text: $item.name)
+                        .fontWeight(.medium)
+                        .focused($isNameFieldFocused)
+                        .onSubmit {
+                            isNameFieldFocused = false
+                        }
+                    
+                    // Confidence indicator
+                    HStack(spacing: 4) {
+                        Image(systemName: confidenceIcon)
+                            .font(.caption2)
+                            .foregroundColor(confidenceColor)
+                        
+                        Text(confidenceText)
+                            .font(.caption2)
+                            .foregroundColor(confidenceColor)
+                    }
+                }
+                
+                Spacer()
+                
+                // Editable Price
+                HStack(spacing: 4) {
+                    Text("$")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    TextField("Price", value: $item.price, format: .number)
+                        .keyboardType(.decimalPad)
+                        .fixedSize()
+                        .focused($isPriceFieldFocused)
+                        .onSubmit {
+                            isPriceFieldFocused = false
+                        }
+                }
+                
+                // Regex badge
+                Text("REGEX")
+                    .font(.caption2)
+                    .fontWeight(.bold)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.orange.opacity(0.2))
+                    .foregroundColor(.orange)
+                    .cornerRadius(4)
+            }
+            .padding()
+        }
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+        )
+    }
+}
+
+// MARK: - Apple Intelligence Item Card (Read-only display)
+struct LLMItemCard: View {
+    let item: ReceiptItem
+    let participants: [UIParticipant]
+    
+    // Confidence display properties
+    var confidenceColor: Color {
+        switch item.confidence {
+        case .high: return .green
+        case .medium: return .orange
+        case .low: return .red
+        case .placeholder: return .gray
+        }
+    }
+    
+    var confidenceText: String {
+        switch item.confidence {
+        case .high: 
+            if let originalPrice = item.originalDetectedPrice {
+                return "Detected: $\(String(format: "%.2f", originalPrice))"
+            } else {
+                return "Detected: $\(String(format: "%.2f", item.price))"
+            }
+        case .medium: 
+            if let originalPrice = item.originalDetectedPrice {
+                return "Detected: $\(String(format: "%.2f", originalPrice))"
+            } else {
+                return "Detected: $\(String(format: "%.2f", item.price))"
+            }
+        case .low: return "Low confidence"
+        case .placeholder: return "Please verify"
+        }
+    }
+    
+    var confidenceIcon: String {
+        switch item.confidence {
+        case .high: return "checkmark.circle.fill"
+        case .medium: return "exclamationmark.triangle.fill"
+        case .low: return "exclamationmark.triangle.fill"
+        case .placeholder: return "questionmark.circle.fill"
+        }
+    }
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .center, spacing: 12) {
+                // Item Name (Read-only)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.name)
+                        .fontWeight(.medium)
+                        .foregroundColor(.primary)
+                    
+                    // Confidence indicator
+                    HStack(spacing: 4) {
+                        Image(systemName: confidenceIcon)
+                            .font(.caption2)
+                            .foregroundColor(confidenceColor)
+                        
+                        Text(confidenceText)
+                            .font(.caption2)
+                            .foregroundColor(confidenceColor)
+                    }
+                }
+                
+                Spacer()
+                
+                // Price (Read-only)
+                Text("$\(String(format: "%.2f", item.price))")
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                
+                // Apple Intelligence badge
+                Text("APPLE AI")
+                    .font(.caption2)
+                    .fontWeight(.bold)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.blue.opacity(0.2))
+                    .foregroundColor(.blue)
+                    .cornerRadius(4)
+            }
+            .padding()
+        }
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+        )
+    }
+}
+
 // MARK: - Summary Screen
 
 struct UISummaryScreen: View {
+    let session: BillSplitSession
     let onDone: () -> Void
-    
-    // Mock data exactly matching UI/SummaryScreen.tsx
-    let summary = UISummary(
-        restaurant: "Italian Restaurant",
-        date: "June 15, 2023",
-        total: 55.63,
-        paidBy: "You",
-        participants: [
-            UISummaryParticipant(id: 1, name: "You", color: .blue, owes: 0, gets: 28.13),
-            UISummaryParticipant(id: 2, name: "Sarah", color: .green, owes: 28.13, gets: 0)
-        ],
-        breakdown: [
-            UIBreakdown(id: 1, name: "You", color: .blue, items: [
-                UIBreakdownItem(name: "Pasta Carbonara", price: 16.95),
-                UIBreakdownItem(name: "Tiramisu", price: 8.75)
-            ]),
-            UIBreakdown(id: 2, name: "Sarah", color: .green, items: [
-                UIBreakdownItem(name: "Caesar Salad", price: 12.50),
-                UIBreakdownItem(name: "Garlic Bread", price: 5.95)
-            ]),
-            UIBreakdown(id: 3, name: "Shared", color: .gray, items: [
-                UIBreakdownItem(name: "Tax (Split equally)", price: 3.53),
-                UIBreakdownItem(name: "Tip (18%) (Split equally)", price: 7.95)
-            ])
-        ]
-    )
     
     var body: some View {
         ScrollView {
@@ -503,7 +1440,7 @@ struct UISummaryScreen: View {
                     Text("Summary")
                         .font(.title2)
                         .fontWeight(.bold)
-                    Text("\(summary.restaurant) • \(summary.date)")
+                    Text("Receipt • \(Date().formatted(date: .abbreviated, time: .omitted))")
                         .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -511,13 +1448,13 @@ struct UISummaryScreen: View {
                 
                 // Bill paid by section
                 VStack(spacing: 8) {
-                    Text("Bill paid by \(summary.paidBy)")
+                    Text("Bill paid by You")
                         .fontWeight(.medium)
                         .foregroundColor(.blue)
                     HStack {
                         Text("Total amount:")
                         Spacer()
-                        Text("$\(summary.total, specifier: "%.2f")")
+                        Text("$\(session.totalAmount, specifier: "%.2f")")
                             .fontWeight(.bold)
                     }
                     .foregroundColor(.blue)
@@ -538,7 +1475,7 @@ struct UISummaryScreen: View {
                         .fontWeight(.medium)
                         .padding(.horizontal)
                     
-                    ForEach(summary.participants.filter { $0.owes > 0 }) { participant in
+                    ForEach(session.participantSummaries.filter { $0.owes > 0 }) { participant in
                         HStack {
                             // From person
                             HStack(spacing: 8) {
@@ -590,7 +1527,7 @@ struct UISummaryScreen: View {
                         .fontWeight(.medium)
                         .padding(.horizontal)
                     
-                    ForEach(summary.breakdown) { person in
+                    ForEach(session.breakdownSummaries) { person in
                         VStack(spacing: 0) {
                             // Header
                             HStack {
