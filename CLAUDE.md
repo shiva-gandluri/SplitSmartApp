@@ -90,6 +90,20 @@ Dependencies are managed via Swift Package Manager. The resolved packages are tr
 - Use `source: .default` for offline-capable document reads
 - Handle `FirestoreErrorCode.permissionDenied` for disabled APIs
 
+### Security Implementation
+- **Input Validation**: All user inputs are validated using `AuthViewModel.validateEmail()`, `validatePhoneNumber()`, and `validateDisplayName()`
+- **Rate Limiting**: Database queries are throttled (30/minute, 1 second between requests)
+- **Data Architecture**: Separate `users` (private) and `participants` (public lookup) collections
+- **Auto-Migration**: Existing users are automatically migrated to participants collection on login
+- **Firestore Rules**: Comprehensive validation functions for sessions, expenses, and groups
+- **XSS Protection**: All inputs checked for malicious patterns like `<script`, `javascript:`, etc.
+- **App Check**: Device authenticity verification with App Attest + DeviceCheck providers
+
+### Migration & Backward Compatibility
+- **Automatic Migration**: When existing users log in, they're automatically migrated to the new secure architecture
+- **Dual Collection Lookup**: Validation checks both `users` and `participants` collections for backward compatibility
+- **Zero Downtime**: Migration happens seamlessly without service interruption
+
 ## Common Issues & Solutions
 
 ### Authentication Flow

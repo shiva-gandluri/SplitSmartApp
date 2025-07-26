@@ -1,11 +1,37 @@
 import SwiftUI
 import Firebase
 import FirebaseFirestore
+import FirebaseAppCheck
 import GoogleSignIn
 
 class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
+        
+        // SECURITY: Configure Firebase App Check BEFORE Firebase.configure()
+        // TEMPORARILY DISABLED: Enable this after running ./enable-app-check.sh
+        /*
+        #if DEBUG
+        // For development/debug builds - use debug provider
+        let providerFactory = AppCheckDebugProviderFactory()
+        AppCheck.setAppCheckProviderFactory(providerFactory)
+        print("✅ Firebase App Check configured for DEBUG with Debug Provider")
+        #else
+        // For production builds - use App Attest provider (iOS 14+)
+        if #available(iOS 14.0, *) {
+            let providerFactory = AppAttestProviderFactory()
+            AppCheck.setAppCheckProviderFactory(providerFactory)
+            print("✅ Firebase App Check configured for RELEASE with App Attest Provider")
+        } else {
+            // Fallback for older iOS versions - use DeviceCheck
+            let providerFactory = DeviceCheckProviderFactory()
+            AppCheck.setAppCheckProviderFactory(providerFactory)
+            print("✅ Firebase App Check configured for RELEASE with DeviceCheck Provider")
+        }
+        #endif
+        */
+        print("ℹ️ Firebase App Check temporarily disabled - run ./enable-app-check.sh to enable")
+        
         // Configure Firebase as early as possible
         FirebaseApp.configure()
         print("✅ Firebase configured successfully")

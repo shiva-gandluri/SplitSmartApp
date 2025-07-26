@@ -2894,6 +2894,40 @@ class BillSplitSession: ObservableObject {
         return newParticipant
     }
     
+    func addParticipantWithValidation(name: String, email: String? = nil, phoneNumber: String? = nil, authViewModel: AuthViewModel) async -> (participant: UIParticipant?, error: String?) {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        guard !trimmedName.isEmpty else { 
+            return (nil, "Name cannot be empty")
+        }
+        
+        // Check for duplicates (case-insensitive)
+        if participants.contains(where: { $0.name.lowercased() == trimmedName.lowercased() }) {
+            print("⚠️ Participant \(trimmedName) already exists")
+            return (nil, "Participant already exists")
+        }
+        
+        // Validate user is onboarded to SplitSmart
+        let isOnboarded = await authViewModel.isUserOnboarded(email: email, phoneNumber: phoneNumber)
+        guard isOnboarded else {
+            print("❌ User \(trimmedName) is not onboarded to SplitSmart")
+            return (nil, "User is not registered with SplitSmart")
+        }
+        
+        let newId = (participants.map { $0.id }.max() ?? 0) + 1
+        let colorIndex = participants.count % colors.count
+        
+        let newParticipant = UIParticipant(
+            id: newId,
+            name: trimmedName,
+            color: colors[colorIndex]
+        )
+        
+        participants.append(newParticipant)
+        print("✅ Added validated participant: \(trimmedName)")
+        return (newParticipant, nil)
+    }
+    
     func removeParticipant(_ participant: UIParticipant) {
         // Don't allow removing "You"
         guard participant.name != "You" else { return }

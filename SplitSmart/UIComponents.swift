@@ -322,12 +322,15 @@ struct UIHomeScreen: View {
 struct UIAssignScreen: View {
     @ObservedObject var session: BillSplitSession
     let onContinue: () -> Void
+    @EnvironmentObject var authViewModel: AuthViewModel
     
     @State private var newParticipantName = ""
     @State private var showAddParticipant = false
     @State private var showContactPicker = false
     @State private var showAddParticipantOptions = false
     @State private var showingImagePopup = false
+    @State private var validationError: String? = nil
+    @State private var showValidationAlert = false
     @StateObject private var contactsPermissionManager = ContactsPermissionManager()
     
     // Check if totals match within reasonable tolerance
@@ -487,13 +490,27 @@ struct UIAssignScreen: View {
                     
                     if showAddParticipant {
                         VStack(spacing: 12) {
-                            TextField("Enter participant name", text: $newParticipantName)
-                                .textFieldStyle(.roundedBorder)
-                                .font(.body)
-                                .padding(.horizontal, 16)
-                                .onSubmit {
-                                    handleAddParticipant()
-                                }
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Enter Email or Phone Number")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .padding(.horizontal, 16)
+                                
+                                TextField("e.g., john@example.com or +1234567890", text: $newParticipantName)
+                                    .textFieldStyle(.roundedBorder)
+                                    .font(.body)
+                                    .padding(.horizontal, 16)
+                                    .keyboardType(.emailAddress)
+                                    .textInputAutocapitalization(.never)
+                                    .onSubmit {
+                                        handleAddParticipant()
+                                    }
+                                
+                                Text("Only users registered with SplitSmart can be added")
+                                    .font(.caption2)
+                                    .foregroundColor(.orange)
+                                    .padding(.horizontal, 16)
+                            }
                             
                             HStack(spacing: 12) {
                                 Button("Cancel") {
@@ -850,6 +867,11 @@ struct UIAssignScreen: View {
         } message: {
             Text(contactsPermissionManager.permissionMessage)
         }
+        .alert("User Not Registered", isPresented: $showValidationAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(validationError ?? "The user is not registered with SplitSmart and cannot be added to the split.")
+        }
     }
     
     private func hideKeyboard() {
@@ -896,19 +918,40 @@ struct UIAssignScreen: View {
     private func handleContactsSelected(_ contacts: [CNContact]) {
         print("📱 Selected \(contacts.count) contacts from picker")
         
-        for contact in contacts {
-            let contactName = contact.displayName
+        Task {
+            var rejectedContacts: [String] = []
             
-            // Use session to add participant
-            if let _ = session.addParticipant(name: contactName) {
-                print("✅ Added participant: \(contactName)")
-            } else {
-                print("⚠️ Participant \(contactName) already exists, skipping")
+            for contact in contacts {
+                let contactName = contact.displayName
+                let email = contact.primaryEmail
+                let phoneNumber = contact.primaryPhoneNumber
+                
+                // Use validation method
+                let result = await session.addParticipantWithValidation(
+                    name: contactName,
+                    email: email,
+                    phoneNumber: phoneNumber,
+                    authViewModel: authViewModel
+                )
+                
+                if result.participant != nil {
+                    print("✅ Added validated participant: \(contactName)")
+                } else {
+                    print("⚠️ Participant \(contactName) rejected: \(result.error ?? "Unknown error")")
+                    rejectedContacts.append(contactName)
+                }
+            }
+            
+            await MainActor.run {
+                if !rejectedContacts.isEmpty {
+                    validationError = "The following contacts are not registered with SplitSmart and cannot be added:\n\n" + rejectedContacts.joined(separator: "\n")
+                    showValidationAlert = true
+                }
+                
+                showContactPicker = false
+                showAddParticipantOptions = false
             }
         }
-        
-        showContactPicker = false
-        showAddParticipantOptions = false
     }
     
     private func deleteParticipant(_ participant: UIParticipant) {
@@ -920,15 +963,78 @@ struct UIAssignScreen: View {
         let trimmedName = newParticipantName.trimmingCharacters(in: .whitespacesAndNewlines)
         
         if !trimmedName.isEmpty {
-            if let _ = session.addParticipant(name: trimmedName) {
-                print("✅ Added participant manually: \(trimmedName)")
-            } else {
-                print("⚠️ Participant \(trimmedName) already exists")
+            Task {
+                // SECURE: Use proper validation for input detection and sanitization
+                var email: String? = nil
+                var phoneNumber: String? = nil
+                var participantName = trimmedName
+                var validationError: String? = nil
+                
+                // Try email validation first
+                if trimmedName.contains("@") {
+                    let emailValidation = AuthViewModel.validateEmail(trimmedName)
+                    if emailValidation.isValid {
+                        email = emailValidation.sanitized
+                        // Extract name from email (part before @)
+                        participantName = String(trimmedName.split(separator: "@").first ?? Substring(trimmedName))
+                        
+                        // Validate the extracted name
+                        let nameValidation = AuthViewModel.validateDisplayName(participantName)
+                        if nameValidation.isValid {
+                            participantName = nameValidation.sanitized!
+                        } else {
+                            participantName = "User" // Fallback
+                        }
+                    } else {
+                        validationError = emailValidation.error
+                    }
+                }
+                // Try phone validation if not email
+                else {
+                    let phoneValidation = AuthViewModel.validatePhoneNumber(trimmedName)
+                    if phoneValidation.isValid {
+                        phoneNumber = phoneValidation.sanitized
+                        // Use phone as name for now, but validate it
+                        let nameValidation = AuthViewModel.validateDisplayName(trimmedName)
+                        participantName = nameValidation.isValid ? nameValidation.sanitized! : "User"
+                    } else {
+                        // If neither email nor phone, treat as display name
+                        let nameValidation = AuthViewModel.validateDisplayName(trimmedName)
+                        if nameValidation.isValid {
+                            participantName = nameValidation.sanitized!
+                        } else {
+                            validationError = nameValidation.error
+                        }
+                    }
+                }
+                
+                await MainActor.run {
+                    if let error = validationError {
+                        self.validationError = error
+                        showValidationAlert = true
+                        return
+                    }
+                }
+                
+                let result = await session.addParticipantWithValidation(
+                    name: participantName,
+                    email: email,
+                    phoneNumber: phoneNumber,
+                    authViewModel: authViewModel
+                )
+                
+                await MainActor.run {
+                    if result.participant != nil {
+                        print("✅ Added validated participant manually: \(trimmedName)")
+                        newParticipantName = ""
+                        showAddParticipant = false
+                        showAddParticipantOptions = false
+                    } else {
+                        self.validationError = result.error ?? "Unable to add participant"
+                        showValidationAlert = true
+                    }
+                }
             }
-            
-            newParticipantName = ""
-            showAddParticipant = false
-            showAddParticipantOptions = false
         }
     }
     
@@ -1679,6 +1785,77 @@ struct UIProfileScreen: View {
                     )
                 }
                 .padding(.horizontal)
+                
+                // Debug section (for development)
+                VStack(spacing: 8) {
+                    Text("Debug Tools")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal)
+                    
+                    Button(action: {
+                        Task {
+                            await authViewModel.createTestUser(
+                                email: "test@example.com",
+                                displayName: "Test User",
+                                phoneNumber: "+1234567890"
+                            )
+                        }
+                    }) {
+                        HStack {
+                            Image(systemName: "person.badge.plus")
+                                .foregroundColor(.blue)
+                            Text("Create Test User")
+                                .fontWeight(.medium)
+                            Spacer()
+                        }
+                        .padding()
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(12)
+                    }
+                    .padding(.horizontal)
+                    
+                    Button(action: {
+                        Task {
+                            let isRegistered = await authViewModel.isUserOnboarded(email: "test@example.com")
+                            print("🔍 Test user registered: \(isRegistered)")
+                        }
+                    }) {
+                        HStack {
+                            Image(systemName: "magnifyingglass")
+                                .foregroundColor(.green)
+                            Text("Check Test User")
+                                .fontWeight(.medium)
+                            Spacer()
+                        }
+                        .padding()
+                        .background(Color.green.opacity(0.1))
+                        .cornerRadius(12)
+                    }
+                    .padding(.horizontal)
+                    
+                    Button(action: {
+                        Task {
+                            // Check if the current signed-in user can be found
+                            if let currentEmail = authViewModel.user?.email {
+                                let isRegistered = await authViewModel.isUserOnboarded(email: currentEmail)
+                                print("🔍 Current user (\(currentEmail)) registered: \(isRegistered)")
+                            }
+                        }
+                    }) {
+                        HStack {
+                            Image(systemName: "person.circle")
+                                .foregroundColor(.blue)
+                            Text("Check Current User")
+                                .fontWeight(.medium)
+                            Spacer()
+                        }
+                        .padding()
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(12)
+                    }
+                    .padding(.horizontal)
+                }
                 
                 // Log out button
                 Button(action: {

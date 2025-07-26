@@ -16,6 +16,7 @@
 		782AA4F1F7B1E6C2840B32F3 /* HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C5CB82BFE4E8FCF6005DFBD /* HistoryView.swift */; };
 		81394FE99C162533B8CBFF9E /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29D82B63074FD10530830E3A /* ContentView.swift */; };
 		88888888888888888888888888888888 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 44444444444444444444444444444444 /* FirebaseFirestore */; };
+		89999999999999999999999999999999 /* FirebaseAppCheck in Frameworks */ = {isa = PBXBuildFile; productRef = 45555555555555555555555555555555 /* FirebaseAppCheck */; };
 		99999999999999999999999999999999 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 55555555555555555555555555555555 /* GoogleSignIn */; };
 		AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 66666666666666666666666666666666 /* GoogleSignInSwift */; };
 		DFE93912CF972B4CBC2AD5A8 /* SplitSmartApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12A247C155DBFC137AF9BF03 /* SplitSmartApp.swift */; };
@@ -49,6 +50,7 @@
 			files = (
 				77777777777777777777777777777777 /* FirebaseAuth in Frameworks */,
 				88888888888888888888888888888888 /* FirebaseFirestore in Frameworks */,
+				89999999999999999999999999999999 /* FirebaseAppCheck in Frameworks */,
 				99999999999999999999999999999999 /* GoogleSignIn in Frameworks */,
 				AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA /* GoogleSignInSwift in Frameworks */,
 			);
@@ -103,6 +105,7 @@
 			packageProductDependencies = (
 				33333333333333333333333333333333 /* FirebaseAuth */,
 				44444444444444444444444444444444 /* FirebaseFirestore */,
+				45555555555555555555555555555555 /* FirebaseAppCheck */,
 				55555555555555555555555555555555 /* GoogleSignIn */,
 				66666666666666666666666666666666 /* GoogleSignInSwift */,
 			);
@@ -403,6 +406,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 11111111111111111111111111111111 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseFirestore;
+		};
+		45555555555555555555555555555555 /* FirebaseAppCheck */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 11111111111111111111111111111111 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAppCheck;
 		};
 		55555555555555555555555555555555 /* GoogleSignIn */ = {
 			isa = XCSwiftPackageProductDependency;
