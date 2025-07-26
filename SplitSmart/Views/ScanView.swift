@@ -1091,7 +1091,7 @@ struct OCRResultsView: View {
             ManualItemEntryView(
                 suggestedAmounts: suggestedAmounts,
                 identifiedTotal: identifiedTotal,
-                currentTotal: items.reduce(0) { $0 + $1.price }
+                currentTotal: items.reduce(0) { $0.currencyAdd($1.price) }
             ) { newItem in
                 items.append(newItem)
             }
@@ -1180,7 +1180,7 @@ struct OCRItemListView: View {
     let onAddMore: () -> Void
     
     var totalAmount: Double {
-        let total = items.reduce(0) { $0 + $1.price }
+        let total = items.reduce(0) { $0.currencyAdd($1.price) }
         print("💰 TOTAL CALCULATION DEBUG:")
         print("   Number of items: \(items.count)")
         for (index, item) in items.enumerated() {

@@ -583,23 +583,30 @@ struct UIAssignScreen: View {
                         .padding(.vertical, 20)
                         .padding(.horizontal)
                     } else {
-                        ForEach(convertReceiptItemsToUIItems(session.regexDetectedItems).indices, id: \.self) { index in
-                            let uiItems = convertReceiptItemsToUIItems(session.regexDetectedItems)
-                            EditableRegexItemCard(
-                                item: Binding(
-                                    get: { uiItems[index] },
-                                    set: { newValue in
-                                        // Update the session's regex items when edited
-                                        session.regexDetectedItems[index] = ReceiptItem(
-                                            name: newValue.name,
-                                            price: newValue.price,
-                                            confidence: newValue.confidence,
-                                            originalDetectedName: newValue.originalDetectedName,
-                                            originalDetectedPrice: newValue.originalDetectedPrice
-                                        )
-                                    }
-                                ),
-                                participants: session.participants
+                        // Convert regex items to assignedItems if not already done
+                        if session.assignedItems.isEmpty {
+                            let _ = session.assignedItems = session.regexDetectedItems.enumerated().map { index, receiptItem in
+                                UIItem(
+                                    id: index + 1,
+                                    name: receiptItem.name,
+                                    price: receiptItem.price,
+                                    assignedTo: nil,
+                                    assignedToParticipants: Set<Int>(),
+                                    confidence: receiptItem.confidence,
+                                    originalDetectedName: receiptItem.originalDetectedName,
+                                    originalDetectedPrice: receiptItem.originalDetectedPrice
+                                )
+                            }
+                        }
+                        
+                        // New Per-Item Participant Assignment Interface for Regex
+                        ForEach(session.assignedItems.indices, id: \.self) { index in
+                            ItemRowWithParticipants(
+                                item: $session.assignedItems[index],
+                                participants: session.participants,
+                                onItemUpdate: { updatedItem in
+                                    session.updateItemAssignments(updatedItem)
+                                }
                             )
                             .padding(.horizontal)
                         }
@@ -628,7 +635,7 @@ struct UIAssignScreen: View {
                                 Text("Calculated Total")
                                     .font(.body)
                                 Spacer()
-                                let regexTotal = session.regexDetectedItems.reduce(0) { $0 + $1.price }
+                                let regexTotal = session.regexDetectedItems.reduce(0) { $0.currencyAdd($1.price) }
                                 Text(String(format: "$%.2f", regexTotal))
                                     .font(.body)
                                     .fontWeight(.bold)
@@ -642,17 +649,18 @@ struct UIAssignScreen: View {
                     }
                     
                     VStack(spacing: 8) {
-                        let regexTotal = session.regexDetectedItems.reduce(0) { $0 + $1.price }
+                        let regexTotal = session.regexDetectedItems.reduce(0) { $0.currencyAdd($1.price) }
                         let regexTotalsMatch = abs(regexTotal - session.confirmedTotal) <= 0.01
                         
                         Button(action: {
-                            // Set regex items as the active assignment
+                            // Set regex items as the active assignment with all participants assigned
                             session.assignedItems = session.regexDetectedItems.enumerated().map { index, receiptItem in
                                 UIItem(
                                     id: index + 1,
                                     name: receiptItem.name,
                                     price: receiptItem.price,
                                     assignedTo: nil,
+                                    assignedToParticipants: Set(session.participants.map { $0.id }), // Assign to all participants
                                     confidence: receiptItem.confidence,
                                     originalDetectedName: receiptItem.originalDetectedName,
                                     originalDetectedPrice: receiptItem.originalDetectedPrice
@@ -710,28 +718,38 @@ struct UIAssignScreen: View {
                         .padding(.vertical, 20)
                         .padding(.horizontal)
                     } else {
-                        ForEach(session.llmDetectedItems.indices, id: \.self) { index in
-                            let item = session.llmDetectedItems[index]
-                            LLMItemCard(
-                                item: item,
-                                participants: session.participants
+                        // New Per-Item Participant Assignment Interface
+                        ForEach(session.assignedItems.indices, id: \.self) { index in
+                            ItemRowWithParticipants(
+                                item: $session.assignedItems[index],
+                                participants: session.participants,
+                                onItemUpdate: { updatedItem in
+                                    session.updateItemAssignments(updatedItem)
+                                }
                             )
                             .padding(.horizontal)
                         }
                     }
                 }
                 
-                // LLM Totals Section
-                if !session.llmDetectedItems.isEmpty {
+                // Assignment Summary and Continue Section
+                if !session.assignedItems.isEmpty {
+                    // Calculate assignment progress values
+                    let totalItems = session.assignedItems.count
+                    let assignedItems = session.assignedItems.filter { !$0.assignedToParticipants.isEmpty }.count
+                    let assignedTotal = session.assignedItems.reduce(0.0) { total, item in
+                        return total + (item.assignedToParticipants.isEmpty ? 0 : item.price)
+                    }
+                    
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Apple Intelligence Totals")
+                        Text("Assignment Summary")
                             .font(.body)
                             .fontWeight(.medium)
                             .padding(.horizontal)
                         
                         VStack(spacing: 8) {
                             HStack {
-                                Text("Identified Total")
+                                Text("Receipt Total")
                                     .font(.body)
                                 Spacer()
                                 Text(String(format: "$%.2f", session.confirmedTotal))
@@ -740,14 +758,23 @@ struct UIAssignScreen: View {
                             }
                             
                             HStack {
-                                Text("Calculated Total")
+                                Text("Assigned Total")
                                     .font(.body)
                                 Spacer()
-                                let llmTotal = session.llmDetectedItems.reduce(0) { $0 + $1.price }
-                                Text(String(format: "$%.2f", llmTotal))
+                                Text(String(format: "$%.2f", assignedTotal))
                                     .font(.body)
                                     .fontWeight(.bold)
-                                    .foregroundColor(abs(llmTotal - session.confirmedTotal) > 0.01 ? .red : .primary)
+                                    .foregroundColor(abs(assignedTotal - session.confirmedTotal) > 0.01 ? .orange : .green)
+                            }
+                            
+                            HStack {
+                                Text("Items Assigned")
+                                    .font(.body)
+                                Spacer()
+                                Text("\(assignedItems) of \(totalItems)")
+                                    .font(.body)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(assignedItems == totalItems ? .green : .orange)
                             }
                         }
                         .padding()
@@ -757,43 +784,40 @@ struct UIAssignScreen: View {
                     }
                     
                     VStack(spacing: 8) {
-                        let llmTotal = session.llmDetectedItems.reduce(0) { $0 + $1.price }
-                        let llmTotalsMatch = abs(llmTotal - session.confirmedTotal) <= 0.01
+                        let allItemsAssigned = session.assignedItems.allSatisfy { !$0.assignedToParticipants.isEmpty }
+                        let totalComplete = abs(assignedTotal - session.confirmedTotal) <= 0.01
+                        let canContinue = allItemsAssigned && totalComplete
                         
                         Button(action: {
-                            // Set LLM items as the active assignment
-                            session.assignedItems = session.llmDetectedItems.enumerated().map { index, receiptItem in
-                                UIItem(
-                                    id: index + 1,
-                                    name: receiptItem.name,
-                                    price: receiptItem.price,
-                                    assignedTo: nil,
-                                    confidence: receiptItem.confidence,
-                                    originalDetectedName: receiptItem.originalDetectedName,
-                                    originalDetectedPrice: receiptItem.originalDetectedPrice
-                                )
-                            }
-                            splitSharedItems()
                             onContinue()
                         }) {
                             HStack {
-                                Text("Continue with Apple Intelligence Results")
+                                Text("Continue to Summary")
                                 Image(systemName: "arrow.right")
                             }
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(llmTotalsMatch ? Color.blue : Color.gray)
+                            .background(canContinue ? Color.blue : Color.gray)
                             .cornerRadius(12)
                         }
-                        .disabled(!llmTotalsMatch)
+                        .disabled(!canContinue)
                         .padding(.horizontal)
                         
-                        if !llmTotalsMatch {
+                        if !allItemsAssigned {
+                            HStack {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.orange)
+                                Text("Please assign all items to participants.")
+                                    .font(.caption)
+                                    .foregroundColor(.orange)
+                            }
+                            .padding(.horizontal)
+                        } else if !totalComplete {
                             HStack {
                                 Image(systemName: "exclamationmark.triangle.fill")
                                     .foregroundColor(.red)
-                                Text("Totals do not match.")
+                                Text("Assignment total doesn't match bill total.")
                                     .font(.caption)
                                     .foregroundColor(.red)
                             }
@@ -1683,7 +1707,7 @@ struct UISummaryScreen: View {
                                 Text("Subtotal")
                                     .fontWeight(.medium)
                                 Spacer()
-                                Text("$\(person.items.reduce(0) { $0 + $1.price }, specifier: "%.2f")")
+                                Text("$\(person.items.reduce(0) { $0.currencyAdd($1.price) }, specifier: "%.2f")")
                                     .fontWeight(.medium)
                             }
                             .padding()
@@ -1920,5 +1944,287 @@ struct UIProfileMenuItem: View {
             .cornerRadius(12)
             .shadow(color: .black.opacity(0.05), radius: 1, x: 0, y: 1)
         }
+    }
+}
+
+// MARK: - Participant Assignment Row Component
+struct ParticipantAssignmentRow: View {
+    let item: UIItem
+    let participants: [UIParticipant]
+    let onParticipantToggle: (Int) -> Void
+    let onParticipantRemove: (Int) -> Void
+    let everyoneSelected: Bool
+    let onEveryoneToggle: () -> Void
+    
+    @State private var showingFeedback = false
+    @State private var feedbackParticipant: Int? = nil
+    
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) { // Increased spacing from 8 to 12 for better industry standards
+                // Everyone button styled like other participant buttons
+                Button(action: {
+                    onEveryoneToggle()
+                    triggerFeedback(for: -1) // Use -1 for everyone button
+                }) {
+                    HStack(spacing: 6) {
+                        Text("Everyone")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .lineLimit(1)
+                        
+                        if everyoneSelected {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.caption2)
+                                .foregroundColor(.white)
+                        }
+                    }
+                    .padding(.horizontal, everyoneSelected ? 10 : 14)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 18)
+                            .fill(everyoneSelected ? Color.indigo : Color(.systemGray5))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 18)
+                                    .stroke(Color.indigo, lineWidth: everyoneSelected ? 0 : 1)
+                            )
+                    )
+                    .foregroundColor(everyoneSelected ? .white : .indigo)
+                }
+                .buttonStyle(PlainButtonStyle())
+                
+                // Vertical separator
+                Rectangle()
+                    .fill(Color.gray.opacity(0.4))
+                    .frame(width: 1, height: 24)
+                
+                // Individual participant buttons
+                ForEach(participants, id: \.id) { participant in
+                    ParticipantButton(
+                        participant: participant,
+                        isAssigned: item.assignedToParticipants.contains(participant.id),
+                        isDisabled: everyoneSelected,
+                        onTap: {
+                            if !everyoneSelected {
+                                onParticipantToggle(participant.id)
+                                triggerFeedback(for: participant.id)
+                            }
+                        },
+                        onRemove: {
+                            if !everyoneSelected {
+                                onParticipantRemove(participant.id)
+                                triggerFeedback(for: participant.id)
+                            }
+                        }
+                    )
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8) // Add vertical padding to prevent cut-off borders
+        }
+        .frame(minHeight: 60) // Increased height to accommodate padding and prevent border cut-off
+    }
+    
+    private func triggerFeedback(for participantId: Int) {
+        feedbackParticipant = participantId
+        showingFeedback = true
+        
+        // Haptic feedback
+        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+        impactFeedback.impactOccurred()
+        
+        // Reset feedback state
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            showingFeedback = false
+            feedbackParticipant = nil
+        }
+    }
+}
+
+// MARK: - Participant Button Component
+struct ParticipantButton: View {
+    let participant: UIParticipant
+    let isAssigned: Bool
+    let isDisabled: Bool
+    let onTap: () -> Void
+    let onRemove: () -> Void
+    
+    @State private var isPressed = false
+    
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 6) { // Increased spacing from 4 to 6
+                Text(participant.name)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+                
+                if isAssigned && !isDisabled {
+                    Button(action: onRemove) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.caption2)
+                            .foregroundColor(.white)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+            }
+            .padding(.horizontal, isAssigned ? 10 : 14) // Increased horizontal padding
+            .padding(.vertical, 8) // Increased vertical padding from 6 to 8
+            .background(
+                RoundedRectangle(cornerRadius: 18) // Increased corner radius from 16 to 18
+                    .fill(isAssigned ? participant.color.opacity(isDisabled ? 0.6 : 1.0) : Color(.systemGray5))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18)
+                            .stroke(participant.color.opacity(isDisabled ? 0.6 : 1.0), lineWidth: isAssigned ? 0 : 1)
+                    )
+            )
+            .foregroundColor(isAssigned ? .white : participant.color.opacity(isDisabled ? 0.6 : 1.0))
+            .scaleEffect(isPressed ? 0.95 : 1.0)
+            .animation(.easeInOut(duration: 0.1), value: isPressed)
+            .opacity(isDisabled ? 0.6 : 1.0)
+        }
+        .buttonStyle(PlainButtonStyle())
+        .disabled(isDisabled)
+        .onLongPressGesture(minimumDuration: 0, maximumDistance: .infinity, pressing: { pressing in
+            if !isDisabled {
+                isPressed = pressing
+            }
+        }, perform: {})
+    }
+}
+
+// MARK: - Item Row with Participant Assignment
+struct ItemRowWithParticipants: View {
+    @Binding var item: UIItem
+    let participants: [UIParticipant]
+    let onItemUpdate: (UIItem) -> Void
+    
+    @State private var showingSuccessAnimation = false
+    @State private var everyoneButtonSelected = false
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Item details
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.name)
+                        .font(.body)
+                        .fontWeight(.medium)
+                    
+                    HStack(spacing: 8) {
+                        Text("$\(item.price, specifier: "%.2f")")
+                            .font(.body)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                        
+                        if !item.assignedToParticipants.isEmpty {
+                            Text("($\(item.costPerParticipant, specifier: "%.2f") each)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                
+                Spacer()
+                
+                // Assignment status indicator
+                Circle()
+                    .fill(item.assignedToParticipants.isEmpty ? Color.orange : Color.green)
+                    .frame(width: 8, height: 8)
+                    .overlay(
+                        Circle()
+                            .fill(showingSuccessAnimation ? Color.green.opacity(0.3) : Color.clear)
+                            .scaleEffect(showingSuccessAnimation ? 2.0 : 1.0)
+                            .animation(.easeOut(duration: 0.4), value: showingSuccessAnimation)
+                    )
+            }
+            
+            // Horizontal line separator
+            Rectangle()
+                .fill(Color.gray.opacity(0.3))
+                .frame(height: 1)
+            
+            // Participant assignment row
+            if !participants.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Assign to")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    // Combined assignment row with Everyone button and participants
+                    ParticipantAssignmentRow(
+                        item: item,
+                        participants: participants,
+                        onParticipantToggle: { participantId in
+                            toggleParticipant(participantId)
+                        },
+                        onParticipantRemove: { participantId in
+                            removeParticipant(participantId)
+                        },
+                        everyoneSelected: everyoneButtonSelected,
+                        onEveryoneToggle: {
+                            toggleEveryoneButton()
+                        }
+                    )
+                }
+            }
+        }
+        .padding(16)
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
+        .onAppear {
+            updateEveryoneButtonState()
+        }
+        .onChange(of: item.assignedToParticipants) { _ in
+            updateEveryoneButtonState()
+        }
+    }
+    
+    private func toggleParticipant(_ participantId: Int) {
+        if item.assignedToParticipants.contains(participantId) {
+            removeParticipant(participantId)
+        } else {
+            addParticipant(participantId)
+        }
+    }
+    
+    private func addParticipant(_ participantId: Int) {
+        item.assignedToParticipants.insert(participantId)
+        onItemUpdate(item)
+        triggerSuccessAnimation()
+    }
+    
+    private func removeParticipant(_ participantId: Int) {
+        item.assignedToParticipants.remove(participantId)
+        onItemUpdate(item)
+        triggerSuccessAnimation()
+    }
+    
+    private func triggerSuccessAnimation() {
+        showingSuccessAnimation = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            showingSuccessAnimation = false
+        }
+    }
+    
+    private func toggleEveryoneButton() {
+        if everyoneButtonSelected {
+            // Deselect everyone - clear all assignments
+            item.assignedToParticipants.removeAll()
+            everyoneButtonSelected = false
+        } else {
+            // Select everyone - assign to all participants
+            item.assignedToParticipants = Set(participants.map { $0.id })
+            everyoneButtonSelected = true
+        }
+        onItemUpdate(item)
+        triggerSuccessAnimation()
+    }
+    
+    private func updateEveryoneButtonState() {
+        let allParticipantIds = Set(participants.map { $0.id })
+        everyoneButtonSelected = !item.assignedToParticipants.isEmpty && 
+                                 item.assignedToParticipants == allParticipantIds
     }
 }

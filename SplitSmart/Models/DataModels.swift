@@ -3,6 +3,45 @@ import Vision
 import UIKit
 import NaturalLanguage
 
+// MARK: - Currency Utilities
+extension Double {
+    /// Rounds a currency value to 2 decimal places with proper rounding
+    var currencyRounded: Double {
+        return (self * 100).rounded() / 100
+    }
+    
+    /// Safely adds two currency values with proper rounding
+    func currencyAdd(_ other: Double) -> Double {
+        return (self + other).currencyRounded
+    }
+    
+    /// Safely divides currency value by count with proper rounding
+    func currencyDivide(by count: Int) -> Double {
+        guard count > 0 else { return 0.0 }
+        return (self / Double(count)).currencyRounded
+    }
+    
+    /// Smart distribution of currency among participants ensuring total matches exactly
+    /// Example: $8.99 / 2 = [$4.49, $4.50] instead of [$4.495, $4.495]
+    static func smartDistribute(total: Double, among count: Int) -> [Double] {
+        guard count > 0 else { return [] }
+        
+        let baseAmount = (total / Double(count)).currencyRounded
+        let totalBasic = baseAmount * Double(count)
+        let remainder = (total - totalBasic).currencyRounded
+        
+        var distribution = Array(repeating: baseAmount, count: count)
+        
+        // Distribute remainder cents to first participants
+        let remainderCents = Int((remainder * 100).rounded())
+        for i in 0..<min(abs(remainderCents), count) {
+            distribution[i] = distribution[i].currencyAdd(remainderCents > 0 ? 0.01 : -0.01)
+        }
+        
+        return distribution
+    }
+}
+
 // MARK: - Data Models
 
 // MARK: - Error Types
@@ -82,12 +121,45 @@ struct UIItem: Identifiable {
     let id: Int
     var name: String
     var price: Double
-    var assignedTo: Int?
+    var assignedTo: Int? // Legacy: single participant assignment (for backward compatibility)
+    var assignedToParticipants: Set<Int> // New: multiple participants per item
     var confidence: ConfidenceLevel
     
     // Store original detected values for confidence display
     let originalDetectedName: String?
     let originalDetectedPrice: Double?
+    
+    // Computed property to get the cost per assigned participant (simple division, for display)
+    var costPerParticipant: Double {
+        let participantCount = assignedToParticipants.isEmpty ? 1 : assignedToParticipants.count
+        return price.currencyDivide(by: participantCount)
+    }
+    
+    // Get the exact cost for a specific participant using smart distribution
+    func getCostForParticipant(participantId: Int) -> Double {
+        guard assignedToParticipants.contains(participantId) else { return 0.0 }
+        
+        let participantIds = Array(assignedToParticipants).sorted()
+        let distribution = Double.smartDistribute(total: price, among: participantIds.count)
+        
+        if let index = participantIds.firstIndex(of: participantId) {
+            return distribution[index]
+        }
+        
+        return 0.0
+    }
+    
+    // Initialize with multiple participants support
+    init(id: Int, name: String, price: Double, assignedTo: Int? = nil, assignedToParticipants: Set<Int> = [], confidence: ConfidenceLevel = .high, originalDetectedName: String? = nil, originalDetectedPrice: Double? = nil) {
+        self.id = id
+        self.name = name
+        self.price = price
+        self.assignedTo = assignedTo
+        self.assignedToParticipants = assignedToParticipants
+        self.confidence = confidence
+        self.originalDetectedName = originalDetectedName
+        self.originalDetectedPrice = originalDetectedPrice
+    }
 }
 
 // MARK: - Summary Screen Models
@@ -191,7 +263,7 @@ class OCRService: ObservableObject {
             for (index, item) in parsedItems.enumerated() {
                 print("   Final Item \(index + 1): '\(item.name)' - $\(item.price)")
             }
-            let totalValue = parsedItems.reduce(0) { $0 + $1.price }
+            let totalValue = parsedItems.reduce(0) { $0.currencyAdd($1.price) }
             print("   Total value of all items: $\(totalValue)")
             print("   Confidence: \(confidence)")
             print("   Processing time: \(processingTime)s")
@@ -985,7 +1057,7 @@ class OCRService: ObservableObject {
         
         // Validate against total if available
         if let totalAmount = total {
-            let itemsTotal = completeItems.reduce(0) { $0 + $1.price }
+            let itemsTotal = completeItems.reduce(0) { $0.currencyAdd($1.price) }
             let difference = abs(totalAmount - itemsTotal)
             
             print("📊 Validation check:")
@@ -1338,10 +1410,10 @@ class OCRService: ObservableObject {
         }
         
         // Calculate what we've already accounted for
-        let namedItemsTotal = itemsWithNames.reduce(0) { $0 + $1.price }
+        let namedItemsTotal = itemsWithNames.reduce(0) { $0.currencyAdd($1.price) }
         let taxAmount = tax ?? 0
         let tipAmount = tip ?? 0
-        let accountedAmount = namedItemsTotal + taxAmount + tipAmount
+        let accountedAmount = namedItemsTotal.currencyAdd(taxAmount).currencyAdd(tipAmount)
         
         print("📊 Accounting check:")
         print("   Named items total: $\(namedItemsTotal)")
@@ -1690,7 +1762,7 @@ Return only the prices as numbers (like 12.99), one per line. Do not include exp
         
         // Keep original order - DO NOT sort
         print("🎯 Final extracted items in order: \(extractedItems.map { "\($0.name): $\($0.price)" })")
-        print("📊 Total value: $\(extractedItems.reduce(0) { $0 + $1.price })")
+        print("📊 Total value: $\(extractedItems.reduce(0) { $0.currencyAdd($1.price) })")
         
         return extractedItems
     }
@@ -1891,7 +1963,7 @@ Return only the prices as numbers (like 12.99), one per line. Do not include exp
                 // Fill remaining with placeholders
                 let remainingCount = expectedItemCount - usableItems.count
                 if remainingCount > 0 {
-                    let usedTotal = usableItems.reduce(0) { $0 + $1.price }
+                    let usedTotal = usableItems.reduce(0) { $0.currencyAdd($1.price) }
                     let remainingTotal = max(0, targetItemsPrice - usedTotal)
                     let avgRemainingPrice = remainingCount > 0 ? remainingTotal / Double(remainingCount) : 0.0
                     
@@ -2795,7 +2867,7 @@ class BillSplitSession: ObservableObject {
         case complete
     }
     
-    let colors: [Color] = [.blue, .green, .purple, .pink, .yellow, .red, .orange, .cyan]
+    let colors: [Color] = [.blue, .green, .purple, .pink, .yellow, .red, .orange, .cyan, .teal, .mint]
     
     func startNewSession() {
         print("🆕 Starting new bill split session")
@@ -2856,7 +2928,8 @@ class BillSplitSession: ObservableObject {
                 id: index + 1,
                 name: receiptItem.name,
                 price: receiptItem.price,
-                assignedTo: nil,  // Start unassigned
+                assignedTo: nil,  // Legacy: Start unassigned
+                assignedToParticipants: Set<Int>(), // New: Start with no participants
                 confidence: receiptItem.confidence,
                 originalDetectedName: receiptItem.originalDetectedName,
                 originalDetectedPrice: receiptItem.originalDetectedPrice
@@ -2937,9 +3010,12 @@ class BillSplitSession: ObservableObject {
         
         // Unassign any items assigned to this participant
         for index in assignedItems.indices {
+            // Legacy assignment cleanup
             if assignedItems[index].assignedTo == participant.id {
                 assignedItems[index].assignedTo = nil
             }
+            // New multiple assignment cleanup
+            assignedItems[index].assignedToParticipants.remove(participant.id)
         }
         
         print("🗑️ Removed participant: \(participant.name)")
@@ -2951,6 +3027,33 @@ class BillSplitSession: ObservableObject {
             
             let participantName = participants.first { $0.id == participantId }?.name ?? "Unassigned"
             print("📝 Assigned \(assignedItems[index].name) to \(participantName)")
+        }
+    }
+    
+    // MARK: - Multiple Participant Assignment Methods
+    
+    func addParticipantToItem(itemId: Int, participantId: Int) {
+        if let index = assignedItems.firstIndex(where: { $0.id == itemId }) {
+            assignedItems[index].assignedToParticipants.insert(participantId)
+            
+            let participantName = participants.first { $0.id == participantId }?.name ?? "Unknown"
+            print("➕ Added \(participantName) to \(assignedItems[index].name)")
+        }
+    }
+    
+    func removeParticipantFromItem(itemId: Int, participantId: Int) {
+        if let index = assignedItems.firstIndex(where: { $0.id == itemId }) {
+            assignedItems[index].assignedToParticipants.remove(participantId)
+            
+            let participantName = participants.first { $0.id == participantId }?.name ?? "Unknown"
+            print("➖ Removed \(participantName) from \(assignedItems[index].name)")
+        }
+    }
+    
+    func updateItemAssignments(_ updatedItem: UIItem) {
+        if let index = assignedItems.firstIndex(where: { $0.id == updatedItem.id }) {
+            assignedItems[index] = updatedItem
+            print("🔄 Updated assignments for \(updatedItem.name)")
         }
     }
     
@@ -3034,29 +3137,35 @@ class BillSplitSession: ObservableObject {
     
     // MARK: - Summary Data
     var totalAmount: Double {
-        assignedItems.reduce(0) { $0 + $1.price }
+        assignedItems.reduce(0) { $0.currencyAdd($1.price) }
     }
     
     var participantSummaries: [UISummaryParticipant] {
         return participants.enumerated().map { index, participant in
-            let assignedToParticipant = assignedItems.filter { $0.assignedTo == participant.id }
-            let totalOwed = assignedToParticipant.reduce(0) { $0 + $1.price }
+            // Calculate total owed using smart distribution for exact amounts
+            let totalOwed = assignedItems.reduce(0.0) { total, item in
+                return total.currencyAdd(item.getCostForParticipant(participantId: participant.id))
+            }
             
             return UISummaryParticipant(
                 id: participant.id,
                 name: participant.name,
                 color: participant.color,
-                owes: participant.name == "You" ? 0.0 : totalOwed,
-                gets: participant.name == "You" ? totalOwed : 0.0
+                owes: participant.name == "You" ? 0.0 : totalOwed.currencyRounded,
+                gets: participant.name == "You" ? 0.0 : 0.0 // Others don't "get" money, they owe it
             )
         }
     }
     
     var breakdownSummaries: [UIBreakdown] {
         return participants.map { participant in
-            let assignedToParticipant = assignedItems.filter { $0.assignedTo == participant.id }
-            let items = assignedToParticipant.map { item in
-                UIBreakdownItem(name: item.name, price: item.price)
+            // Create breakdown items using smart distribution for exact amounts
+            let items = assignedItems.compactMap { item -> UIBreakdownItem? in
+                let cost = item.getCostForParticipant(participantId: participant.id)
+                if cost > 0 {
+                    return UIBreakdownItem(name: item.name, price: cost)
+                }
+                return nil
             }
             
             return UIBreakdown(
