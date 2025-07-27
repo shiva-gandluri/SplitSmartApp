@@ -95,6 +95,22 @@ service cloud.firestore {
              (!('category' in data) || (data.category is string && data.category.size() <= 100));
     }
     
+    // Bills - users can only access bills they participate in
+    match /bills/{billId} {
+      allow read: if request.auth != null && (
+        request.auth.uid == resource.data.paidBy ||
+        request.auth.uid in resource.data.participantIds
+      );
+      allow write: if request.auth != null && (
+        request.auth.uid == resource.data.paidBy ||
+        request.auth.uid == resource.data.createdBy
+      );
+      allow create: if request.auth != null && 
+        request.auth.uid == request.resource.data.createdBy &&
+        // Validate bill data structure and constraints
+        validateBillData(request.resource.data);
+    }
+    
     // Groups for recurring split arrangements
     match /groups/{groupId} {
       allow read, write: if request.auth != null && 
@@ -162,6 +178,49 @@ service cloud.firestore {
              (!('phoneNumber' in data) || (data.phoneNumber is string && data.phoneNumber.size() <= 50)) &&
              (!('contactUserId' in data) || (data.contactUserId is string && data.contactUserId.size() <= 100)) &&
              (!('nickname' in data) || (data.nickname is string && data.nickname.size() <= 50));
+    }
+    
+    // Bill data validation function
+    function validateBillData(data) {
+      return data.keys().hasAll(['id', 'paidBy', 'paidByDisplayName', 'paidByEmail', 'totalAmount', 'currency', 'date', 'createdAt', 'items', 'participants', 'participantIds', 'status', 'createdBy', 'calculatedTotals']) &&
+             data.id is string &&
+             data.id.size() >= 1 &&
+             data.id.size() <= 100 &&
+             data.paidBy is string &&
+             data.paidBy.size() >= 1 &&
+             data.paidBy.size() <= 100 &&
+             data.paidByDisplayName is string &&
+             data.paidByDisplayName.size() >= 1 &&
+             data.paidByDisplayName.size() <= 100 &&
+             data.paidByEmail is string &&
+             data.paidByEmail.size() >= 5 &&
+             data.paidByEmail.size() <= 254 &&
+             data.paidByEmail.matches('.*@.*\\..*') &&
+             data.totalAmount is number &&
+             data.totalAmount > 0 &&
+             data.totalAmount <= 100000 && // Max $100K per bill
+             data.currency is string &&
+             data.currency in ['USD', 'EUR', 'GBP', 'CAD', 'AUD'] && // Supported currencies
+             data.date is timestamp &&
+             data.createdAt is timestamp &&
+             data.items is list &&
+             data.items.size() >= 1 &&
+             data.items.size() <= 100 && // Max 100 items per bill
+             data.participants is list &&
+             data.participants.size() >= 2 &&
+             data.participants.size() <= 50 && // Max 50 participants
+             data.participantIds is list &&
+             data.participantIds.size() >= 2 &&
+             data.participantIds.size() <= 50 &&
+             data.status in ['pending', 'confirmed', 'disputed', 'settled'] &&
+             data.createdBy is string &&
+             data.createdBy.size() >= 1 &&
+             data.createdBy.size() <= 100 &&
+             data.calculatedTotals is map &&
+             // Validate optional fields
+             (!('lastModifiedBy' in data) || (data.lastModifiedBy is string && data.lastModifiedBy.size() <= 100)) &&
+             (!('lastModifiedAt' in data) || data.lastModifiedAt is timestamp) &&
+             (!('roundingAdjustments' in data) || data.roundingAdjustments is map);
     }
     
     // System collections - read-only for maintenance

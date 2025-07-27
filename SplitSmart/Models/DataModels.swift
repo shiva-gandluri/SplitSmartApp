@@ -234,6 +234,579 @@ struct UIBreakdownItem {
     let price: Double
 }
 
+// MARK: - Bill Settlement Data Models
+
+import FirebaseFirestore
+
+struct Bill: Codable, Identifiable {
+    let id: String
+    let paidBy: String // userID who paid
+    let paidByDisplayName: String // Snapshot for UI
+    let paidByEmail: String // Snapshot for notifications
+    let totalAmount: Double // Always matches sum of items
+    let currency: String
+    let date: Timestamp
+    let createdAt: Timestamp
+    let items: [BillItem]
+    let participants: [BillParticipant]
+    let participantIds: [String] // Flattened array for efficient Firestore querying
+    let status: BillStatus
+    
+    // Audit trail
+    let createdBy: String // userID who created bill
+    let lastModifiedBy: String?
+    let lastModifiedAt: Timestamp?
+    
+    // Financial reconciliation
+    let calculatedTotals: [String: Double] // userID: amount owed to paidBy
+    let roundingAdjustments: [String: Double] // Track penny distributions
+    
+    init(id: String = UUID().uuidString,
+         paidBy: String,
+         paidByDisplayName: String,
+         paidByEmail: String,
+         totalAmount: Double,
+         currency: String = "USD",
+         date: Timestamp = Timestamp(),
+         items: [BillItem],
+         participants: [BillParticipant],
+         createdBy: String,
+         calculatedTotals: [String: Double],
+         roundingAdjustments: [String: Double] = [:],
+         status: BillStatus = .pending) {
+        self.id = id
+        self.paidBy = paidBy
+        self.paidByDisplayName = paidByDisplayName
+        self.paidByEmail = paidByEmail
+        self.totalAmount = totalAmount
+        self.currency = currency
+        self.date = date
+        self.createdAt = Timestamp()
+        self.items = items
+        self.participants = participants
+        self.participantIds = participants.map { $0.id } // Flatten for querying
+        self.status = status
+        self.createdBy = createdBy
+        self.lastModifiedBy = nil
+        self.lastModifiedAt = nil
+        self.calculatedTotals = calculatedTotals
+        self.roundingAdjustments = roundingAdjustments
+    }
+}
+
+struct BillItem: Codable, Identifiable {
+    let id: String
+    let name: String
+    let price: Double
+    let participantIDs: [String] // Array of userIDs who split this item
+    
+    init(name: String, price: Double, participantIDs: [String]) {
+        self.id = UUID().uuidString
+        self.name = name
+        self.price = price
+        self.participantIDs = participantIDs
+    }
+}
+
+struct BillParticipant: Codable, Identifiable {
+    let id: String // This will be the userID
+    let displayName: String // Snapshot for UI
+    let email: String // Snapshot for notifications
+    let isActive: Bool // Track if user still exists
+    
+    init(userID: String, displayName: String, email: String, isActive: Bool = true) {
+        self.id = userID
+        self.displayName = displayName
+        self.email = email
+        self.isActive = isActive
+    }
+}
+
+enum BillStatus: String, Codable, CaseIterable {
+    case pending = "pending"
+    case confirmed = "confirmed" 
+    case disputed = "disputed"
+    case settled = "settled"
+}
+
+// MARK: - Bill Service for Firebase Operations
+
+class BillService: ObservableObject {
+    private let db = Firestore.firestore()
+    
+    /// Creates a new bill in Firestore with atomic transactions
+    func createBill(from session: BillSplitSession, authViewModel: AuthViewModel, contactsManager: ContactsManager) async throws -> Bill {
+        print("🔵 Starting Firebase bill creation...")
+        
+        // Validate session readiness
+        guard session.isReadyForBillCreation else {
+            throw BillCreationError.sessionNotReady
+        }
+        
+        guard let currentUser = await MainActor.run { authViewModel.user },
+              let paidByID = session.paidByParticipantID,
+              let paidByParticipant = session.participants.first(where: { $0.id == paidByID }) else {
+            throw BillCreationError.invalidUser
+        }
+        
+        // Convert session data to Bill format
+        let billItems = session.assignedItems.map { item in
+            BillItem(
+                name: item.name,
+                price: item.price,
+                participantIDs: Array(item.assignedToParticipants).map { String($0) }
+            )
+        }
+        
+        // Get participant details from contacts and current user
+        var billParticipants: [BillParticipant] = []
+        
+        // Add current user as participant
+        let currentUserParticipant = BillParticipant(
+            userID: currentUser.uid,
+            displayName: currentUser.displayName ?? "You",
+            email: currentUser.email ?? "unknown@example.com"
+        )
+        billParticipants.append(currentUserParticipant)
+        
+        // Add other participants from transaction contacts
+        for participant in session.participants where participant.name != "You" {
+            if let contact = contactsManager.transactionContacts.first(where: { 
+                $0.displayName.lowercased() == participant.name.lowercased() 
+            }) {
+                // For now, use a consistent ID based on email for cross-user bill visibility
+                // TODO: Implement proper user lookup by email in Phase 3
+                let participantUserID = contact.contactUserId ?? "email_\(contact.email.lowercased().replacingOccurrences(of: "@", with: "_at_").replacingOccurrences(of: ".", with: "_"))"
+                
+                let billParticipant = BillParticipant(
+                    userID: participantUserID,
+                    displayName: contact.displayName,
+                    email: contact.email
+                )
+                billParticipants.append(billParticipant)
+                
+                print("🔍 Added participant: \(contact.displayName) with ID: \(participantUserID)")
+            }
+        }
+        
+        // Calculate debts using the session's logic
+        let calculatedDebts = session.individualDebts
+        
+        // Get payer details
+        let paidByEmail: String
+        if paidByParticipant.name == "You" {
+            paidByEmail = currentUser.email ?? "unknown@example.com"
+        } else if let contact = contactsManager.transactionContacts.first(where: { 
+            $0.displayName.lowercased() == paidByParticipant.name.lowercased() 
+        }) {
+            paidByEmail = contact.email
+        } else {
+            paidByEmail = "unknown@example.com"
+        }
+        
+        // Create Bill object
+        let bill = Bill(
+            paidBy: paidByParticipant.name == "You" ? currentUser.uid : "unknown_\(paidByID)",
+            paidByDisplayName: paidByParticipant.name,
+            paidByEmail: paidByEmail,
+            totalAmount: session.totalAmount,
+            items: billItems,
+            participants: billParticipants,
+            createdBy: currentUser.uid,
+            calculatedTotals: calculatedDebts
+        )
+        
+        // Validate bill totals
+        guard BillCalculator.validateBillTotals(bill: bill) else {
+            throw BillCreationError.invalidTotals
+        }
+        
+        // Save to Firestore with atomic transaction
+        try await saveBillToFirestore(bill: bill)
+        
+        print("✅ Bill created successfully with ID: \(bill.id)")
+        return bill
+    }
+    
+    /// Saves bill to Firestore using atomic batch operations
+    private func saveBillToFirestore(bill: Bill) async throws {
+        let batch = db.batch()
+        
+        // Save bill document
+        let billRef = db.collection("bills").document(bill.id)
+        try batch.setData(from: bill, forDocument: billRef)
+        
+        // Update only the current user's record (bill creator)
+        // Other participants will see bills via the bills collection query
+        let currentUserRef = db.collection("users").document(bill.createdBy)
+        batch.updateData([
+            "billIds": FieldValue.arrayUnion([bill.id]),
+            "lastBillUpdate": FieldValue.serverTimestamp()
+        ], forDocument: currentUserRef)
+        
+        // Commit batch operation
+        try await batch.commit()
+        print("✅ Bill batch operation completed successfully")
+    }
+}
+
+// MARK: - Bill Manager for Real-time Updates
+
+class BillManager: ObservableObject {
+    private let db = Firestore.firestore()
+    @Published var userBills: [Bill] = []
+    @Published var userBalance: UserBalance = UserBalance()
+    @Published var isLoading = false
+    @Published var errorMessage: String?
+    
+    private var currentUserId: String?
+    private var billsListener: ListenerRegistration?
+    
+    init() {}
+    
+    func setCurrentUser(_ userId: String) {
+        // Clear existing data if switching users
+        if let currentUser = self.currentUserId, currentUser != userId {
+            print("🔄 Switching bill manager users from \(currentUser) to \(userId)")
+            billsListener?.remove()
+            billsListener = nil
+            self.userBills = []
+            self.userBalance = UserBalance()
+            self.errorMessage = nil
+        }
+        
+        self.currentUserId = userId
+        loadUserBills()
+    }
+    
+    func clearCurrentUser() {
+        print("🧹 Clearing BillManager data on logout")
+        billsListener?.remove()
+        billsListener = nil
+        self.currentUserId = nil
+        self.userBills = []
+        self.userBalance = UserBalance()
+        self.errorMessage = nil
+        self.isLoading = false
+    }
+    
+    /// Sets up real-time listener for bills where user is involved
+    private func loadUserBills() {
+        guard let userId = currentUserId else { return }
+        
+        billsListener?.remove()
+        isLoading = true
+        
+        print("📡 Setting up real-time bill listener for user: \(userId)")
+        
+        // Listen for bills where user is involved as participant
+        billsListener = db.collection("bills")
+            .whereField("participantIds", arrayContains: userId)
+            .order(by: "createdAt", descending: true)
+            .addSnapshotListener { [weak self] snapshot, error in
+                DispatchQueue.main.async {
+                    self?.isLoading = false
+                    
+                    if let error = error {
+                        print("❌ Failed to load bills: \(error.localizedDescription)")
+                        self?.errorMessage = "Failed to load bills: \(error.localizedDescription)"
+                        return
+                    }
+                    
+                    guard let documents = snapshot?.documents else {
+                        print("📭 No bills found for user")
+                        self?.userBills = []
+                        self?.calculateUserBalance()
+                        return
+                    }
+                    
+                    print("📊 Found \(documents.count) bill documents for user")
+                    let bills = documents.compactMap { doc in
+                        do {
+                            let bill = try doc.data(as: Bill.self)
+                            print("✅ Loaded bill: \(bill.id) - $\(bill.totalAmount)")
+                            return bill
+                        } catch {
+                            print("❌ Failed to decode bill document \(doc.documentID): \(error)")
+                            return nil
+                        }
+                    }
+                    
+                    self?.userBills = bills
+                    self?.calculateUserBalance()
+                    print("📋 Total bills loaded: \(bills.count)")
+                }
+            }
+    }
+    
+    /// Calculates user's current balance from all bills
+    private func calculateUserBalance() {
+        guard let userId = currentUserId else { 
+            print("❌ calculateUserBalance: No current user ID")
+            return 
+        }
+        
+        print("🧮 Calculating balance for user: \(userId)")
+        print("🧮 Processing \(userBills.count) bills")
+        
+        var totalOwed: Double = 0.0
+        var totalOwedTo: Double = 0.0
+        var pendingBills: [String] = []
+        
+        for bill in userBills {
+            print("🧮 Processing bill \(bill.id): status=\(bill.status), paidBy=\(bill.paidBy), total=\(bill.totalAmount)")
+            print("🧮 Bill calculatedTotals: \(bill.calculatedTotals)")
+            
+            if bill.status == .pending || bill.status == .confirmed {
+                pendingBills.append(bill.id)
+                
+                // If user is the payer, they are owed money
+                if bill.paidBy == userId {
+                    print("🧮 User is the payer for this bill")
+                    for (participantID, amount) in bill.calculatedTotals {
+                        if participantID != userId && amount > 0.01 {
+                            totalOwedTo += amount
+                            print("🧮 Participant \(participantID) owes user $\(amount)")
+                        }
+                    }
+                } else {
+                    print("🧮 User is NOT the payer for this bill")
+                    // If user is a participant who owes money
+                    if let amountOwed = bill.calculatedTotals[userId], amountOwed > 0.01 {
+                        totalOwed += amountOwed
+                        print("🧮 User owes $\(amountOwed) for this bill")
+                    } else {
+                        print("🧮 User not found in calculatedTotals or owes $0")
+                    }
+                }
+            } else {
+                print("🧮 Skipping bill with status: \(bill.status)")
+            }
+        }
+        
+        userBalance = UserBalance(
+            totalOwed: totalOwed,
+            totalOwedTo: totalOwedTo,
+            pendingBillIds: pendingBills
+        )
+        
+        print("💰 Updated user balance - Owes: $\(totalOwed), Owed: $\(totalOwedTo)")
+        print("💰 Pending bills: \(pendingBills)")
+    }
+    
+    /// Gets net balances with all users (positive = they owe you, negative = you owe them)
+    func getNetBalances() -> [UIPersonDebt] {
+        guard let userId = currentUserId else { 
+            print("❌ getNetBalances: No current user ID")
+            return [] 
+        }
+        
+        print("🧮 Calculating net balances for user: \(userId)")
+        
+        var balances: [String: Double] = [:] // participantID -> net amount (+ they owe you, - you owe them)
+        var participantInfo: [String: (name: String, email: String)] = [:]
+        
+        for bill in userBills {
+            print("🧮 Processing bill \(bill.id) for net balance")
+            print("🧮 Bill paidBy: \(bill.paidBy), current user: \(userId)")
+            print("🧮 Bill calculatedTotals: \(bill.calculatedTotals)")
+            
+            if bill.status == .pending || bill.status == .confirmed {
+                if bill.paidBy == userId {
+                    print("🧮 User paid - others owe user")
+                    // User paid - others owe them (positive balance)
+                    for (sessionParticipantID, amount) in bill.calculatedTotals {
+                        if sessionParticipantID != userId && amount > 0.01 {
+                            // Find the participant
+                            for participant in bill.participants {
+                                if participant.id != userId {
+                                    balances[participant.id, default: 0.0] += amount
+                                    participantInfo[participant.id] = (participant.displayName, participant.email)
+                                    print("🧮 \(participant.displayName) owes user +$\(amount) (running total: $\(balances[participant.id] ?? 0.0))")
+                                    break
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    print("🧮 User did not pay - checking if user owes")
+                    // User didn't pay - check if user owes money (negative balance)
+                    if let amountOwed = bill.calculatedTotals["1"], amountOwed > 0.01 {
+                        balances[bill.paidBy, default: 0.0] -= amountOwed
+                        participantInfo[bill.paidBy] = (bill.paidByDisplayName, bill.paidByEmail)
+                        print("🧮 User owes \(bill.paidByDisplayName) -$\(amountOwed) (running total: $\(balances[bill.paidBy] ?? 0.0))")
+                    }
+                }
+            }
+        }
+        
+        print("🧮 Final net balances: \(balances)")
+        
+        let result = balances.compactMap { (participantID, netAmount) -> UIPersonDebt? in
+            guard abs(netAmount) > 0.01,
+                  let info = participantInfo[participantID] else { 
+                print("❌ Skipping participant \(participantID): netAmount=\(netAmount)")
+                return nil 
+            }
+            
+            if netAmount > 0 {
+                print("✅ Creating UIPersonDebt: \(info.name) owes user $\(netAmount)")
+                return UIPersonDebt(
+                    name: info.name,
+                    total: netAmount,
+                    color: .green // They owe you
+                )
+            } else {
+                print("✅ Creating UIPersonDebt: User owes \(info.name) $\(abs(netAmount))")
+                return UIPersonDebt(
+                    name: info.name,
+                    total: abs(netAmount),
+                    color: .red // You owe them
+                )
+            }
+        }.sorted { (debt1: UIPersonDebt, debt2: UIPersonDebt) -> Bool in
+            debt1.total > debt2.total
+        }
+        
+        print("🧮 Returning \(result.count) net balances")
+        return result
+    }
+    
+    /// Gets list of people who owe money to the current user (NET positive balances only)
+    func getPeopleWhoOweUser() -> [UIPersonDebt] {
+        return getNetBalances().filter { $0.color == .green }
+    }
+    
+    /// Gets list of people the current user owes money to (NET negative balances only)
+    func getPeopleUserOwes() -> [UIPersonDebt] {
+        return getNetBalances().filter { $0.color == .red }
+    }
+}
+
+// MARK: - User Balance Model
+
+struct UserBalance {
+    let totalOwed: Double // Amount user owes to others
+    let totalOwedTo: Double // Amount others owe to user
+    let pendingBillIds: [String] // List of pending bill IDs
+    
+    init(totalOwed: Double = 0.0, totalOwedTo: Double = 0.0, pendingBillIds: [String] = []) {
+        self.totalOwed = totalOwed
+        self.totalOwedTo = totalOwedTo
+        self.pendingBillIds = pendingBillIds
+    }
+    
+    var netBalance: Double {
+        return totalOwedTo - totalOwed
+    }
+    
+    var hasDebts: Bool {
+        return totalOwed > 0.01
+    }
+    
+    var isOwed: Bool {
+        return totalOwedTo > 0.01
+    }
+}
+
+// MARK: - Bill Creation Errors
+
+enum BillCreationError: LocalizedError {
+    case sessionNotReady
+    case invalidUser
+    case invalidTotals
+    case firestoreError(String)
+    
+    var errorDescription: String? {
+        switch self {
+        case .sessionNotReady:
+            return "Session is not ready for bill creation"
+        case .invalidUser:
+            return "Invalid user or payer information"
+        case .invalidTotals:
+            return "Bill totals don't match calculated amounts"
+        case .firestoreError(let message):
+            return "Database error: \(message)"
+        }
+    }
+}
+
+// MARK: - Bill Calculation Helper
+
+struct BillCalculator {
+    
+    /// Calculates who owes whom with proper rounding to ensure totals match
+    static func calculateOwedAmounts(bill: Bill) -> [String: Double] {
+        var owedAmounts: [String: Double] = [:]
+        let paidByUserID = bill.paidBy
+        
+        // Initialize all participants with $0 owed
+        for participant in bill.participants {
+            if participant.id != paidByUserID {
+                owedAmounts[participant.id] = 0.0
+            }
+        }
+        
+        // Calculate each item's split
+        for item in bill.items {
+            let participantCount = item.participantIDs.count
+            guard participantCount > 0 else { continue }
+            
+            let baseAmount = item.price / Double(participantCount)
+            let roundedBase = (baseAmount * 100).rounded() / 100 // Round to 2 decimal places
+            
+            // Calculate how much total we have after rounding
+            let totalRounded = roundedBase * Double(participantCount)
+            let remainder = item.price - totalRounded
+            
+            // Distribute the remainder (should be small cents)
+            let remainderCents = Int((remainder * 100).rounded())
+            
+            for (index, participantID) in item.participantIDs.enumerated() {
+                if participantID != paidByUserID {
+                    var amountOwed = roundedBase
+                    
+                    // Add extra cent to first few participants to handle remainder
+                    if index < remainderCents {
+                        amountOwed += 0.01
+                    }
+                    
+                    owedAmounts[participantID] = (owedAmounts[participantID] ?? 0.0) + amountOwed
+                }
+            }
+        }
+        
+        // Final rounding to ensure 2 decimal places
+        for participantID in owedAmounts.keys {
+            owedAmounts[participantID] = ((owedAmounts[participantID] ?? 0.0) * 100).rounded() / 100
+        }
+        
+        return owedAmounts
+    }
+    
+    /// Validates that the calculated totals match the bill total
+    static func validateBillTotals(bill: Bill) -> Bool {
+        // Calculate total from individual item amounts
+        let itemsTotal = bill.items.reduce(0.0) { $0 + $1.price }
+        let expectedTotal = bill.totalAmount
+        
+        // The calculatedTotals only contains debts to the payer (not including payer's own share)
+        // So we need to validate that items total matches the bill total instead
+        let difference = abs(itemsTotal - expectedTotal)
+        
+        print("🔍 Bill validation:")
+        print("   Expected total (bill.totalAmount): $\(expectedTotal)")
+        print("   Items total (sum of item prices): $\(itemsTotal)")
+        print("   Difference: $\(difference)")
+        print("   Individual debts to payer: \(bill.calculatedTotals)")
+        
+        // Allow for small rounding differences (within 1 cent)
+        let isValid = difference < 0.01
+        print(isValid ? "✅ Bill totals valid" : "❌ Bill totals invalid")
+        return isValid
+    }
+}
+
 // MARK: - OCR Service
 class OCRService: ObservableObject {
     @Published var isProcessing = false
@@ -2875,6 +3448,9 @@ class BillSplitSession: ObservableObject {
         UIParticipant(id: 1, name: "You", color: .blue) // Always start with "You"
     ]
     
+    // Bill payer selection (mandatory for bill creation)
+    @Published var paidByParticipantID: Int? = nil
+    
     // Item assignments
     @Published var assignedItems: [UIItem] = []
     
@@ -2924,6 +3500,9 @@ class BillSplitSession: ObservableObject {
         // Keep "You" but remove other participants
         participants = [UIParticipant(id: 1, name: "You", color: .blue)]
         assignedItems.removeAll()
+        
+        // Reset bill payer selection
+        paidByParticipantID = nil
         
         sessionState = .home
         isSessionActive = false
@@ -3204,6 +3783,89 @@ class BillSplitSession: ObservableObject {
         assignedItems.reduce(0) { $0.currencyAdd($1.price) }
     }
     
+    /// Checks if the session is ready for bill creation
+    var isReadyForBillCreation: Bool {
+        // Must have assigned items
+        guard !assignedItems.isEmpty else { 
+            print("❌ isReadyForBillCreation: No assigned items")
+            return false 
+        }
+        
+        // All items must be assigned to participants
+        let allItemsAssigned = assignedItems.allSatisfy { !$0.assignedToParticipants.isEmpty }
+        guard allItemsAssigned else { 
+            print("❌ isReadyForBillCreation: Not all items assigned to participants")
+            return false 
+        }
+        
+        // Must have selected who paid the bill
+        guard paidByParticipantID != nil else { 
+            print("❌ isReadyForBillCreation: No paidBy participant selected")
+            return false 
+        }
+        
+        // Must have at least 2 participants (including "You")
+        guard participants.count >= 2 else { 
+            print("❌ isReadyForBillCreation: Need at least 2 participants, have \(participants.count)")
+            return false 
+        }
+        
+        print("✅ isReadyForBillCreation: All validations passed")
+        return true
+    }
+    
+    /// Calculates individual debts - how much each participant owes to the person who paid
+    var individualDebts: [String: Double] {
+        guard let paidByID = paidByParticipantID else { return [:] }
+        
+        var debts: [String: Double] = [:]
+        
+        // Initialize all participants (except the payer) with $0 debt
+        for participant in participants {
+            if participant.id != paidByID {
+                debts[String(participant.id)] = 0.0
+            }
+        }
+        
+        // Calculate debt for each item
+        for item in assignedItems {
+            guard !item.assignedToParticipants.isEmpty else { continue }
+            
+            let participantCount = item.assignedToParticipants.count
+            let baseAmount = item.price / Double(participantCount)
+            let roundedBase = (baseAmount * 100).rounded() / 100
+            
+            // Handle remainder distribution (like in BillCalculator)
+            let totalRounded = roundedBase * Double(participantCount)
+            let remainder = item.price - totalRounded
+            let remainderCents = Int((remainder * 100).rounded())
+            
+            // Sort participant IDs for consistent remainder distribution
+            let sortedParticipants = Array(item.assignedToParticipants).sorted()
+            
+            for (index, participantID) in sortedParticipants.enumerated() {
+                if participantID != paidByID {
+                    var amountOwed = roundedBase
+                    
+                    // Add extra cent to first few participants to handle remainder
+                    if index < remainderCents {
+                        amountOwed += 0.01
+                    }
+                    
+                    let participantKey = String(participantID)
+                    debts[participantKey] = (debts[participantKey] ?? 0.0) + amountOwed
+                }
+            }
+        }
+        
+        // Final rounding to ensure 2 decimal places
+        for participantKey in debts.keys {
+            debts[participantKey] = ((debts[participantKey] ?? 0.0) * 100).rounded() / 100
+        }
+        
+        return debts
+    }
+    
     var participantSummaries: [UISummaryParticipant] {
         return participants.enumerated().map { index, participant in
             // Calculate total owed using smart distribution for exact amounts
@@ -3346,7 +4008,7 @@ class ContactsManager: ObservableObject {
             print("✅ Updated existing transaction contact: \(existing.displayName)")
         } else {
             // Save new transaction contact
-            try await db.collection("users").document(userId).collection("transactionContacts").document(contact.id).setData(from: contact)
+            try db.collection("users").document(userId).collection("transactionContacts").document(contact.id).setData(from: contact)
             
             print("✅ Saved new transaction contact: \(contact.displayName) (\(contact.email))")
         }

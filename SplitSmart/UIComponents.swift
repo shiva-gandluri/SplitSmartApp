@@ -521,14 +521,24 @@ struct NewContactModal: View {
 
 struct UIHomeScreen: View {
     let session: BillSplitSession
+    @ObservedObject var billManager: BillManager
     let onCreateNew: () -> Void
     
-    // For now, show empty state until we have real transaction history
-    // TODO: Replace with actual transaction history from Firebase/persistence
-    private var totalOwed: Double { 0.0 }
-    private var totalOwe: Double { 0.0 }
-    private var peopleWhoOweMe: [UIPersonDebt] { [] }
-    private var peopleIOwe: [UIPersonDebt] { [] }
+    // Real-time balance data from BillManager (using net balances)
+    private var totalOwed: Double { 
+        billManager.getPeopleWhoOweUser().reduce(0) { $0 + $1.total }
+    }
+    private var totalOwe: Double { 
+        billManager.getPeopleUserOwes().reduce(0) { $0 + $1.total }
+    }
+    
+    // Detailed debt breakdown for individual people from BillManager
+    private var peopleWhoOweMe: [UIPersonDebt] { 
+        billManager.getPeopleWhoOweUser() 
+    }
+    private var peopleIOwe: [UIPersonDebt] { 
+        billManager.getPeopleUserOwes() 
+    }
     
     var body: some View {
         ScrollView {
@@ -546,6 +556,18 @@ struct UIHomeScreen: View {
                         .frame(width: 40, height: 40)
                 }
                 .padding(.horizontal)
+                
+                // Loading indicator for balance updates
+                if billManager.isLoading {
+                    HStack {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle())
+                        Text("Loading balances...")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding()
+                }
                 
                 // Balance Cards with exact React colors
                 HStack(spacing: 12) {
@@ -720,6 +742,7 @@ struct UIHomeScreen: View {
 
 struct UIAssignScreen: View {
     @ObservedObject var session: BillSplitSession
+    @ObservedObject var contactsManager: ContactsManager
     let onContinue: () -> Void
     @EnvironmentObject var authViewModel: AuthViewModel
     
@@ -735,7 +758,6 @@ struct UIAssignScreen: View {
     @State private var pendingContactEmail = ""
     @State private var pendingContactName = ""
     @StateObject private var contactsPermissionManager = ContactsPermissionManager()
-    @StateObject private var contactsManager = ContactsManager()
     
     // Check if totals match within reasonable tolerance
     private var totalsMatch: Bool {
@@ -761,6 +783,61 @@ struct UIAssignScreen: View {
                         Text("Drag items to assign them to participants")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
+                        
+                        // Who Paid Selection (Mandatory)
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Who paid this bill?")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                Text("*")
+                                    .foregroundColor(.red)
+                                    .fontWeight(.bold)
+                            }
+                            
+                            Menu {
+                                ForEach(session.participants) { participant in
+                                    Button(action: {
+                                        session.paidByParticipantID = participant.id
+                                    }) {
+                                        HStack {
+                                            Circle()
+                                                .fill(participant.color)
+                                                .frame(width: 16, height: 16)
+                                            Text(participant.name)
+                                            if session.paidByParticipantID == participant.id {
+                                                Spacer()
+                                                Image(systemName: "checkmark")
+                                                    .foregroundColor(.blue)
+                                            }
+                                        }
+                                    }
+                                }
+                            } label: {
+                                HStack {
+                                    if let paidByID = session.paidByParticipantID,
+                                       let paidByParticipant = session.participants.first(where: { $0.id == paidByID }) {
+                                        Circle()
+                                            .fill(paidByParticipant.color)
+                                            .frame(width: 20, height: 20)
+                                        Text(paidByParticipant.name)
+                                            .foregroundColor(.primary)
+                                    } else {
+                                        Text("Select who paid")
+                                            .foregroundColor(.secondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.down")
+                                        .foregroundColor(.secondary)
+                                        .font(.caption)
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(Color(.systemGray6))
+                                .cornerRadius(8)
+                            }
+                        }
+                        .padding(.top, 12)
                     }
                     
                     Spacer()
@@ -1043,7 +1120,8 @@ struct UIAssignScreen: View {
                     VStack(spacing: 8) {
                         let allItemsAssigned = session.assignedItems.allSatisfy { !$0.assignedToParticipants.isEmpty }
                         let totalComplete = abs(assignedTotal - session.confirmedTotal) <= 0.01
-                        let canContinue = allItemsAssigned && totalComplete
+                        let whoePaidSelected = session.paidByParticipantID != nil
+                        let canContinue = session.isReadyForBillCreation && totalComplete
                         
                         Button(action: {
                             onContinue()
@@ -1061,7 +1139,16 @@ struct UIAssignScreen: View {
                         .disabled(!canContinue)
                         .padding(.horizontal)
                         
-                        if !allItemsAssigned {
+                        if !whoePaidSelected {
+                            HStack {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.red)
+                                Text("Please select who paid this bill.")
+                                    .font(.caption)
+                                    .foregroundColor(.red)
+                            }
+                            .padding(.horizontal)
+                        } else if !allItemsAssigned {
                             HStack {
                                 Image(systemName: "exclamationmark.triangle.fill")
                                     .foregroundColor(.orange)
@@ -1138,27 +1225,6 @@ struct UIAssignScreen: View {
                 prefilledEmail: pendingContactEmail
             ) { savedContact in
                 handleContactSaved(savedContact)
-            }
-        }
-        .onAppear {
-            // Initialize contacts manager with current user
-            if let userId = authViewModel.user?.uid {
-                print("🔍 DEBUG: Initializing contacts manager for user: \(userId)")
-                contactsManager.setCurrentUser(userId)
-                print("🔍 DEBUG: Current transaction contacts count: \(contactsManager.transactionContacts.count)")
-            } else {
-                print("⚠️ DEBUG: No user ID available for contacts manager")
-                contactsManager.clearCurrentUser()
-            }
-        }
-        .onChange(of: authViewModel.user?.uid) { oldUserId, newUserId in
-            // Handle user changes (logout/login with different user)
-            if let userId = newUserId {
-                print("🔄 DEBUG: User changed, updating contacts manager for user: \(userId)")
-                contactsManager.setCurrentUser(userId)
-            } else {
-                print("🧹 DEBUG: User logged out, clearing contacts manager")
-                contactsManager.clearCurrentUser()
             }
         }
         .fullScreenCover(isPresented: $showingImagePopup) {
@@ -1957,6 +2023,14 @@ struct LLMItemCard: View {
 struct UISummaryScreen: View {
     let session: BillSplitSession
     let onDone: () -> Void
+    @ObservedObject var contactsManager: ContactsManager
+    @ObservedObject var authViewModel: AuthViewModel
+    
+    @StateObject private var billService = BillService()
+    @State private var isCreatingBill = false
+    @State private var billCreationError: String?
+    @State private var showingError = false
+    @State private var createdBill: Bill?
     
     var body: some View {
         ScrollView {
@@ -1972,15 +2046,42 @@ struct UISummaryScreen: View {
                 .padding(.horizontal)
                 
                 // Bill paid by section
-                VStack(spacing: 8) {
-                    Text("Bill paid by You")
-                        .fontWeight(.medium)
-                        .foregroundColor(.blue)
+                VStack(spacing: 12) {
+                    HStack {
+                        if let paidByID = session.paidByParticipantID,
+                           let paidByParticipant = session.participants.first(where: { $0.id == paidByID }) {
+                            Circle()
+                                .fill(paidByParticipant.color)
+                                .frame(width: 24, height: 24)
+                                .overlay(
+                                    Image(systemName: "person.fill")
+                                        .foregroundColor(.white)
+                                        .font(.caption)
+                                )
+                            Text("Bill paid by \(paidByParticipant.name)")
+                                .fontWeight(.medium)
+                                .foregroundColor(.blue)
+                        } else {
+                            Text("Bill paid by Unknown")
+                                .fontWeight(.medium)
+                                .foregroundColor(.red)
+                        }
+                        Spacer()
+                    }
+                    
                     HStack {
                         Text("Total amount:")
                         Spacer()
                         Text("$\(session.totalAmount, specifier: "%.2f")")
                             .fontWeight(.bold)
+                    }
+                    .foregroundColor(.blue)
+                    
+                    HStack {
+                        Text("Date & Time:")
+                        Spacer()
+                        Text("\(Date().formatted(date: .abbreviated, time: .shortened))")
+                            .fontWeight(.medium)
                     }
                     .foregroundColor(.blue)
                 }
@@ -1993,54 +2094,108 @@ struct UISummaryScreen: View {
                 )
                 .padding(.horizontal)
                 
-                // Who pays whom section
+                // Who Owes Whom section - Individual debts (not net amounts)
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Who pays whom")
+                    Text("Who Owes Whom")
                         .font(.body)
                         .fontWeight(.medium)
                         .padding(.horizontal)
                     
-                    ForEach(session.participantSummaries.filter { $0.owes > 0 }) { participant in
-                        HStack {
-                            // From person
-                            HStack(spacing: 8) {
-                                Circle()
-                                    .fill(participant.color)
-                                    .frame(width: 32, height: 32)
-                                    .overlay(
-                                        Image(systemName: "person.fill")
-                                            .foregroundColor(.white)
+                    if let paidByID = session.paidByParticipantID,
+                       let paidByParticipant = session.participants.first(where: { $0.id == paidByID }) {
+                        
+                        // Calculate individual debts to the payer
+                        ForEach(session.individualDebts.sorted(by: { $0.key < $1.key }), id: \.key) { participantID, amountOwed in
+                            if let debtor = session.participants.first(where: { $0.id == Int(participantID) }),
+                               amountOwed > 0.01 { // Only show significant amounts
+                                
+                                HStack {
+                                    // From person (debtor)
+                                    HStack(spacing: 8) {
+                                        Circle()
+                                            .fill(debtor.color)
+                                            .frame(width: 32, height: 32)
+                                            .overlay(
+                                                Image(systemName: "person.fill")
+                                                    .foregroundColor(.white)
+                                                    .font(.caption)
+                                            )
+                                        Text(debtor.name)
+                                            .fontWeight(.medium)
+                                    }
+                                    
+                                    Image(systemName: "arrow.right")
+                                        .foregroundColor(.gray)
+                                        .padding(.horizontal, 8)
+                                    
+                                    // To person (payer)
+                                    HStack(spacing: 8) {
+                                        Circle()
+                                            .fill(paidByParticipant.color)
+                                            .frame(width: 32, height: 32)
+                                            .overlay(
+                                                Image(systemName: "person.fill")
+                                                    .foregroundColor(.white)
+                                                    .font(.caption)
+                                            )
+                                        Text(paidByParticipant.name)
+                                            .fontWeight(.medium)
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    // Amount owed
+                                    VStack(alignment: .trailing, spacing: 2) {
+                                        Text("$\(amountOwed, specifier: "%.2f")")
+                                            .fontWeight(.bold)
+                                            .foregroundColor(.red)
+                                        Text("owes")
                                             .font(.caption)
-                                    )
-                                Text(participant.name)
-                            }
-                            
-                            Image(systemName: "arrow.right")
-                                .foregroundColor(.gray)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                .padding()
+                                .background(Color(.systemBackground))
+                                .cornerRadius(12)
+                                .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(Color.red.opacity(0.2), lineWidth: 1)
+                                )
                                 .padding(.horizontal)
-                            
-                            // To person (You)
-                            HStack(spacing: 8) {
-                                Circle()
-                                    .fill(Color.blue)
-                                    .frame(width: 32, height: 32)
-                                    .overlay(
-                                        Image(systemName: "person.fill")
-                                            .foregroundColor(.white)
-                                            .font(.caption)
-                                    )
-                                Text("You")
                             }
-                            
-                            Spacer()
-                            
-                            Text("$\(participant.owes, specifier: "%.2f")")
-                                .fontWeight(.bold)
                         }
+                        
+                        // Show "No debts" message if everyone paid their share
+                        if session.individualDebts.allSatisfy({ $0.value <= 0.01 }) {
+                            VStack(spacing: 8) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                    .font(.title2)
+                                Text("Everyone paid their share!")
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.green)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.green.opacity(0.1))
+                            .cornerRadius(12)
+                            .padding(.horizontal)
+                        }
+                    } else {
+                        // Error state - no payer selected
+                        VStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.red)
+                                .font(.title2)
+                            Text("Error: No payer selected")
+                                .fontWeight(.medium)
+                                .foregroundColor(.red)
+                        }
+                        .frame(maxWidth: .infinity)
                         .padding()
-                        .background(Color(.systemBackground))
+                        .background(Color.red.opacity(0.1))
                         .cornerRadius(12)
-                        .shadow(color: .black.opacity(0.05), radius: 1, x: 0, y: 1)
                         .padding(.horizontal)
                     }
                 }
@@ -2117,21 +2272,103 @@ struct UISummaryScreen: View {
                     }
                 }
                 
-                Button(action: onDone) {
+                // Add Bill Button with loading state
+                Button(action: {
+                    print("🔵 Add Bill button tapped")
+                    print("🔍 Session ready: \(session.isReadyForBillCreation)")
+                    print("🔍 PaidBy ID: \(session.paidByParticipantID?.description ?? "nil")")
+                    print("🔍 Items count: \(session.assignedItems.count)")
+                    Task {
+                        await createBill()
+                    }
+                }) {
                     HStack {
-                        Image(systemName: "checkmark.circle")
-                        Text("Mark as Settled")
+                        if isCreatingBill {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .scaleEffect(0.8)
+                        } else {
+                            Image(systemName: "plus.circle.fill")
+                        }
+                        Text(isCreatingBill ? "Creating Bill..." : "Add Bill")
                     }
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding()
-                    .background(Color.green)
+                    .background(isCreatingBill ? Color.gray : Color.blue)
                     .cornerRadius(12)
                 }
+                .disabled(isCreatingBill || !session.isReadyForBillCreation)
                 .padding(.horizontal)
+                
+                // Show error if bill creation fails
+                if let error = billCreationError {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.red)
+                        Text(error)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+                }
             }
             .padding(.top)
         }
+        .alert("Bill Creation Error", isPresented: $showingError) {
+            Button("OK") {
+                showingError = false
+                billCreationError = nil
+            }
+        } message: {
+            Text(billCreationError ?? "Unknown error occurred")
+        }
+    }
+    
+    // MARK: - Bill Creation Logic
+    @MainActor
+    private func createBill() async {
+        guard session.isReadyForBillCreation else {
+            billCreationError = "Session is not ready for bill creation"
+            showingError = true
+            return
+        }
+        
+        isCreatingBill = true
+        billCreationError = nil
+        
+        do {
+            print("🔵 Starting Firebase bill creation process...")
+            
+            // Create bill using BillService
+            let bill = try await billService.createBill(
+                from: session,
+                authViewModel: authViewModel,
+                contactsManager: contactsManager
+            )
+            
+            createdBill = bill
+            print("✅ Bill creation successful! ID: \(bill.id)")
+            
+            // TODO: Phase 3 - Send push notifications here
+            
+            // Call the completion handler
+            onDone()
+            
+        } catch {
+            print("❌ Bill creation failed: \(error.localizedDescription)")
+            
+            // Check if it's a Firebase permissions error
+            if error.localizedDescription.contains("Missing or insufficient permissions") {
+                billCreationError = "Firebase Firestore permissions not configured. Please set up security rules to allow authenticated writes to the 'bills' and 'users' collections."
+            } else {
+                billCreationError = error.localizedDescription
+            }
+            showingError = true
+        }
+        
+        isCreatingBill = false
     }
 }
 

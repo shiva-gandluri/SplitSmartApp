@@ -5,6 +5,8 @@ struct ContentView: View {
     @State private var isKeyboardVisible = false
     @EnvironmentObject var authViewModel: AuthViewModel
     @StateObject private var billSplitSession = BillSplitSession()
+    @StateObject private var contactsManager = ContactsManager()
+    @StateObject private var billManager = BillManager()
     
     var showBackButton: Bool {
         return ["scan", "assign", "summary"].contains(selectedTab)
@@ -33,7 +35,7 @@ struct ContentView: View {
             
             switch selectedTab {
             case "home":
-                UIHomeScreen(session: billSplitSession) { 
+                UIHomeScreen(session: billSplitSession, billManager: billManager) { 
                     billSplitSession.startNewSession()
                     selectedTab = "scan" 
                 }
@@ -44,22 +46,27 @@ struct ContentView: View {
                     selectedTab = "assign" 
                 }
             case "assign":
-                UIAssignScreen(session: billSplitSession) { 
+                UIAssignScreen(session: billSplitSession, contactsManager: contactsManager) { 
                     billSplitSession.completeAssignment()
                     selectedTab = "summary" 
                 }
             case "summary":
-                UISummaryScreen(session: billSplitSession) { 
-                    billSplitSession.completeSession()
-                    selectedTab = "home" 
-                }
+                UISummaryScreen(
+                    session: billSplitSession,
+                    onDone: {
+                        billSplitSession.completeSession()
+                        selectedTab = "home" 
+                    },
+                    contactsManager: contactsManager,
+                    authViewModel: authViewModel
+                )
             case "history":
                 UIHistoryScreen()
             case "profile":
                 UIProfileScreen()
                     .environmentObject(authViewModel)
             default:
-                UIHomeScreen(session: billSplitSession) { 
+                UIHomeScreen(session: billSplitSession, billManager: billManager) { 
                     billSplitSession.startNewSession()
                     selectedTab = "scan" 
                 }
@@ -72,6 +79,22 @@ struct ContentView: View {
         }
         .onAppear {
             setupKeyboardObservers()
+            
+            // Initialize managers with current user
+            if let userId = authViewModel.user?.uid {
+                contactsManager.setCurrentUser(userId)
+                billManager.setCurrentUser(userId)
+            }
+        }
+        .onChange(of: authViewModel.user?.uid) { oldUserId, newUserId in
+            // Handle user changes (logout/login with different user)
+            if let userId = newUserId {
+                contactsManager.setCurrentUser(userId)
+                billManager.setCurrentUser(userId)
+            } else {
+                contactsManager.clearCurrentUser()
+                billManager.clearCurrentUser()
+            }
         }
         .onDisappear {
             removeKeyboardObservers()

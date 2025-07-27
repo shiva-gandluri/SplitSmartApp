@@ -153,3 +153,10 @@ coverage/
 *.swp
 *.swo
 *~
+
+# Claude Code
+.claude/
+CLAUDE.md.backup
+
+# User documentation (typically want to track these)
+# user-stories.md should be tracked as it's project documentation
