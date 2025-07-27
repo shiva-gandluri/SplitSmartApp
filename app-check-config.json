@@ -1,0 +1,16 @@
+{
+  "projectId": "splitsmartapp-bd116",
+  "appCheck": {
+    "apps": {
+      "ios": {
+        "bundleId": "$(PRODUCT_BUNDLE_IDENTIFIER)",
+        "provider": "app_attest",
+        "enabled": true
+      }
+    },
+    "settings": {
+      "enforcementEnabled": true,
+      "debugTokenEnabled": true
+    }
+  }
+}

@@ -106,25 +106,47 @@ struct Bill: Codable {
 
 ### **High Priority Issues to Review**
 
-#### **1. FCM Token Management**
+#### **1. Bill Edit/Delete Functionality**
+- **Issue**: Bill details screen lacks edit and delete capabilities
+- **Requirements**: Any bill participant can edit/delete bills with proper permissions
+- **Edit Scope**: All bill fields (name, items, prices, participants, who paid)
+- **Industry Standard**: Optimistic locking with version control for concurrent edits
+- **Technical Approach**: 
+  - Add `version` and `lastModifiedAt` fields to Bill model
+  - Implement conflict detection before saves
+  - Use "remove old + add new" strategy for balance recalculation
+  - Add FCM notifications for edits/deletes
+  - Include edit history tracking
+- **Balance Recalculation**: Replace old bill contribution instead of adding to prevent cumulative errors
+- **Confirmation**: Delete operations require confirmation dialog with balance impact warning
+
+#### **2. Concurrent Edit Management**
+- **Issue**: Multiple users editing same bill simultaneously
+- **Industry Standard**: Optimistic locking with conflict resolution
+- **Approach**: Check bill version before saving, show "Bill modified by someone else" error
+- **Real-time Sync**: Consider Firestore listeners for live edit indicators
+- **Fallback**: Force refresh and re-edit if conflicts detected
+
+#### **3. Balance Recalculation Edge Cases**
+- **Issue**: Edited bills should replace (not add to) existing balance contributions
+- **Example**: Person A owes $1 → bill edited → Person A owes $2 (final balance should be $2, not $3)
+- **Strategy**: Remove old bill's balance impact completely, then apply new bill's calculations
+- **Validation**: Prevent edits that create invalid states (negative totals, no participants)
+- **Integrity**: Show balance change preview before saving significant edits
+
+#### **4. FCM Token Management**
 - **Issue**: Firebase Cloud Messaging tokens expire and need refresh
 - **Industry Standard**: Implement token refresh on app start and periodic validation
 - **Approach**: Store tokens in Firestore user profile, refresh on token change events
 - **Fallback**: Silent notification failure handling with retry logic
 
-#### **2. Real-time Update Race Conditions**
-- **Issue**: UI updates may conflict when multiple users modify data simultaneously
-- **Industry Standard**: Optimistic updates with conflict resolution
-- **Approach**: Use Firestore transaction timestamps for conflict detection
-- **Fallback**: Last-write-wins with user notification of conflicts
-
-#### **3. Data Model Evolution & Migration**
+#### **5. Data Model Evolution & Migration**
 - **Issue**: Existing TransactionContact vs new Bill participant data structures
 - **Industry Standard**: Versioned data models with migration strategies
 - **Approach**: Maintain backward compatibility, add version fields to documents
 - **Migration**: Gradual migration of existing data to new structure
 
-#### **4. Storage Cost Optimization**
+#### **6. Storage Cost Optimization**
 - **Current**: No limits on transaction history storage
 - **Future Consideration**: Implement data archiving for bills older than 2 years
 - **Strategy**: Archive to cheaper storage tier, maintain searchable metadata
@@ -132,29 +154,29 @@ struct Bill: Codable {
 
 ### **Medium Priority Enhancements**
 
-#### **5. Multi-Currency Support**
+#### **7. Multi-Currency Support**
 - Add currency selection per bill
 - Implement exchange rate API integration
 - Handle currency conversion in split calculations
 
-#### **6. Advanced Notification Options**
+#### **8. Advanced Notification Options**
 - User preferences for notification types
 - Digest notifications (daily/weekly summaries)
 - In-app notification center
 
-#### **7. Bill Dispute Resolution**
+#### **9. Bill Dispute Resolution**
 - Comment system for bill items
 - Request modification workflow
 - Admin/mediator role for groups
 
 ### **Low Priority Future Features**
 
-#### **8. Advanced Analytics**
+#### **10. Advanced Analytics**
 - Spending patterns and insights
 - Category-based expense tracking
 - Monthly/yearly spending reports
 
-#### **9. Integration Features**
+#### **11. Integration Features**
 - Receipt photo attachment
 - Integration with banking/payment apps
 - Export to accounting software

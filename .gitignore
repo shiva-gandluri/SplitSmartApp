@@ -158,5 +158,10 @@ coverage/
 .claude/
 CLAUDE.md.backup
 
+# Temporary refactoring files
+*.swift.backup
+*.original
+*_backup.swift
+
 # User documentation (typically want to track these)
 # user-stories.md should be tracked as it's project documentation
