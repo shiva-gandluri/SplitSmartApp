@@ -490,6 +490,11 @@ class AuthViewModel: ObservableObject {
                 print("✅ User signed in: \(authResult.user.email ?? "Unknown email")")
             }
             
+            // Update FCM token for push notifications (async, don't block UI)
+            Task {
+                await FCMTokenManager.shared.validateAndRefreshToken()
+            }
+            
         } catch {
             print("❌ Sign-in error: \(error.localizedDescription)")
             await MainActor.run {

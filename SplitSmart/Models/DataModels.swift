@@ -237,12 +237,16 @@ struct UIBreakdownItem {
 // MARK: - Bill Settlement Data Models
 
 import FirebaseFirestore
+import FirebaseAuth
+// TODO: Add FirebaseMessaging via Xcode Package Dependencies
+// import FirebaseMessaging
 
 struct Bill: Codable, Identifiable {
     let id: String
     let paidBy: String // userID who paid
     let paidByDisplayName: String // Snapshot for UI
     let paidByEmail: String // Snapshot for notifications
+    let billName: String? // Custom name or default description (optional for backward compatibility)
     let totalAmount: Double // Always matches sum of items
     let currency: String
     let date: Timestamp
@@ -250,7 +254,6 @@ struct Bill: Codable, Identifiable {
     let items: [BillItem]
     let participants: [BillParticipant]
     let participantIds: [String] // Flattened array for efficient Firestore querying
-    let status: BillStatus
     
     // Audit trail
     let createdBy: String // userID who created bill
@@ -265,6 +268,7 @@ struct Bill: Codable, Identifiable {
          paidBy: String,
          paidByDisplayName: String,
          paidByEmail: String,
+         billName: String?,
          totalAmount: Double,
          currency: String = "USD",
          date: Timestamp = Timestamp(),
@@ -272,12 +276,12 @@ struct Bill: Codable, Identifiable {
          participants: [BillParticipant],
          createdBy: String,
          calculatedTotals: [String: Double],
-         roundingAdjustments: [String: Double] = [:],
-         status: BillStatus = .pending) {
+         roundingAdjustments: [String: Double] = [:]) {
         self.id = id
         self.paidBy = paidBy
         self.paidByDisplayName = paidByDisplayName
         self.paidByEmail = paidByEmail
+        self.billName = billName
         self.totalAmount = totalAmount
         self.currency = currency
         self.date = date
@@ -285,12 +289,20 @@ struct Bill: Codable, Identifiable {
         self.items = items
         self.participants = participants
         self.participantIds = participants.map { $0.id } // Flatten for querying
-        self.status = status
         self.createdBy = createdBy
         self.lastModifiedBy = nil
         self.lastModifiedAt = nil
         self.calculatedTotals = calculatedTotals
         self.roundingAdjustments = roundingAdjustments
+    }
+    
+    /// Returns the display name for the bill (custom name or default based on items)
+    var displayName: String {
+        if let billName = billName, !billName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return billName
+        } else {
+            return items.count == 1 ? items[0].name : "\(items.count) items"
+        }
     }
 }
 
@@ -322,12 +334,7 @@ struct BillParticipant: Codable, Identifiable {
     }
 }
 
-enum BillStatus: String, Codable, CaseIterable {
-    case pending = "pending"
-    case confirmed = "confirmed" 
-    case disputed = "disputed"
-    case settled = "settled"
-}
+// BillStatus enum removed - bills are simply created and exist without status
 
 // MARK: - Bill Service for Firebase Operations
 
@@ -404,11 +411,17 @@ class BillService: ObservableObject {
             paidByEmail = "unknown@example.com"
         }
         
+        // Determine bill name (use custom name if provided, otherwise default)
+        let finalBillName: String? = session.billName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty 
+            ? nil  // Will use computed displayName
+            : session.billName.trimmingCharacters(in: .whitespacesAndNewlines)
+        
         // Create Bill object
         let bill = Bill(
             paidBy: paidByParticipant.name == "You" ? currentUser.uid : "unknown_\(paidByID)",
             paidByDisplayName: paidByParticipant.name,
             paidByEmail: paidByEmail,
+            billName: finalBillName,
             totalAmount: session.totalAmount,
             items: billItems,
             participants: billParticipants,
@@ -425,6 +438,12 @@ class BillService: ObservableObject {
         try await saveBillToFirestore(bill: bill)
         
         print("✅ Bill created successfully with ID: \(bill.id)")
+        
+        // Send push notifications to participants (async, don't block UI)
+        Task {
+            await PushNotificationService.shared.sendBillNotificationToParticipants(bill: bill)
+        }
+        
         return bill
     }
     
@@ -551,17 +570,16 @@ class BillManager: ObservableObject {
         
         var totalOwed: Double = 0.0
         var totalOwedTo: Double = 0.0
-        var pendingBills: [String] = []
+        var activeBills: [String] = []
         
         for bill in userBills {
-            print("🧮 Processing bill \(bill.id): status=\(bill.status), paidBy=\(bill.paidBy), total=\(bill.totalAmount)")
+            print("🧮 Processing bill \(bill.id): paidBy=\(bill.paidBy), total=\(bill.totalAmount)")
             print("🧮 Bill calculatedTotals: \(bill.calculatedTotals)")
             
-            if bill.status == .pending || bill.status == .confirmed {
-                pendingBills.append(bill.id)
-                
-                // If user is the payer, they are owed money
-                if bill.paidBy == userId {
+            activeBills.append(bill.id)
+            
+            // If user is the payer, they are owed money
+            if bill.paidBy == userId {
                     print("🧮 User is the payer for this bill")
                     for (participantID, amount) in bill.calculatedTotals {
                         if participantID != userId && amount > 0.01 {
@@ -579,19 +597,16 @@ class BillManager: ObservableObject {
                         print("🧮 User not found in calculatedTotals or owes $0")
                     }
                 }
-            } else {
-                print("🧮 Skipping bill with status: \(bill.status)")
-            }
         }
         
         userBalance = UserBalance(
             totalOwed: totalOwed,
             totalOwedTo: totalOwedTo,
-            pendingBillIds: pendingBills
+            activeBillIds: activeBills
         )
         
         print("💰 Updated user balance - Owes: $\(totalOwed), Owed: $\(totalOwedTo)")
-        print("💰 Pending bills: \(pendingBills)")
+        print("💰 Active bills: \(activeBills)")
     }
     
     /// Gets net balances with all users (positive = they owe you, negative = you owe them)
@@ -606,36 +621,46 @@ class BillManager: ObservableObject {
         var balances: [String: Double] = [:] // participantID -> net amount (+ they owe you, - you owe them)
         var participantInfo: [String: (name: String, email: String)] = [:]
         
+        // Helper function to normalize participant IDs (always use consistent email-based format)
+        func normalizeParticipantID(_ id: String, displayName: String, email: String) -> String {
+            // Always normalize to email-based format for consistency
+            let normalizedEmail = email.lowercased()
+                .replacingOccurrences(of: "@", with: "_at_")
+                .replacingOccurrences(of: ".", with: "_")
+            
+            // Use email_prefix format consistently
+            return "email_\(normalizedEmail)"
+        }
+        
         for bill in userBills {
             print("🧮 Processing bill \(bill.id) for net balance")
             print("🧮 Bill paidBy: \(bill.paidBy), current user: \(userId)")
             print("🧮 Bill calculatedTotals: \(bill.calculatedTotals)")
             
-            if bill.status == .pending || bill.status == .confirmed {
-                if bill.paidBy == userId {
-                    print("🧮 User paid - others owe user")
-                    // User paid - others owe them (positive balance)
-                    for (sessionParticipantID, amount) in bill.calculatedTotals {
-                        if sessionParticipantID != userId && amount > 0.01 {
-                            // Find the participant
-                            for participant in bill.participants {
-                                if participant.id != userId {
-                                    balances[participant.id, default: 0.0] += amount
-                                    participantInfo[participant.id] = (participant.displayName, participant.email)
-                                    print("🧮 \(participant.displayName) owes user +$\(amount) (running total: $\(balances[participant.id] ?? 0.0))")
-                                    break
-                                }
-                            }
+            // Process all bills (no status filtering)
+            if bill.paidBy == userId {
+                print("🧮 User paid - others owe user")
+                // User paid - others owe them (positive balance)
+                for (sessionParticipantID, amount) in bill.calculatedTotals {
+                    if sessionParticipantID != "1" && amount > 0.01 {
+                        // Map session participant ID to actual participant
+                        // sessionParticipantID "2" means the other participant
+                        if let otherParticipant = bill.participants.first(where: { $0.id != userId }) {
+                            let normalizedID = normalizeParticipantID(otherParticipant.id, displayName: otherParticipant.displayName, email: otherParticipant.email)
+                            balances[normalizedID, default: 0.0] += amount
+                            participantInfo[normalizedID] = (otherParticipant.displayName, otherParticipant.email)
+                            print("🧮 \(otherParticipant.displayName) owes user +$\(amount) (running total: $\(balances[normalizedID] ?? 0.0))")
                         }
                     }
-                } else {
-                    print("🧮 User did not pay - checking if user owes")
-                    // User didn't pay - check if user owes money (negative balance)
-                    if let amountOwed = bill.calculatedTotals["1"], amountOwed > 0.01 {
-                        balances[bill.paidBy, default: 0.0] -= amountOwed
-                        participantInfo[bill.paidBy] = (bill.paidByDisplayName, bill.paidByEmail)
-                        print("🧮 User owes \(bill.paidByDisplayName) -$\(amountOwed) (running total: $\(balances[bill.paidBy] ?? 0.0))")
-                    }
+                }
+            } else {
+                print("🧮 User did not pay - checking if user owes")
+                // User didn't pay - check if user owes money (negative balance)
+                if let amountOwed = bill.calculatedTotals["1"], amountOwed > 0.01 {
+                    let normalizedID = normalizeParticipantID(bill.paidBy, displayName: bill.paidByDisplayName, email: bill.paidByEmail)
+                    balances[normalizedID, default: 0.0] -= amountOwed
+                    participantInfo[normalizedID] = (bill.paidByDisplayName, bill.paidByEmail)
+                    print("🧮 User owes \(bill.paidByDisplayName) -$\(amountOwed) (running total: $\(balances[normalizedID] ?? 0.0))")
                 }
             }
         }
@@ -688,12 +713,12 @@ class BillManager: ObservableObject {
 struct UserBalance {
     let totalOwed: Double // Amount user owes to others
     let totalOwedTo: Double // Amount others owe to user
-    let pendingBillIds: [String] // List of pending bill IDs
+    let activeBillIds: [String] // List of active bill IDs
     
-    init(totalOwed: Double = 0.0, totalOwedTo: Double = 0.0, pendingBillIds: [String] = []) {
+    init(totalOwed: Double = 0.0, totalOwedTo: Double = 0.0, activeBillIds: [String] = []) {
         self.totalOwed = totalOwed
         self.totalOwedTo = totalOwedTo
-        self.pendingBillIds = pendingBillIds
+        self.activeBillIds = activeBillIds
     }
     
     var netBalance: Double {
@@ -728,6 +753,210 @@ enum BillCreationError: LocalizedError {
         case .firestoreError(let message):
             return "Database error: \(message)"
         }
+    }
+}
+
+// MARK: - FCM Token Management
+
+class FCMTokenManager: ObservableObject {
+    static let shared = FCMTokenManager()
+    private let db = Firestore.firestore()
+    private let auth = Auth.auth()
+    
+    private init() {}
+    
+    /// Updates the current user's FCM token in Firestore
+    func updateFCMToken(_ token: String) async {
+        guard let currentUser = auth.currentUser else {
+            print("❌ updateFCMToken: No authenticated user")
+            return
+        }
+        
+        print("🔄 Updating FCM token for user: \(currentUser.uid)")
+        
+        do {
+            try await db.collection("users").document(currentUser.uid).setData([
+                "fcmToken": token,
+                "fcmTokenUpdatedAt": FieldValue.serverTimestamp(),
+                "email": currentUser.email ?? "",
+                "displayName": currentUser.displayName ?? "",
+                "lastActiveAt": FieldValue.serverTimestamp()
+            ], merge: true)
+            
+            print("✅ FCM token updated successfully in Firestore")
+        } catch {
+            print("❌ Failed to update FCM token: \(error)")
+        }
+    }
+    
+    /// Gets FCM tokens for participants by their email addresses
+    func getFCMTokensForEmails(_ emails: [String]) async -> [String: String] {
+        print("🔍 Looking up FCM tokens for emails: \(emails)")
+        
+        var tokenMap: [String: String] = [:]
+        
+        // Batch lookup users by email
+        for email in emails {
+            do {
+                let querySnapshot = try await db.collection("users")
+                    .whereField("email", isEqualTo: email)
+                    .limit(to: 1)
+                    .getDocuments()
+                
+                if let document = querySnapshot.documents.first,
+                   let fcmToken = document.data()["fcmToken"] as? String,
+                   !fcmToken.isEmpty {
+                    tokenMap[email] = fcmToken
+                    print("✅ Found FCM token for \(email)")
+                } else {
+                    print("❌ No FCM token found for \(email)")
+                }
+            } catch {
+                print("❌ Failed to lookup FCM token for \(email): \(error)")
+            }
+        }
+        
+        print("📊 FCM token lookup complete: \(tokenMap.count)/\(emails.count) tokens found")
+        return tokenMap
+    }
+    
+    /// Validates and refreshes FCM token if needed
+    func validateAndRefreshToken() async {
+        guard auth.currentUser != nil else {
+            print("❌ validateAndRefreshToken: No authenticated user")
+            return
+        }
+        
+        // TODO: Uncomment after adding FirebaseMessaging
+        /*
+        do {
+            let token = try await Messaging.messaging().token()
+            print("🔄 Current FCM token: \(token)")
+            await updateFCMToken(token)
+        } catch {
+            print("❌ Failed to get current FCM token: \(error)")
+        }
+        */
+        print("⚠️ FCM token validation skipped - add FirebaseMessaging dependency")
+    }
+}
+
+// MARK: - Push Notification Service
+
+class PushNotificationService: ObservableObject {
+    static let shared = PushNotificationService()
+    private let db = Firestore.firestore()
+    
+    private init() {}
+    
+    /// Sends push notifications to all participants about a new bill
+    func sendBillNotificationToParticipants(bill: Bill) async {
+        print("📨 Sending bill notifications for bill: \(bill.id)")
+        
+        // Get participant emails (excluding bill creator)
+        let participantEmails = bill.participants
+            .filter { $0.id != bill.createdBy }
+            .map { $0.email }
+        
+        guard !participantEmails.isEmpty else {
+            print("ℹ️ No participants to notify (excluding creator)")
+            return
+        }
+        
+        print("📧 Participant emails to notify: \(participantEmails)")
+        
+        // Get FCM tokens for participants
+        let tokenMap = await FCMTokenManager.shared.getFCMTokensForEmails(participantEmails)
+        
+        guard !tokenMap.isEmpty else {
+            print("❌ No FCM tokens found for any participants")
+            return
+        }
+        
+        // Create notification content
+        let notificationData = createBillNotificationData(bill: bill)
+        
+        // Send notifications to each participant with retry logic
+        for (email, fcmToken) in tokenMap {
+            await sendNotificationWithRetry(
+                fcmToken: fcmToken,
+                data: notificationData,
+                participantEmail: email,
+                billId: bill.id
+            )
+        }
+    }
+    
+    /// Creates notification data for a new bill
+    private func createBillNotificationData(bill: Bill) -> [String: Any] {
+        let title = "\(bill.paidByDisplayName) added '\(bill.displayName)' bill"
+        let body = String(format: "Total: $%.2f • Tap to view details", bill.totalAmount)
+        
+        return [
+            "title": title,
+            "body": body,
+            "billId": bill.id,
+            "billAmount": bill.totalAmount,
+            "billCreator": bill.paidByDisplayName,
+            "type": "new_bill"
+        ]
+    }
+    
+    /// Sends notification with exponential backoff retry (3 attempts)
+    private func sendNotificationWithRetry(fcmToken: String, data: [String: Any], participantEmail: String, billId: String) async {
+        let maxRetries = 3
+        var attempt = 0
+        
+        while attempt < maxRetries {
+            do {
+                try await sendSingleNotification(fcmToken: fcmToken, data: data)
+                print("✅ Notification sent successfully to \(participantEmail) on attempt \(attempt + 1)")
+                return
+            } catch {
+                attempt += 1
+                print("❌ Notification attempt \(attempt) failed for \(participantEmail): \(error)")
+                
+                if attempt < maxRetries {
+                    // Exponential backoff: 1s, 2s, 4s
+                    let delay = pow(2.0, Double(attempt - 1))
+                    print("⏳ Retrying in \(delay) seconds...")
+                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                } else {
+                    print("💸 All retry attempts failed for \(participantEmail). Relying on History tab for notification.")
+                }
+            }
+        }
+    }
+    
+    /// Sends a single push notification using Firebase Cloud Functions
+    private func sendSingleNotification(fcmToken: String, data: [String: Any]) async throws {
+        // Create the notification payload
+        let payload: [String: Any] = [
+            "to": fcmToken,
+            "notification": [
+                "title": data["title"] as? String ?? "",
+                "body": data["body"] as? String ?? "",
+                "sound": "default"
+            ],
+            "data": data,
+            "priority": "high",
+            "content_available": true
+        ]
+        
+        // Send via Firebase Cloud Functions or direct FCM API
+        // For now, we'll store the notification request in Firestore and let a Cloud Function handle it
+        // This is more reliable than direct FCM API calls from the client
+        
+        let notificationDoc: [String: Any] = [
+            "fcmToken": fcmToken,
+            "payload": payload,
+            "createdAt": FieldValue.serverTimestamp(),
+            "status": "pending",
+            "attempts": 0
+        ]
+        
+        try await db.collection("notification_queue").addDocument(data: notificationDoc)
+        print("📤 Notification queued for Cloud Function processing")
     }
 }
 
@@ -3451,6 +3680,9 @@ class BillSplitSession: ObservableObject {
     // Bill payer selection (mandatory for bill creation)
     @Published var paidByParticipantID: Int? = nil
     
+    // Bill name (optional, defaults to item count description)
+    @Published var billName: String = ""
+    
     // Item assignments
     @Published var assignedItems: [UIItem] = []
     
@@ -3501,8 +3733,9 @@ class BillSplitSession: ObservableObject {
         participants = [UIParticipant(id: 1, name: "You", color: .blue)]
         assignedItems.removeAll()
         
-        // Reset bill payer selection
+        // Reset bill payer selection and name
         paidByParticipantID = nil
+        billName = ""
         
         sessionState = .home
         isSessionActive = false

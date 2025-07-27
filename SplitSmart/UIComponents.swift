@@ -2032,6 +2032,11 @@ struct UISummaryScreen: View {
     @State private var showingError = false
     @State private var createdBill: Bill?
     
+    var defaultBillName: String {
+        let itemCount = session.assignedItems.count
+        return itemCount == 1 ? session.assignedItems[0].name : "\(itemCount) items"
+    }
+    
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
@@ -2043,6 +2048,31 @@ struct UISummaryScreen: View {
                         .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal)
+                
+                // Bill name editing section
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Bill Name")
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                        Spacer()
+                        Text("Optional")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    TextField("Enter bill name (e.g., \"Dinner at Olive Garden\")", text: Binding(
+                        get: { session.billName },
+                        set: { session.billName = $0 }
+                    ))
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .autocorrectionDisabled()
+                    
+                    Text("Leave empty to use default: \"\(defaultBillName)\"")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
                 .padding(.horizontal)
                 
                 // Bill paid by section

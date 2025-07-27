@@ -182,7 +182,7 @@ service cloud.firestore {
     
     // Bill data validation function
     function validateBillData(data) {
-      return data.keys().hasAll(['id', 'paidBy', 'paidByDisplayName', 'paidByEmail', 'totalAmount', 'currency', 'date', 'createdAt', 'items', 'participants', 'participantIds', 'status', 'createdBy', 'calculatedTotals']) &&
+      return data.keys().hasAll(['id', 'paidBy', 'paidByDisplayName', 'paidByEmail', 'totalAmount', 'currency', 'date', 'createdAt', 'items', 'participants', 'participantIds', 'createdBy', 'calculatedTotals']) &&
              data.id is string &&
              data.id.size() >= 1 &&
              data.id.size() <= 100 &&
@@ -212,12 +212,12 @@ service cloud.firestore {
              data.participantIds is list &&
              data.participantIds.size() >= 2 &&
              data.participantIds.size() <= 50 &&
-             data.status in ['pending', 'confirmed', 'disputed', 'settled'] &&
              data.createdBy is string &&
              data.createdBy.size() >= 1 &&
              data.createdBy.size() <= 100 &&
              data.calculatedTotals is map &&
-             // Validate optional fields
+             // Validate optional fields - billName is optional for backward compatibility
+             (!('billName' in data) || (data.billName is string && data.billName.size() <= 200)) &&
              (!('lastModifiedBy' in data) || (data.lastModifiedBy is string && data.lastModifiedBy.size() <= 100)) &&
              (!('lastModifiedAt' in data) || data.lastModifiedAt is timestamp) &&
              (!('roundingAdjustments' in data) || data.roundingAdjustments is map);

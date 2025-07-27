@@ -1,36 +1,19 @@
 import SwiftUI
 import Firebase
 import FirebaseFirestore
-import FirebaseAppCheck
+// import FirebaseAppCheck  // Temporarily disabled until proper setup
 import GoogleSignIn
+import UserNotifications
+// TODO: Add FirebaseMessaging via Xcode Package Dependencies
+// import FirebaseMessaging
 
-class AppDelegate: NSObject, UIApplicationDelegate {
+class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate { // TODO: Add MessagingDelegate after adding FirebaseMessaging
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
         
-        // SECURITY: Configure Firebase App Check BEFORE Firebase.configure()
-        // TEMPORARILY DISABLED: Enable this after running ./enable-app-check.sh
-        /*
-        #if DEBUG
-        // For development/debug builds - use debug provider
-        let providerFactory = AppCheckDebugProviderFactory()
-        AppCheck.setAppCheckProviderFactory(providerFactory)
-        print("✅ Firebase App Check configured for DEBUG with Debug Provider")
-        #else
-        // For production builds - use App Attest provider (iOS 14+)
-        if #available(iOS 14.0, *) {
-            let providerFactory = AppAttestProviderFactory()
-            AppCheck.setAppCheckProviderFactory(providerFactory)
-            print("✅ Firebase App Check configured for RELEASE with App Attest Provider")
-        } else {
-            // Fallback for older iOS versions - use DeviceCheck
-            let providerFactory = DeviceCheckProviderFactory()
-            AppCheck.setAppCheckProviderFactory(providerFactory)
-            print("✅ Firebase App Check configured for RELEASE with DeviceCheck Provider")
-        }
-        #endif
-        */
-        print("ℹ️ Firebase App Check temporarily disabled - run ./enable-app-check.sh to enable")
+        // TEMPORARILY DISABLED: Firebase App Check until proper setup is complete
+        // The iOS app needs to be registered in Firebase Console first
+        print("⚠️ Firebase App Check temporarily disabled - complete manual setup first")
         
         // Configure Firebase as early as possible
         FirebaseApp.configure()
@@ -54,6 +37,9 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
         print("✅ Google Sign-In configured with client ID: \(clientID)")
         
+        // Configure Firebase Cloud Messaging
+        setupPushNotifications(application: application)
+        
         return true
     }
     
@@ -61,6 +47,92 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         // Handle Google Sign-In URL scheme
         print("🔗 Handling URL: \(url.absoluteString)")
         return GIDSignIn.sharedInstance.handle(url)
+    }
+    
+    // MARK: - Push Notification Setup
+    
+    private func setupPushNotifications(application: UIApplication) {
+        print("🔔 Setting up basic push notifications (FCM integration pending)...")
+        
+        // TODO: Uncomment after adding FirebaseMessaging
+        // Set FCM messaging delegate
+        // Messaging.messaging().delegate = self
+        
+        // Set UNUserNotificationCenter delegate
+        UNUserNotificationCenter.current().delegate = self
+        
+        // Request notification permissions
+        let authOptions: UNAuthorizationOptions = [.alert, .badge, .sound]
+        UNUserNotificationCenter.current().requestAuthorization(
+            options: authOptions
+        ) { granted, error in
+            if let error = error {
+                print("❌ Failed to request notification authorization: \(error)")
+                return
+            }
+            
+            print(granted ? "✅ Notification authorization granted" : "⚠️ Notification authorization denied")
+            
+            if granted {
+                DispatchQueue.main.async {
+                    application.registerForRemoteNotifications()
+                }
+            }
+        }
+    }
+    
+    // MARK: - Remote Notification Registration
+    
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        print("✅ Successfully registered for remote notifications")
+        print("📱 Device Token: \(deviceToken.map { String(format: "%02.2hhx", $0) }.joined())")
+        
+        // TODO: Uncomment after adding FirebaseMessaging
+        // Set APNs token for Firebase Messaging
+        // Messaging.messaging().apnsToken = deviceToken
+    }
+    
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        print("❌ Failed to register for remote notifications: \(error)")
+    }
+    
+    // MARK: - MessagingDelegate (TODO: Uncomment after adding FirebaseMessaging)
+    /*
+    func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
+        guard let fcmToken = fcmToken else {
+            print("❌ FCM token is nil")
+            return
+        }
+        
+        print("✅ FCM Registration Token received: \(fcmToken)")
+        
+        // Store token in Firestore when user is authenticated
+        Task {
+            await FCMTokenManager.shared.updateFCMToken(fcmToken)
+        }
+    }
+    */
+    
+    // MARK: - UNUserNotificationCenterDelegate
+    
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        // Show notification even when app is in foreground
+        print("📩 Received notification while app is in foreground: \(notification.request.content.title)")
+        completionHandler([.banner, .sound, .badge])
+    }
+    
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
+        // Handle notification tap
+        let userInfo = response.notification.request.content.userInfo
+        print("👆 User tapped notification: \(userInfo)")
+        
+        // TODO: Navigate to specific bill detail if bill ID is provided
+        if let billId = userInfo["billId"] as? String {
+            print("🔍 Navigate to bill: \(billId)")
+            // We'll implement navigation logic later
+        }
+        
+        completionHandler()
     }
 }
 
