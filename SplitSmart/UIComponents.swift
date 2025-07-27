@@ -118,6 +118,405 @@ extension CNContact {
     }
 }
 
+// MARK: - Participant Search View
+struct ParticipantSearchView: View {
+    @Binding var searchText: String
+    let transactionContacts: [TransactionContact]
+    let onContactSelected: (TransactionContact) -> Void
+    let onNewContactSubmit: (String) -> Void
+    let onCancel: () -> Void
+    
+    @State private var isSearchFocused = false
+    @FocusState private var isTextFieldFocused: Bool
+    
+    var filteredContacts: [TransactionContact] {
+        if searchText.isEmpty {
+            return Array(transactionContacts.prefix(5)) // Show top 5 recent contacts
+        }
+        return transactionContacts.filter { contact in
+            contact.displayName.lowercased().contains(searchText.lowercased()) ||
+            contact.email.lowercased().contains(searchText.lowercased()) ||
+            (contact.phoneNumber?.contains(searchText) ?? false)
+        }
+    }
+    
+    var isValidEmailOrPhone: Bool {
+        searchText.contains("@") || searchText.allSatisfy { char in
+            char.isNumber || char == "+" || char == "-" || char == " " || char == "(" || char == ")"
+        }
+    }
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Compact Search Bar
+            HStack(spacing: 12) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.secondary)
+                    .font(.system(size: 16))
+                
+                TextField("Add Participants", text: $searchText)
+                    .font(.subheadline)
+                    .focused($isTextFieldFocused)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .onSubmit {
+                        if !searchText.isEmpty && filteredContacts.isEmpty && isValidEmailOrPhone {
+                            onNewContactSubmit(searchText)
+                        }
+                    }
+                
+                if !searchText.isEmpty {
+                    Button(action: {
+                        searchText = ""
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                            .font(.system(size: 16))
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(Color(.systemGray6))
+            .cornerRadius(12)
+            
+            // Compact Dropdown Results
+            if !searchText.isEmpty {
+                VStack(spacing: 0) {
+                    if !filteredContacts.isEmpty {
+                        // Show top 3 contacts in dropdown
+                        LazyVStack(spacing: 0) {
+                            ForEach(Array(filteredContacts.prefix(3))) { contact in
+                                ContactResultRow(contact: contact) {
+                                    onContactSelected(contact)
+                                }
+                                .background(Color(.systemBackground))
+                                
+                                if contact.id != filteredContacts.prefix(3).last?.id {
+                                    Divider()
+                                        .padding(.leading, 56) // Align with contact text
+                                }
+                            }
+                        }
+                        .background(Color(.systemBackground))
+                        .cornerRadius(8)
+                        .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+                    } else if isValidEmailOrPhone {
+                        // New contact option in compact dropdown
+                        Button(action: {
+                            onNewContactSubmit(searchText)
+                        }) {
+                            HStack(spacing: 12) {
+                                Image(systemName: "person.badge.plus")
+                                    .foregroundColor(.blue)
+                                    .font(.system(size: 20))
+                                    .frame(width: 40, height: 40)
+                                    .background(Color.blue.opacity(0.1))
+                                    .cornerRadius(20)
+                                
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Add \(searchText)")
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                        .foregroundColor(.primary)
+                                    
+                                    Text("New contact")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                
+                                Spacer()
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .background(Color(.systemBackground))
+                            .cornerRadius(8)
+                            .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                }
+                .padding(.top, 8)
+                .zIndex(1000) // Ensure dropdown appears on top
+            }
+        }
+        .onAppear {
+            isTextFieldFocused = true
+        }
+    }
+}
+
+// MARK: - Contact Result Row
+struct ContactResultRow: View {
+    let contact: TransactionContact
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 16) {
+                // Avatar
+                Circle()
+                    .fill(Color.blue.opacity(0.1))
+                    .frame(width: 44, height: 44)
+                    .overlay(
+                        Text(String(contact.displayName.prefix(1).uppercased()))
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(.blue)
+                    )
+                
+                // Contact Info
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(contact.displayName)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.primary)
+                    
+                    Text(contact.email)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                // Transaction count
+                if contact.totalTransactions > 1 {
+                    Text("\(contact.totalTransactions)")
+                        .font(.caption2)
+                        .fontWeight(.medium)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color(.systemGray5))
+                        .cornerRadius(8)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .background(Color(.systemBackground))
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+// MARK: - New Contact Modal
+struct NewContactModal: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var contactsManager: ContactsManager
+    @ObservedObject var authViewModel: AuthViewModel
+    
+    let prefilledEmail: String
+    let onContactSaved: (TransactionContact) -> Void
+    
+    @State private var fullName: String = ""
+    @State private var phoneNumber: String = ""
+    @State private var isLoading = false
+    @State private var validationError: String?
+    @State private var showErrorAlert = false
+    @FocusState private var isNameFieldFocused: Bool
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 32) {
+                    // Icon and description
+                    VStack(spacing: 16) {
+                        Circle()
+                            .fill(Color.blue.opacity(0.1))
+                            .frame(width: 80, height: 80)
+                            .overlay(
+                                Image(systemName: "person.badge.plus")
+                                    .font(.system(size: 32))
+                                    .foregroundColor(.blue)
+                            )
+                        
+                        VStack(spacing: 8) {
+                            Text("Add to Network")
+                                .font(.title2)
+                                .fontWeight(.semibold)
+                            
+                            Text("Save this contact to easily add them to future bills")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                    }
+                    .padding(.top, 20)
+                    
+                    // Form
+                    VStack(spacing: 24) {
+                        // Full Name Field
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Full Name")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                
+                                Text("*")
+                                    .font(.subheadline)
+                                    .foregroundColor(.red)
+                            }
+                            
+                            TextField("Enter full name", text: $fullName)
+                                .font(.body)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 14)
+                                .background(Color(.systemGray6))
+                                .cornerRadius(12)
+                                .focused($isNameFieldFocused)
+                                .autocapitalization(.words)
+                                .disableAutocorrection(true)
+                        }
+                        
+                        // Email Field (read-only)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Email")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            
+                            HStack {
+                                Image(systemName: "envelope")
+                                    .foregroundColor(.secondary)
+                                    .font(.system(size: 16))
+                                
+                                Text(prefilledEmail)
+                                    .font(.body)
+                                    .foregroundColor(.primary)
+                                
+                                Spacer()
+                                
+                                Image(systemName: "lock.fill")
+                                    .foregroundColor(.secondary)
+                                    .font(.system(size: 12))
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 14)
+                            .background(Color(.systemGray5))
+                            .cornerRadius(12)
+                        }
+                        
+                        // Phone Number Field (optional)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Phone Number (Optional)")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundColor(.secondary)
+                            
+                            TextField("Enter phone number", text: $phoneNumber)
+                                .font(.body)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 14)
+                                .background(Color(.systemGray6))
+                                .cornerRadius(12)
+                                .keyboardType(.phonePad)
+                        }
+                        
+                        // Error message
+                        if let errorMessage = validationError {
+                            HStack {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.red)
+                                    .font(.system(size: 14))
+                                
+                                Text(errorMessage)
+                                    .font(.caption)
+                                    .foregroundColor(.red)
+                                
+                                Spacer()
+                            }
+                            .padding(.top, 16)
+                        }
+                    }
+                    .padding(.horizontal, 24)
+                }
+                .padding(.bottom, 40)
+            }
+            .navigationTitle("New Contact")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: saveContact) {
+                        if isLoading {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                        } else {
+                            Text("Add")
+                                .fontWeight(.semibold)
+                        }
+                    }
+                    .disabled(!isFormValid || isLoading)
+                }
+            }
+            .onTapGesture {
+                hideKeyboard()
+            }
+        }
+        .onAppear {
+            isNameFieldFocused = true
+        }
+        .alert("Error", isPresented: $showErrorAlert) {
+            Button("OK") {}
+        } message: {
+            Text(validationError ?? "An error occurred")
+        }
+    }
+    
+    private var isFormValid: Bool {
+        !fullName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    
+    private func saveContact() {
+        let trimmedPhone = phoneNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        let phoneToSave = trimmedPhone.isEmpty ? nil : trimmedPhone
+        
+        isLoading = true
+        validationError = nil
+        
+        Task {
+            do {
+                // Validate the transaction contact (now async)
+                let validation = await contactsManager.validateNewTransactionContact(
+                    displayName: fullName,
+                    email: prefilledEmail,
+                    phoneNumber: phoneToSave,
+                    authViewModel: authViewModel
+                )
+                
+                guard validation.isValid, let contact = validation.contact else {
+                    await MainActor.run {
+                        isLoading = false
+                        validationError = validation.error
+                        showErrorAlert = true
+                    }
+                    return
+                }
+                
+                try await contactsManager.saveTransactionContact(contact)
+                
+                await MainActor.run {
+                    isLoading = false
+                    onContactSaved(contact)
+                    dismiss()
+                }
+            } catch {
+                await MainActor.run {
+                    isLoading = false
+                    validationError = error.localizedDescription
+                    showErrorAlert = true
+                }
+            }
+        }
+    }
+    
+    private func hideKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+}
+
 // MARK: - UI Components matching React designs exactly
 
 struct UIHomeScreen: View {
@@ -325,13 +724,18 @@ struct UIAssignScreen: View {
     @EnvironmentObject var authViewModel: AuthViewModel
     
     @State private var newParticipantName = ""
-    @State private var showAddParticipant = false
     @State private var showContactPicker = false
     @State private var showAddParticipantOptions = false
     @State private var showingImagePopup = false
     @State private var validationError: String? = nil
     @State private var showValidationAlert = false
+    @State private var successMessage: String? = nil
+    @State private var showSuccessAlert = false
+    @State private var showNewContactModal = false
+    @State private var pendingContactEmail = ""
+    @State private var pendingContactName = ""
     @StateObject private var contactsPermissionManager = ContactsPermissionManager()
+    @StateObject private var contactsManager = ContactsManager()
     
     // Check if totals match within reasonable tolerance
     private var totalsMatch: Bool {
@@ -381,169 +785,22 @@ struct UIAssignScreen: View {
                 }
                 .padding(.horizontal)
                 
-                // Participants Section
+                // Modern Search Interface for Adding Participants
                 VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Text("Participants")
-                            .font(.body)
-                            .fontWeight(.medium)
-                        
-                        Spacer()
-                        
-                        Button(action: {
-                            showAddParticipantOptions = true
-                        }) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "person.badge.plus")
-                                    .font(.body)
-                                Text("Add Participant")
-                                    .font(.body)
-                                    .fontWeight(.medium)
-                            }
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(Color.blue)
-                            .cornerRadius(10)
+                    ParticipantSearchView(
+                        searchText: $newParticipantName,
+                        transactionContacts: contactsManager.transactionContacts,
+                        onContactSelected: { contact in
+                            handleExistingContactSelected(contact)
+                        },
+                        onNewContactSubmit: { searchText in
+                            handleNewContactSubmit(searchText)
+                        },
+                        onCancel: {
+                            // No cancel button anymore, but keep callback for compatibility
                         }
-                    }
+                    )
                     .padding(.horizontal)
-                    
-                    // Add Participant Options
-                    if showAddParticipantOptions {
-                        VStack(spacing: 12) {
-                            // Option 1: From Contacts
-                            Button(action: handleChooseFromContacts) {
-                                HStack {
-                                    Circle()
-                                        .fill(Color.blue.opacity(0.1))
-                                        .frame(width: 40, height: 40)
-                                        .overlay(
-                                            Image(systemName: "person.crop.circle")
-                                                .font(.title3)
-                                                .foregroundColor(.blue)
-                                        )
-                                    
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text("Choose from Contacts")
-                                            .font(.body)
-                                            .fontWeight(.medium)
-                                            .foregroundColor(.primary)
-                                        Text("Select from your contact list")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                    
-                                    Spacer()
-                                    
-                                    Image(systemName: "chevron.right")
-                                        .font(.body)
-                                        .foregroundColor(.secondary)
-                                }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 12)
-                                .background(Color(.systemBackground))
-                                .cornerRadius(12)
-                                .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
-                            }
-                            
-                            // Option 2: Manual Entry
-                            Button(action: {
-                                showAddParticipantOptions = false
-                                showAddParticipant = true
-                            }) {
-                                HStack {
-                                    Circle()
-                                        .fill(Color.green.opacity(0.1))
-                                        .frame(width: 40, height: 40)
-                                        .overlay(
-                                            Image(systemName: "pencil")
-                                                .font(.title3)
-                                                .foregroundColor(.green)
-                                        )
-                                    
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text("Enter Manually")
-                                            .font(.body)
-                                            .fontWeight(.medium)
-                                            .foregroundColor(.primary)
-                                        Text("Type the participant's name")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                    
-                                    Spacer()
-                                    
-                                    Image(systemName: "chevron.right")
-                                        .font(.body)
-                                        .foregroundColor(.secondary)
-                                }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 12)
-                                .background(Color(.systemBackground))
-                                .cornerRadius(12)
-                                .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
-                            }
-                        }
-                        .padding(.horizontal)
-                    }
-                    
-                    if showAddParticipant {
-                        VStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Enter Email or Phone Number")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                    .padding(.horizontal, 16)
-                                
-                                TextField("e.g., john@example.com or +1234567890", text: $newParticipantName)
-                                    .textFieldStyle(.roundedBorder)
-                                    .font(.body)
-                                    .padding(.horizontal, 16)
-                                    .keyboardType(.emailAddress)
-                                    .textInputAutocapitalization(.never)
-                                    .onSubmit {
-                                        handleAddParticipant()
-                                    }
-                                
-                                Text("Only users registered with SplitSmart can be added")
-                                    .font(.caption2)
-                                    .foregroundColor(.orange)
-                                    .padding(.horizontal, 16)
-                            }
-                            
-                            HStack(spacing: 12) {
-                                Button("Cancel") {
-                                    showAddParticipant = false
-                                    newParticipantName = ""
-                                }
-                                .font(.body)
-                                .fontWeight(.medium)
-                                .foregroundColor(.secondary)
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 10)
-                                .background(Color(.systemGray5))
-                                .cornerRadius(10)
-                                
-                                Button("Add Participant") {
-                                    handleAddParticipant()
-                                }
-                                .font(.body)
-                                .fontWeight(.medium)
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 10)
-                                .background(Color.blue)
-                                .cornerRadius(10)
-                                .disabled(newParticipantName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                            }
-                            .padding(.horizontal, 16)
-                        }
-                        .padding(.vertical, 12)
-                        .background(Color(.systemGray6))
-                        .cornerRadius(12)
-                        .padding(.horizontal)
-                    }
                     
                     // Participants chips with delete functionality
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: 12) {
@@ -874,6 +1131,36 @@ struct UIAssignScreen: View {
                 handleContactsSelected(contacts)
             }
         }
+        .sheet(isPresented: $showNewContactModal) {
+            NewContactModal(
+                contactsManager: contactsManager,
+                authViewModel: authViewModel,
+                prefilledEmail: pendingContactEmail
+            ) { savedContact in
+                handleContactSaved(savedContact)
+            }
+        }
+        .onAppear {
+            // Initialize contacts manager with current user
+            if let userId = authViewModel.user?.uid {
+                print("🔍 DEBUG: Initializing contacts manager for user: \(userId)")
+                contactsManager.setCurrentUser(userId)
+                print("🔍 DEBUG: Current transaction contacts count: \(contactsManager.transactionContacts.count)")
+            } else {
+                print("⚠️ DEBUG: No user ID available for contacts manager")
+                contactsManager.clearCurrentUser()
+            }
+        }
+        .onChange(of: authViewModel.user?.uid) { oldUserId, newUserId in
+            // Handle user changes (logout/login with different user)
+            if let userId = newUserId {
+                print("🔄 DEBUG: User changed, updating contacts manager for user: \(userId)")
+                contactsManager.setCurrentUser(userId)
+            } else {
+                print("🧹 DEBUG: User logged out, clearing contacts manager")
+                contactsManager.clearCurrentUser()
+            }
+        }
         .fullScreenCover(isPresented: $showingImagePopup) {
             if let image = session.capturedReceiptImage {
                 ImagePopupView(image: image) {
@@ -891,10 +1178,15 @@ struct UIAssignScreen: View {
         } message: {
             Text(contactsPermissionManager.permissionMessage)
         }
-        .alert("User Not Registered", isPresented: $showValidationAlert) {
+        .alert("❌ Error", isPresented: $showValidationAlert) {
             Button("OK", role: .cancel) { }
         } message: {
-            Text(validationError ?? "The user is not registered with SplitSmart and cannot be added to the split.")
+            Text(validationError ?? "An error occurred.")
+        }
+        .alert("✅ Success", isPresented: $showSuccessAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(successMessage ?? "Operation completed successfully.")
         }
     }
     
@@ -955,7 +1247,8 @@ struct UIAssignScreen: View {
                     name: contactName,
                     email: email,
                     phoneNumber: phoneNumber,
-                    authViewModel: authViewModel
+                    authViewModel: authViewModel,
+                    contactsManager: contactsManager
                 )
                 
                 if result.participant != nil {
@@ -983,6 +1276,88 @@ struct UIAssignScreen: View {
         session.removeParticipant(participant)
     }
     
+    private func handleContactSaved(_ contact: TransactionContact) {
+        // Check if trying to add yourself
+        if contact.displayName.lowercased() == "you" {
+            validationError = "You are already in this bill"
+            showValidationAlert = true
+            return
+        }
+        
+        // Check if participant already exists
+        if session.participants.contains(where: { $0.name.lowercased() == contact.displayName.lowercased() }) {
+            validationError = "\(contact.displayName) is already in this bill"
+            showValidationAlert = true
+            return
+        }
+        
+        // After saving contact, directly add them to the current bill without re-validation
+        // since we know they're now in our network
+        
+        let newId = (session.participants.map { $0.id }.max() ?? 0) + 1
+        let colorIndex = session.participants.count % session.colors.count
+        
+        let newParticipant = UIParticipant(
+            id: newId,
+            name: contact.displayName,
+            color: session.colors[colorIndex]
+        )
+        
+        session.participants.append(newParticipant)
+        
+        print("✅ Added new network contact as participant: \(contact.displayName)")
+        newParticipantName = ""
+        
+        // Show success message
+        successMessage = "Contact saved and added to current bill!"
+        showSuccessAlert = true
+    }
+    
+    private func handleExistingContactSelected(_ contact: TransactionContact) {
+        Task {
+            // SECURITY: Check if trying to add yourself by comparing emails
+            let currentUserEmail = await MainActor.run { authViewModel.user?.email }
+            if let currentUserEmail = currentUserEmail,
+               contact.email.lowercased() == currentUserEmail.lowercased() {
+                await MainActor.run {
+                    validationError = "You cannot add yourself to the bill"
+                    showValidationAlert = true
+                }
+                return
+            }
+            
+            await MainActor.run {
+                // Check if participant already exists
+                if session.participants.contains(where: { $0.name.lowercased() == contact.displayName.lowercased() }) {
+                    validationError = "\(contact.displayName) is already in this bill"
+                    showValidationAlert = true
+                    return
+                }
+                
+                // Add existing contact to current bill
+                let newId = (session.participants.map { $0.id }.max() ?? 0) + 1
+                let colorIndex = session.participants.count % session.colors.count
+                
+                let newParticipant = UIParticipant(
+                    id: newId,
+                    name: contact.displayName,
+                    color: session.colors[colorIndex]
+                )
+                
+                session.participants.append(newParticipant)
+                
+                print("✅ Added existing contact as participant: \(contact.displayName)")
+                newParticipantName = ""
+            }
+        }
+    }
+    
+    private func handleNewContactSubmit(_ searchText: String) {
+        // Process new contact like the old handleAddParticipant but with the search text
+        newParticipantName = searchText
+        handleAddParticipant()
+    }
+    
     private func handleAddParticipant() {
         let trimmedName = newParticipantName.trimmingCharacters(in: .whitespacesAndNewlines)
         
@@ -999,15 +1374,28 @@ struct UIAssignScreen: View {
                     let emailValidation = AuthViewModel.validateEmail(trimmedName)
                     if emailValidation.isValid {
                         email = emailValidation.sanitized
-                        // Extract name from email (part before @)
-                        participantName = String(trimmedName.split(separator: "@").first ?? Substring(trimmedName))
                         
-                        // Validate the extracted name
-                        let nameValidation = AuthViewModel.validateDisplayName(participantName)
-                        if nameValidation.isValid {
-                            participantName = nameValidation.sanitized!
+                        // Check if this email is already in user's transaction contacts
+                        print("🔍 Checking transaction contacts (count: \(contactsManager.transactionContacts.count)) for email: \(emailValidation.sanitized ?? "")")
+                        if let existingContact = contactsManager.transactionContacts.first(where: { 
+                            $0.email.lowercased() == emailValidation.sanitized?.lowercased() 
+                        }) {
+                            // Use the saved display name from transaction contacts
+                            participantName = existingContact.displayName
+                            print("📋 Found existing contact: \(existingContact.displayName) for email: \(emailValidation.sanitized ?? "")")
                         } else {
-                            participantName = "User" // Fallback
+                            print("❌ No existing contact found for email: \(emailValidation.sanitized ?? "")")
+                            print("📋 Available contacts: \(contactsManager.transactionContacts.map { "\($0.displayName) (\($0.email))" })")
+                            // Extract name from email (part before @) as fallback
+                            participantName = String(trimmedName.split(separator: "@").first ?? Substring(trimmedName))
+                            
+                            // Validate the extracted name
+                            let nameValidation = AuthViewModel.validateDisplayName(participantName)
+                            if nameValidation.isValid {
+                                participantName = nameValidation.sanitized!
+                            } else {
+                                participantName = "User" // Fallback
+                            }
                         }
                     } else {
                         validationError = emailValidation.error
@@ -1044,14 +1432,21 @@ struct UIAssignScreen: View {
                     name: participantName,
                     email: email,
                     phoneNumber: phoneNumber,
-                    authViewModel: authViewModel
+                    authViewModel: authViewModel,
+                    contactsManager: contactsManager
                 )
                 
                 await MainActor.run {
                     if result.participant != nil {
                         print("✅ Added validated participant manually: \(trimmedName)")
                         newParticipantName = ""
-                        showAddParticipant = false
+                        showAddParticipantOptions = false
+                    } else if result.needsContact {
+                        print("📝 Showing contact modal for email: \(email ?? "nil")")
+                        // Show new contact modal for unregistered email
+                        pendingContactEmail = email ?? ""
+                        pendingContactName = participantName
+                        showNewContactModal = true
                         showAddParticipantOptions = false
                     } else {
                         self.validationError = result.error ?? "Unable to add participant"
@@ -2176,7 +2571,7 @@ struct ItemRowWithParticipants: View {
         .onAppear {
             updateEveryoneButtonState()
         }
-        .onChange(of: item.assignedToParticipants) { _ in
+        .onChange(of: item.assignedToParticipants) {
             updateEveryoneButtonState()
         }
     }

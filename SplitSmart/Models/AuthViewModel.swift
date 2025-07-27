@@ -103,7 +103,7 @@ class AuthViewModel: ObservableObject {
     }
     
     // SECURE Input validation functions
-    static func validateEmail(_ email: String?) -> (isValid: Bool, sanitized: String?, error: String?) {
+    nonisolated static func validateEmail(_ email: String?) -> (isValid: Bool, sanitized: String?, error: String?) {
         guard let email = email?.trimmingCharacters(in: .whitespacesAndNewlines), !email.isEmpty else {
             return (false, nil, "Email cannot be empty")
         }
@@ -135,7 +135,7 @@ class AuthViewModel: ObservableObject {
         return (true, lowercaseEmail, nil)
     }
     
-    static func validatePhoneNumber(_ phone: String?) -> (isValid: Bool, sanitized: String?, error: String?) {
+    nonisolated static func validatePhoneNumber(_ phone: String?) -> (isValid: Bool, sanitized: String?, error: String?) {
         guard let phone = phone?.trimmingCharacters(in: .whitespacesAndNewlines), !phone.isEmpty else {
             return (false, nil, "Phone number cannot be empty")
         }
@@ -167,7 +167,7 @@ class AuthViewModel: ObservableObject {
         return (true, digitsOnly, nil)
     }
     
-    static func validateDisplayName(_ name: String?) -> (isValid: Bool, sanitized: String?, error: String?) {
+    nonisolated static func validateDisplayName(_ name: String?) -> (isValid: Bool, sanitized: String?, error: String?) {
         guard let name = name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
             return (false, nil, "Name cannot be empty")
         }

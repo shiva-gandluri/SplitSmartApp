@@ -2,6 +2,7 @@ import SwiftUI
 import Vision
 import UIKit
 import NaturalLanguage
+import FirebaseFirestore
 
 // MARK: - Currency Utilities
 extension Double {
@@ -115,6 +116,47 @@ struct UIParticipant: Identifiable, Hashable {
     let id: Int
     let name: String
     let color: Color
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+    
+    static func == (lhs: UIParticipant, rhs: UIParticipant) -> Bool {
+        return lhs.id == rhs.id
+    }
+}
+
+// MARK: - Transaction Contact Models (Splitwise-style)
+struct TransactionContact: Identifiable, Codable {
+    let id: String                    // Contact ID in our system
+    let contactUserId: String?        // Reference to global participants collection (if registered)
+    let displayName: String           // How this user knows them
+    let email: String
+    let phoneNumber: String?
+    let lastTransactionAt: Date
+    let totalTransactions: Int
+    let createdAt: Date
+    let updatedAt: Date
+    let nickname: String?             // Optional custom nickname
+    
+    init(displayName: String, email: String, phoneNumber: String? = nil, contactUserId: String? = nil, nickname: String? = nil) {
+        self.id = UUID().uuidString
+        self.contactUserId = contactUserId
+        self.displayName = displayName
+        self.email = email
+        self.phoneNumber = phoneNumber
+        self.lastTransactionAt = Date()
+        self.totalTransactions = 1
+        self.createdAt = Date()
+        self.updatedAt = Date()
+        self.nickname = nickname
+    }
+}
+
+struct ContactValidationResult {
+    let isValid: Bool
+    let error: String?
+    let contact: TransactionContact?
 }
 
 struct UIItem: Identifiable {
@@ -1720,25 +1762,6 @@ class OCRService: ObservableObject {
         print("   Target total: $\(targetTotal)")
         print("   Expected items: \(expectedCount)")
         
-        let itemPrompt = """
-You are analyzing a receipt to find individual food/menu item prices.
-
-GOAL: Extract individual item prices (NOT tax, tip, subtotal, or total) that could sum to approximately $\(String(format: "%.2f", targetTotal)).
-
-RECEIPT TEXT:
-\(text)
-
-INSTRUCTIONS:
-1. Look for individual food/menu item prices only
-2. EXCLUDE: tax, tip, subtotal, total, service charges
-3. INCLUDE: prices that appear to be for individual food items
-4. Return prices as numbers only, one per line
-5. Aim for around \(expectedCount) items but return ALL item prices you find
-6. If you find item names with prices, prioritize those
-
-Return only the prices as numbers (like 12.99), one per line. Do not include explanations.
-"""
-        
         // Use Natural Language processing to find individual item prices in order
         let lines = text.components(separatedBy: CharacterSet.newlines)
             .map { $0.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) }
@@ -2539,7 +2562,7 @@ Return only the prices as numbers (like 12.99), one per line. Do not include exp
         }
         
         // Try to extract name from current line first
-        if let nameFromCurrent = await extractItemNameWithEnhancedAppleIntelligence(line: currentLine, price: price) {
+        if let nameFromCurrent = extractItemNameWithEnhancedAppleIntelligence(line: currentLine, price: price) {
             if nameFromCurrent.count > 3 && !nameFromCurrent.hasPrefix("Item ") {
                 return nameFromCurrent
             }
@@ -2636,7 +2659,7 @@ Return only the prices as numbers (like 12.99), one per line. Do not include exp
             return false
         }
         
-        let hasItemName = await isLikelyProductName(line.replacingOccurrences(of: "\\$[0-9.]+", with: "", options: .regularExpression))
+        let hasItemName = isLikelyProductName(line.replacingOccurrences(of: "\\$[0-9.]+", with: "", options: .regularExpression))
         
         return hasItemName
     }
@@ -2651,7 +2674,7 @@ Return only the prices as numbers (like 12.99), one per line. Do not include exp
         }
         
         // Extract item name using enhanced Apple Intelligence
-        let itemName = await extractItemNameWithEnhancedAppleIntelligence(line: line, price: price) ?? "Item \(lineIndex + 1)"
+        let itemName = extractItemNameWithEnhancedAppleIntelligence(line: line, price: price) ?? "Item \(lineIndex + 1)"
         
         return ReceiptItem(
             name: itemName,
@@ -2674,7 +2697,7 @@ Return only the prices as numbers (like 12.99), one per line. Do not include exp
     }
     
     // Enhanced item name extraction using Apple Intelligence
-    private func extractItemNameWithEnhancedAppleIntelligence(line: String, price: Double) async -> String? {
+    private func extractItemNameWithEnhancedAppleIntelligence(line: String, price: Double) -> String? {
         print("🔍 Enhanced Apple Intelligence analyzing line: '\(line)' with price: $\(price)")
         
         var cleanedLine = line
@@ -2811,7 +2834,7 @@ Return only the prices as numbers (like 12.99), one per line. Do not include exp
                !excludedAmounts.contains(price),
                price <= targetPrice {
                 
-                let itemName = await extractItemNameWithEnhancedAppleIntelligence(line: trimmedLine, price: price) ?? "Item \(existingItems.count + additionalCandidates.count + 1)"
+                let itemName = extractItemNameWithEnhancedAppleIntelligence(line: trimmedLine, price: price) ?? "Item \(existingItems.count + additionalCandidates.count + 1)"
                 
                 let item = ReceiptItem(
                     name: itemName,
@@ -2967,24 +2990,65 @@ class BillSplitSession: ObservableObject {
         return newParticipant
     }
     
-    func addParticipantWithValidation(name: String, email: String? = nil, phoneNumber: String? = nil, authViewModel: AuthViewModel) async -> (participant: UIParticipant?, error: String?) {
+    func addParticipantWithValidation(name: String, email: String? = nil, phoneNumber: String? = nil, authViewModel: AuthViewModel, contactsManager: ContactsManager? = nil) async -> (participant: UIParticipant?, error: String?, needsContact: Bool) {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         
         guard !trimmedName.isEmpty else { 
-            return (nil, "Name cannot be empty")
+            return (nil, "Name cannot be empty", false)
+        }
+        
+        // Check if trying to add yourself
+        if trimmedName.lowercased() == "you" {
+            print("⚠️ Cannot add yourself - already in bill")
+            return (nil, "You are already in this bill", false)
+        }
+        
+        // Check if email matches current user's email
+        if let email = email {
+            let currentUserEmail = await MainActor.run { authViewModel.user?.email }
+            if let currentUserEmail = currentUserEmail {
+                let emailValidation = AuthViewModel.validateEmail(email)
+                if emailValidation.isValid, let validEmail = emailValidation.sanitized {
+                    if validEmail.lowercased() == currentUserEmail.lowercased() {
+                        print("⚠️ Cannot add your own email - already in bill")
+                        return (nil, "You are already in this bill", false)
+                    }
+                }
+            }
         }
         
         // Check for duplicates (case-insensitive)
         if participants.contains(where: { $0.name.lowercased() == trimmedName.lowercased() }) {
             print("⚠️ Participant \(trimmedName) already exists")
-            return (nil, "Participant already exists")
+            return (nil, "Participant already exists", false)
         }
         
-        // Validate user is onboarded to SplitSmart
+        // SECURITY: First validate user is registered with SplitSmart
         let isOnboarded = await authViewModel.isUserOnboarded(email: email, phoneNumber: phoneNumber)
-        guard isOnboarded else {
+        
+        if !isOnboarded {
             print("❌ User \(trimmedName) is not onboarded to SplitSmart")
-            return (nil, "User is not registered with SplitSmart")
+            return (nil, "User is not registered with SplitSmart. Only registered users can be added to bills.", false)
+        }
+        
+        // Splitwise-style: Check if email is in user's transaction history
+        if let email = email, let contactsManager = contactsManager {
+            let emailValidation = AuthViewModel.validateEmail(email)
+            if emailValidation.isValid, let validEmail = emailValidation.sanitized {
+                // Check if this email is already in user's transaction contacts
+                let existingTransactionContact = contactsManager.transactionContacts.first { 
+                    $0.email.lowercased() == validEmail.lowercased() 
+                }
+                
+                if existingTransactionContact == nil {
+                    // Email not in transaction history but is registered - show "add to your network" modal
+                    print("📝 Registered email \(validEmail) not in user's transaction history - showing add to network")
+                    return (nil, "Add \(validEmail) to your SplitSmart network", true)
+                } else {
+                    // Email found in transaction history - proceed with normal flow
+                    print("📋 Email \(validEmail) found in transaction history as: \(existingTransactionContact?.displayName ?? "Unknown")")
+                }
+            }
         }
         
         let newId = (participants.map { $0.id }.max() ?? 0) + 1
@@ -2998,7 +3062,7 @@ class BillSplitSession: ObservableObject {
         
         participants.append(newParticipant)
         print("✅ Added validated participant: \(trimmedName)")
-        return (newParticipant, nil)
+        return (newParticipant, nil, false)
     }
     
     func removeParticipant(_ participant: UIParticipant) {
@@ -3175,5 +3239,180 @@ class BillSplitSession: ObservableObject {
                 items: items
             )
         }
+    }
+}
+
+// MARK: - Transaction Contacts Manager (Splitwise-style)
+class ContactsManager: ObservableObject {
+    private let db = Firestore.firestore()
+    @Published var transactionContacts: [TransactionContact] = []
+    @Published var isLoading = false
+    @Published var errorMessage: String?
+    
+    private var currentUserId: String?
+    private var contactsListener: ListenerRegistration?
+    
+    init() {}
+    
+    func setCurrentUser(_ userId: String) {
+        // Clear existing data if switching users
+        if let currentUser = self.currentUserId, currentUser != userId {
+            print("🔄 Switching users from \(currentUser) to \(userId) - clearing contacts")
+            // Remove old listener
+            contactsListener?.remove()
+            contactsListener = nil
+            self.transactionContacts = []
+            self.errorMessage = nil
+        }
+        
+        self.currentUserId = userId
+        loadTransactionContacts()
+    }
+    
+    func clearCurrentUser() {
+        print("🧹 Clearing ContactsManager data on logout")
+        // Remove listener
+        contactsListener?.remove()
+        contactsListener = nil
+        self.currentUserId = nil
+        self.transactionContacts = []
+        self.errorMessage = nil
+        self.isLoading = false
+    }
+    
+    func loadTransactionContacts() {
+        guard let userId = currentUserId else { return }
+        
+        // Remove any existing listener first
+        contactsListener?.remove()
+        
+        isLoading = true
+        
+        print("📡 Loading transaction contacts for user: \(userId)")
+        contactsListener = db.collection("users").document(userId).collection("transactionContacts")
+            .order(by: "lastTransactionAt", descending: true)
+            .addSnapshotListener { [weak self] snapshot, error in
+                DispatchQueue.main.async {
+                    self?.isLoading = false
+                    
+                    if let error = error {
+                        print("❌ Failed to load transaction contacts: \(error.localizedDescription)")
+                        self?.errorMessage = "Failed to load transaction contacts: \(error.localizedDescription)"
+                        return
+                    }
+                    
+                    guard let documents = snapshot?.documents else {
+                        print("📭 No documents found in transaction contacts")
+                        self?.transactionContacts = []
+                        return
+                    }
+                    
+                    print("📊 Found \(documents.count) transaction contact documents")
+                    let contacts = documents.compactMap { doc in
+                        do {
+                            let contact = try doc.data(as: TransactionContact.self)
+                            print("✅ Loaded contact: \(contact.displayName) (\(contact.email))")
+                            return contact
+                        } catch {
+                            print("❌ Failed to decode contact document \(doc.documentID): \(error)")
+                            return nil
+                        }
+                    }
+                    
+                    self?.transactionContacts = contacts
+                    print("📋 Total transaction contacts loaded: \(contacts.count)")
+                }
+            }
+    }
+    
+    func saveTransactionContact(_ contact: TransactionContact) async throws {
+        guard let userId = currentUserId else {
+            throw NSError(domain: "ContactsManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "User not authenticated"])
+        }
+        
+        // Check if contact already exists
+        let existingContact = transactionContacts.first { $0.email.lowercased() == contact.email.lowercased() }
+        
+        if let existing = existingContact {
+            // Update existing contact - increment transaction count and update timestamp
+            let newTotalTransactions = existing.totalTransactions + 1
+            
+            try await db.collection("users").document(userId).collection("transactionContacts")
+                .document(existing.id).updateData([
+                    "lastTransactionAt": FieldValue.serverTimestamp(),
+                    "totalTransactions": newTotalTransactions
+                ])
+            
+            print("✅ Updated existing transaction contact: \(existing.displayName)")
+        } else {
+            // Save new transaction contact
+            try await db.collection("users").document(userId).collection("transactionContacts").document(contact.id).setData(from: contact)
+            
+            print("✅ Saved new transaction contact: \(contact.displayName) (\(contact.email))")
+        }
+    }
+    
+    func searchTransactionContacts(query: String) -> [TransactionContact] {
+        guard !query.isEmpty else { return transactionContacts }
+        
+        let lowercaseQuery = query.lowercased()
+        return transactionContacts.filter {
+            $0.displayName.lowercased().contains(lowercaseQuery) ||
+            $0.email.lowercased().contains(lowercaseQuery) ||
+            ($0.nickname?.lowercased().contains(lowercaseQuery) ?? false)
+        }
+    }
+    
+    func validateNewTransactionContact(displayName: String, email: String, phoneNumber: String?, authViewModel: AuthViewModel) async -> ContactValidationResult {
+        let trimmedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Validate display name
+        guard !trimmedName.isEmpty else {
+            return ContactValidationResult(isValid: false, error: "Name is required", contact: nil)
+        }
+        
+        guard trimmedName.count >= 2 else {
+            return ContactValidationResult(isValid: false, error: "Name must be at least 2 characters", contact: nil)
+        }
+        
+        // Validate email
+        let emailValidation = AuthViewModel.validateEmail(trimmedEmail)
+        guard emailValidation.isValid, let validEmail = emailValidation.sanitized else {
+            return ContactValidationResult(isValid: false, error: emailValidation.error ?? "Invalid email format", contact: nil)
+        }
+        
+        // SECURITY: Check if this email is a registered SplitSmart user
+        let isOnboarded = await authViewModel.isUserOnboarded(email: validEmail, phoneNumber: nil)
+        guard isOnboarded else {
+            return ContactValidationResult(isValid: false, error: "This email is not registered with SplitSmart. Only registered users can be added to bills.", contact: nil)
+        }
+        
+        // Check if this is the current user's own email
+        let currentUserEmail = await MainActor.run { authViewModel.user?.email }
+        if let currentUserEmail = currentUserEmail, 
+           validEmail.lowercased() == currentUserEmail.lowercased() {
+            return ContactValidationResult(isValid: false, error: "You cannot add yourself as a contact.", contact: nil)
+        }
+        
+        // Validate phone number if provided
+        var validPhone: String?
+        if let phone = phoneNumber?.trimmingCharacters(in: .whitespacesAndNewlines), !phone.isEmpty {
+            let phoneValidation = AuthViewModel.validatePhoneNumber(phone)
+            if phoneValidation.isValid {
+                validPhone = phoneValidation.sanitized
+            } else {
+                return ContactValidationResult(isValid: false, error: phoneValidation.error ?? "Invalid phone number format", contact: nil)
+            }
+        }
+        
+        let newContact = TransactionContact(
+            displayName: trimmedName,
+            email: validEmail,
+            phoneNumber: validPhone,
+            contactUserId: nil // Not implementing global user lookup for now
+        )
+        
+        return ContactValidationResult(isValid: true, error: nil, contact: newContact)
     }
 }
