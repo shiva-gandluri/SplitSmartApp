@@ -451,32 +451,41 @@ struct UIAssignScreen: View {
             .padding(.top)
         }
         .onAppear {
-            // Always trigger dual processing when screen appears to ensure fresh results
-            // Clear any existing results first to prevent showing stale data
-            Task {
-                await MainActor.run {
-                    session.regexDetectedItems.removeAll()
-                    session.llmDetectedItems.removeAll()
-                }
-                
-                // Only process if we have the necessary data from the current session
-                if session.confirmedTotal > 0 && !session.rawReceiptText.isEmpty && session.expectedItemCount > 0 {
-                    print("🔄 UIAssignScreen: Triggering dual processing for new bill")
-                    print("   - confirmedTotal: \(session.confirmedTotal)")
-                    print("   - expectedItemCount: \(session.expectedItemCount)")
-                    print("   - rawReceiptText length: \(session.rawReceiptText.count)")
+            // Check if this is edit mode (assignments already exist) or new bill mode
+            if !session.assignedItems.isEmpty && !session.regexDetectedItems.isEmpty && !session.llmDetectedItems.isEmpty {
+                // Edit mode: Items are already populated, don't reprocess
+                print("✅ UIAssignScreen: Edit mode detected, skipping processing (items already assigned)")
+                print("   - assignedItems: \(session.assignedItems.count)")
+                print("   - regexDetectedItems: \(session.regexDetectedItems.count)")
+                print("   - llmDetectedItems: \(session.llmDetectedItems.count)")
+            } else {
+                // New bill mode: Trigger dual processing when screen appears to ensure fresh results
+                // Clear any existing results first to prevent showing stale data
+                Task {
+                    await MainActor.run {
+                        session.regexDetectedItems.removeAll()
+                        session.llmDetectedItems.removeAll()
+                    }
                     
-                    await session.processWithBothApproaches(
-                        confirmedTax: session.confirmedTax,
-                        confirmedTip: session.confirmedTip,
-                        confirmedTotal: session.confirmedTotal,
-                        expectedItemCount: session.expectedItemCount
-                    )
-                } else {
-                    print("❌ UIAssignScreen: Not processing - missing required data")
-                    print("   - confirmedTotal: \(session.confirmedTotal)")
-                    print("   - expectedItemCount: \(session.expectedItemCount)")
-                    print("   - rawReceiptText isEmpty: \(session.rawReceiptText.isEmpty)")
+                    // Only process if we have the necessary data from the current session
+                    if session.confirmedTotal > 0 && !session.rawReceiptText.isEmpty && session.expectedItemCount > 0 {
+                        print("🔄 UIAssignScreen: Triggering dual processing for new bill")
+                        print("   - confirmedTotal: \(session.confirmedTotal)")
+                        print("   - expectedItemCount: \(session.expectedItemCount)")
+                        print("   - rawReceiptText length: \(session.rawReceiptText.count)")
+                        
+                        await session.processWithBothApproaches(
+                            confirmedTax: session.confirmedTax,
+                            confirmedTip: session.confirmedTip,
+                            confirmedTotal: session.confirmedTotal,
+                            expectedItemCount: session.expectedItemCount
+                        )
+                    } else {
+                        print("❌ UIAssignScreen: Not processing - missing required data")
+                        print("   - confirmedTotal: \(session.confirmedTotal)")
+                        print("   - expectedItemCount: \(session.expectedItemCount)")
+                        print("   - rawReceiptText isEmpty: \(session.rawReceiptText.isEmpty)")
+                    }
                 }
             }
         }

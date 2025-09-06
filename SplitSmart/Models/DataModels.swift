@@ -257,6 +257,8 @@ struct Bill: Codable, Identifiable {
     
     // Audit trail
     let createdBy: String // userID who created bill
+    let createdByDisplayName: String // Snapshot for UI
+    let createdByEmail: String // Snapshot for notifications
     let lastModifiedBy: String?
     let lastModifiedAt: Timestamp?
     
@@ -264,6 +266,50 @@ struct Bill: Codable, Identifiable {
     let calculatedTotals: [String: Double] // userID: amount owed to paidBy
     let roundingAdjustments: [String: Double] // Track penny distributions
     
+    // Deletion status
+    var isDeleted: Bool
+    
+    init(id: String = UUID().uuidString,
+         createdBy: String,
+         createdByDisplayName: String,
+         createdByEmail: String,
+         paidBy: String,
+         paidByDisplayName: String,
+         paidByEmail: String,
+         billName: String?,
+         totalAmount: Double,
+         currency: String = "USD",
+         date: Timestamp = Timestamp(),
+         createdAt: Timestamp = Timestamp(),
+         items: [BillItem],
+         participants: [BillParticipant],
+         participantIds: [String]? = nil,
+         calculatedTotals: [String: Double]? = nil,
+         roundingAdjustments: [String: Double] = [:],
+         isDeleted: Bool = false) {
+        self.id = id
+        self.createdBy = createdBy
+        self.createdByDisplayName = createdByDisplayName
+        self.createdByEmail = createdByEmail
+        self.paidBy = paidBy
+        self.paidByDisplayName = paidByDisplayName
+        self.paidByEmail = paidByEmail
+        self.billName = billName
+        self.totalAmount = totalAmount
+        self.currency = currency
+        self.date = date
+        self.createdAt = createdAt
+        self.items = items
+        self.participants = participants
+        self.participantIds = participantIds ?? participants.map { $0.id }
+        self.lastModifiedBy = nil
+        self.lastModifiedAt = nil
+        self.calculatedTotals = calculatedTotals ?? [:]
+        self.roundingAdjustments = roundingAdjustments
+        self.isDeleted = isDeleted
+    }
+    
+    // Legacy initializer for backward compatibility
     init(id: String = UUID().uuidString,
          paidBy: String,
          paidByDisplayName: String,
@@ -275,8 +321,11 @@ struct Bill: Codable, Identifiable {
          items: [BillItem],
          participants: [BillParticipant],
          createdBy: String,
+         createdByDisplayName: String = "Unknown",
+         createdByEmail: String = "unknown@example.com",
          calculatedTotals: [String: Double],
-         roundingAdjustments: [String: Double] = [:]) {
+         roundingAdjustments: [String: Double] = [:],
+         isDeleted: Bool = false) {
         self.id = id
         self.paidBy = paidBy
         self.paidByDisplayName = paidByDisplayName
@@ -290,10 +339,13 @@ struct Bill: Codable, Identifiable {
         self.participants = participants
         self.participantIds = participants.map { $0.id } // Flatten for querying
         self.createdBy = createdBy
+        self.createdByDisplayName = createdByDisplayName
+        self.createdByEmail = createdByEmail
         self.lastModifiedBy = nil
         self.lastModifiedAt = nil
         self.calculatedTotals = calculatedTotals
         self.roundingAdjustments = roundingAdjustments
+        self.isDeleted = isDeleted
     }
     
     /// Returns the display name for the bill (custom name or default based on items)
@@ -306,11 +358,11 @@ struct Bill: Codable, Identifiable {
     }
 }
 
-struct BillItem: Codable, Identifiable {
+struct BillItem: Codable, Identifiable, Equatable {
     let id: String
-    let name: String
-    let price: Double
-    let participantIDs: [String] // Array of userIDs who split this item
+    var name: String
+    var price: Double
+    var participantIDs: [String] // Array of userIDs who split this item
     
     init(name: String, price: Double, participantIDs: [String]) {
         self.id = UUID().uuidString
@@ -320,7 +372,7 @@ struct BillItem: Codable, Identifiable {
     }
 }
 
-struct BillParticipant: Codable, Identifiable {
+struct BillParticipant: Codable, Identifiable, Equatable {
     let id: String // This will be the userID
     let displayName: String // Snapshot for UI
     let email: String // Snapshot for notifications
@@ -356,17 +408,11 @@ class BillService: ObservableObject {
             throw BillCreationError.invalidUser
         }
         
-        // Convert session data to Bill format
-        let billItems = session.assignedItems.map { item in
-            BillItem(
-                name: item.name,
-                price: item.price,
-                participantIDs: Array(item.assignedToParticipants).map { String($0) }
-            )
-        }
-        
         // Get participant details from contacts and current user
         var billParticipants: [BillParticipant] = []
+        
+        // Create mapping from session participant IDs to Firebase UIDs
+        var sessionIDToFirebaseUID: [Int: String] = [:]
         
         // Add current user as participant
         let currentUserParticipant = BillParticipant(
@@ -376,7 +422,13 @@ class BillService: ObservableObject {
         )
         billParticipants.append(currentUserParticipant)
         
-        // Add other participants from transaction contacts
+        // Add current user to session ID mapping
+        if let currentUserSessionParticipant = session.participants.first(where: { $0.name == "You" }) {
+            sessionIDToFirebaseUID[currentUserSessionParticipant.id] = currentUser.uid
+            print("🔧 Mapped session ID \(currentUserSessionParticipant.id) to Firebase UID: \(currentUser.uid)")
+        }
+        
+        // Add other participants from transaction contacts and complete the mapping
         for participant in session.participants where participant.name != "You" {
             if let contact = contactsManager.transactionContacts.first(where: { 
                 $0.displayName.lowercased() == participant.name.lowercased() 
@@ -392,12 +444,32 @@ class BillService: ObservableObject {
                 )
                 billParticipants.append(billParticipant)
                 
+                // Add to mapping for item participant ID conversion
+                sessionIDToFirebaseUID[participant.id] = participantUserID
+                print("🔧 Mapped session ID \(participant.id) to Firebase UID: \(participantUserID)")
+                
                 print("🔍 Added participant: \(contact.displayName) with ID: \(participantUserID)")
             }
         }
         
-        // Calculate debts using the session's logic
-        let calculatedDebts = session.individualDebts
+        // Now convert session data to Bill format with proper Firebase UID mapping
+        let billItems = session.assignedItems.map { item in
+            let mappedParticipantIDs = Array(item.assignedToParticipants).compactMap { sessionID in
+                if let firebaseUID = sessionIDToFirebaseUID[sessionID] {
+                    print("🔧 Mapped item participant: session ID \(sessionID) → Firebase UID \(firebaseUID)")
+                    return firebaseUID
+                } else {
+                    print("⚠️ Could not map session ID \(sessionID) to Firebase UID")
+                    return nil
+                }
+            }
+            
+            return BillItem(
+                name: item.name,
+                price: item.price,
+                participantIDs: mappedParticipantIDs
+            )
+        }
         
         // Get payer details
         let paidByEmail: String
@@ -416,9 +488,9 @@ class BillService: ObservableObject {
             ? nil  // Will use computed displayName
             : session.billName.trimmingCharacters(in: .whitespacesAndNewlines)
         
-        // Create Bill object
-        let bill = Bill(
-            paidBy: paidByParticipant.name == "You" ? currentUser.uid : "unknown_\(paidByID)",
+        // Create temporary bill for debt calculation
+        let tempBill = Bill(
+            paidBy: paidByParticipant.name == "You" ? currentUser.uid : billParticipants.first(where: { $0.displayName == paidByParticipant.name })?.id ?? "unknown_\(paidByID)",
             paidByDisplayName: paidByParticipant.name,
             paidByEmail: paidByEmail,
             billName: finalBillName,
@@ -426,7 +498,24 @@ class BillService: ObservableObject {
             items: billItems,
             participants: billParticipants,
             createdBy: currentUser.uid,
-            calculatedTotals: calculatedDebts
+            calculatedTotals: [:] // Temporary empty, will be calculated below
+        )
+        
+        // 🔧 STANDARDIZATION: Use BillCalculator to ensure Firebase UIDs are used consistently
+        let calculatedDebts = BillCalculator.calculateOwedAmounts(bill: tempBill)
+        print("🔧 Calculated debts for new bill using Firebase UIDs: \(calculatedDebts)")
+        
+        // Create final Bill object with correct calculatedTotals
+        let bill = Bill(
+            paidBy: paidByParticipant.name == "You" ? currentUser.uid : billParticipants.first(where: { $0.displayName == paidByParticipant.name })?.id ?? "unknown_\(paidByID)",
+            paidByDisplayName: paidByParticipant.name,
+            paidByEmail: paidByEmail,
+            billName: finalBillName,
+            totalAmount: session.totalAmount,
+            items: billItems,
+            participants: billParticipants,
+            createdBy: currentUser.uid,
+            calculatedTotals: calculatedDebts // Now uses Firebase UIDs consistently
         )
         
         // Validate bill totals
@@ -466,6 +555,236 @@ class BillService: ObservableObject {
         // Commit batch operation
         try await batch.commit()
         print("✅ Bill batch operation completed successfully")
+    }
+    
+    // MARK: - Update Bill Functionality
+    
+    /// Updates an existing bill in Firestore with atomic transactions
+    func updateBill(
+        billId: String,
+        billName: String,
+        items: [BillItem],
+        participants: [BillParticipant],
+        paidByParticipantId: String,
+        currentUserId: String,
+        billManager: BillManager
+    ) async throws {
+        print("🔵 Starting Firebase bill update for ID: \(billId)")
+        
+        // Validate input
+        guard !billId.isEmpty,
+              !billName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !items.isEmpty,
+              !participants.isEmpty,
+              !paidByParticipantId.isEmpty else {
+            throw BillUpdateError.invalidInput
+        }
+        
+        // Get original bill to verify permissions
+        let billRef = db.collection("bills").document(billId)
+        let billSnapshot = try await billRef.getDocument()
+        
+        guard let originalBillData = billSnapshot.data(),
+              let originalBill = try? billSnapshot.data(as: Bill.self) else {
+            throw BillUpdateError.billNotFound
+        }
+        
+        // Verify user is the creator
+        guard originalBill.createdBy == currentUserId else {
+            throw BillUpdateError.notAuthorized
+        }
+        
+        // Find payer participant
+        guard let payer = participants.first(where: { $0.id == paidByParticipantId }) else {
+            throw BillUpdateError.payerNotFound
+        }
+        
+        // Calculate new total amount
+        let newTotalAmount = items.reduce(0) { $0 + $1.price }
+        
+        // Create temporary bill to calculate debts
+        let tempBill = Bill(
+            id: billId,
+            createdBy: originalBill.createdBy,
+            createdByDisplayName: originalBill.createdByDisplayName,
+            createdByEmail: originalBill.createdByEmail,
+            paidBy: paidByParticipantId,
+            paidByDisplayName: payer.displayName,
+            paidByEmail: payer.email,
+            billName: billName.trimmingCharacters(in: .whitespacesAndNewlines),
+            totalAmount: newTotalAmount,
+            currency: originalBill.currency,
+            date: originalBill.date,
+            createdAt: originalBill.createdAt,
+            items: items,
+            participants: participants,
+            participantIds: participants.map { $0.id },
+            calculatedTotals: [:], // Temporary, will be recalculated
+            isDeleted: false
+        )
+        
+        // 🔧 CRITICAL FIX: Recalculate debt amounts with new payer
+        let recalculatedDebts = BillCalculator.calculateOwedAmounts(bill: tempBill)
+        print("🔧 Recalculated debts for bill update: \(recalculatedDebts)")
+        
+        // Create final bill with correct calculated totals
+        let updatedBill = Bill(
+            id: billId,
+            createdBy: originalBill.createdBy,
+            createdByDisplayName: originalBill.createdByDisplayName,
+            createdByEmail: originalBill.createdByEmail,
+            paidBy: paidByParticipantId,
+            paidByDisplayName: payer.displayName,
+            paidByEmail: payer.email,
+            billName: billName.trimmingCharacters(in: .whitespacesAndNewlines),
+            totalAmount: newTotalAmount,
+            currency: originalBill.currency,
+            date: originalBill.date,
+            createdAt: originalBill.createdAt,
+            items: items,
+            participants: participants,
+            participantIds: participants.map { $0.id },
+            calculatedTotals: recalculatedDebts, // 🔧 Now with correct debts
+            isDeleted: false
+        )
+        
+        // Validate bill totals
+        guard BillCalculator.validateBillTotals(bill: updatedBill) else {
+            throw BillUpdateError.invalidTotals
+        }
+        
+        // Update in Firestore
+        try await updateBillInFirestore(bill: updatedBill)
+        
+        // Send notifications to all participants about the update
+        Task {
+            await PushNotificationService.shared.sendBillUpdateNotificationToParticipants(
+                bill: updatedBill,
+                updatedBy: currentUserId
+            )
+        }
+        
+        print("✅ Bill updated successfully with ID: \(billId)")
+    }
+    
+    /// Updates bill in Firestore using atomic operations
+    private func updateBillInFirestore(bill: Bill) async throws {
+        let billRef = db.collection("bills").document(bill.id)
+        
+        try await billRef.setData(from: bill)
+        print("✅ Bill update operation completed successfully")
+    }
+    
+    // MARK: - Delete Bill Functionality
+    
+    /// Deletes a bill and recalculates all affected user balances
+    func deleteBill(
+        billId: String,
+        currentUserId: String,
+        billManager: BillManager
+    ) async throws {
+        print("🔵 Starting Firebase bill deletion for ID: \(billId)")
+        
+        // Get original bill to verify permissions and calculate balance changes
+        let billRef = db.collection("bills").document(billId)
+        let billSnapshot = try await billRef.getDocument()
+        
+        guard let originalBill = try? billSnapshot.data(as: Bill.self) else {
+            throw BillDeleteError.billNotFound
+        }
+        
+        // Verify user is the creator
+        guard originalBill.createdBy == currentUserId else {
+            throw BillDeleteError.notAuthorized
+        }
+        
+        // Calculate how this deletion affects user balances
+        let affectedUserIds = Set(originalBill.participantIds + [originalBill.createdBy])
+        
+        // Before deletion, recalculate what each user's balance will be without this bill
+        // This ensures accuracy as specified in requirements
+        await recalculateBalancesBeforeDeletion(
+            billToDelete: originalBill,
+            affectedUserIds: Array(affectedUserIds)
+        )
+        
+        // Perform hard delete with atomic transaction
+        let batch = db.batch()
+        
+        // Mark bill as deleted (for audit trail) and set isDeleted flag
+        var deletedBill = originalBill
+        deletedBill.isDeleted = true
+        print("🗑️ Setting bill as deleted: \(billId)")
+        try batch.setData(from: deletedBill, forDocument: billRef)
+        
+        // Remove bill ID from creator's billIds array
+        let creatorUserRef = db.collection("users").document(originalBill.createdBy)
+        batch.updateData([
+            "billIds": FieldValue.arrayRemove([billId]),
+            "lastBillUpdate": FieldValue.serverTimestamp()
+        ], forDocument: creatorUserRef)
+        
+        // Commit the batch
+        try await batch.commit()
+        
+        // Send notifications to all participants about the deletion
+        Task {
+            await PushNotificationService.shared.sendBillDeleteNotificationToParticipants(
+                bill: originalBill,
+                deletedBy: currentUserId
+            )
+        }
+        
+        print("✅ Bill deleted successfully with ID: \(billId)")
+    }
+    
+    /// Recalculates user balances before bill deletion to maintain accuracy
+    private func recalculateBalancesBeforeDeletion(
+        billToDelete: Bill,
+        affectedUserIds: [String]
+    ) async {
+        print("🔍 Recalculating balances before deletion for \(affectedUserIds.count) users")
+        
+        // For each affected user, we need to:
+        // 1. Get all their other bills (excluding the one being deleted)
+        // 2. Recalculate their net balance without the deleted bill
+        // 3. Update their balance record
+        
+        for userId in affectedUserIds {
+            do {
+                // Get all bills for this user except the one being deleted
+                // TEMPORARY FIX: Remove composite index requirement
+                let userBillsQuery = db.collection("bills")
+                    .whereField("participantIds", arrayContains: userId)
+                
+                let snapshot = try await userBillsQuery.getDocuments()
+                let userBills = snapshot.documents.compactMap { doc -> Bill? in
+                    guard let bill = try? doc.data(as: Bill.self),
+                          bill.id != billToDelete.id,
+                          !bill.isDeleted else { return nil } // Filter deleted bills client-side
+                    return bill
+                }
+                
+                // Calculate new balance without the deleted bill
+                let newBalance = BillCalculator.calculateUserNetBalance(
+                    userId: userId,
+                    bills: userBills
+                )
+                
+                // Update user's balance record
+                let userRef = db.collection("users").document(userId)
+                try await userRef.updateData([
+                    "netBalance": newBalance,
+                    "lastBalanceUpdate": FieldValue.serverTimestamp()
+                ])
+                
+                print("✅ Updated balance for user \(userId): $\(String(format: "%.2f", newBalance))")
+                
+            } catch {
+                print("❌ Failed to recalculate balance for user \(userId): \(error.localizedDescription)")
+                // Continue with other users even if one fails
+            }
+        }
     }
 }
 
@@ -509,6 +828,17 @@ class BillManager: ObservableObject {
         self.isLoading = false
     }
     
+    /// Force refresh bills and recalculate balances
+    @MainActor
+    func refreshBills() async {
+        print("🔄 Force refreshing bills and balances")
+        if let userId = currentUserId {
+            loadUserBills()
+            // Small delay to ensure refresh completes
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+        }
+    }
+    
     /// Sets up real-time listener for bills where user is involved
     private func loadUserBills() {
         guard let userId = currentUserId else { return }
@@ -518,7 +848,8 @@ class BillManager: ObservableObject {
         
         print("📡 Setting up real-time bill listener for user: \(userId)")
         
-        // Listen for bills where user is involved as participant
+        // Listen for bills where user is involved as participant (excluding deleted bills)
+        // TEMPORARY FIX: Remove composite index requirement by filtering deleted bills in client
         billsListener = db.collection("bills")
             .whereField("participantIds", arrayContains: userId)
             .order(by: "createdAt", descending: true)
@@ -543,8 +874,9 @@ class BillManager: ObservableObject {
                     let bills = documents.compactMap { doc in
                         do {
                             let bill = try doc.data(as: Bill.self)
-                            print("✅ Loaded bill: \(bill.id) - $\(bill.totalAmount)")
-                            return bill
+                            print("✅ Loaded bill: \(bill.id) - $\(bill.totalAmount) - isDeleted: \(bill.isDeleted)")
+                            // Filter out deleted bills on client side (temporary fix for missing index)
+                            return bill.isDeleted ? nil : bill
                         } catch {
                             print("❌ Failed to decode bill document \(doc.documentID): \(error)")
                             return nil
@@ -641,26 +973,30 @@ class BillManager: ObservableObject {
             if bill.paidBy == userId {
                 print("🧮 User paid - others owe user")
                 // User paid - others owe them (positive balance)
-                for (sessionParticipantID, amount) in bill.calculatedTotals {
-                    if sessionParticipantID != "1" && amount > 0.01 {
-                        // Map session participant ID to actual participant
-                        // sessionParticipantID "2" means the other participant
-                        if let otherParticipant = bill.participants.first(where: { $0.id != userId }) {
+                for (participantUID, amount) in bill.calculatedTotals {
+                    if participantUID != userId && amount > 0.01 {
+                        // Find the participant by their Firebase UID
+                        if let otherParticipant = bill.participants.first(where: { $0.id == participantUID }) {
                             let normalizedID = normalizeParticipantID(otherParticipant.id, displayName: otherParticipant.displayName, email: otherParticipant.email)
                             balances[normalizedID, default: 0.0] += amount
                             participantInfo[normalizedID] = (otherParticipant.displayName, otherParticipant.email)
                             print("🧮 \(otherParticipant.displayName) owes user +$\(amount) (running total: $\(balances[normalizedID] ?? 0.0))")
+                        } else {
+                            print("🧮 ⚠️ Participant with UID \(participantUID) not found in bill.participants")
                         }
                     }
                 }
             } else {
                 print("🧮 User did not pay - checking if user owes")
                 // User didn't pay - check if user owes money (negative balance)
-                if let amountOwed = bill.calculatedTotals["1"], amountOwed > 0.01 {
+                // Use Firebase UID instead of session ID "1"
+                if let amountOwed = bill.calculatedTotals[userId], amountOwed > 0.01 {
                     let normalizedID = normalizeParticipantID(bill.paidBy, displayName: bill.paidByDisplayName, email: bill.paidByEmail)
                     balances[normalizedID, default: 0.0] -= amountOwed
                     participantInfo[normalizedID] = (bill.paidByDisplayName, bill.paidByEmail)
                     print("🧮 User owes \(bill.paidByDisplayName) -$\(amountOwed) (running total: $\(balances[normalizedID] ?? 0.0))")
+                } else {
+                    print("🧮 User not found in calculatedTotals or owes $0")
                 }
             }
         }
@@ -750,6 +1086,51 @@ enum BillCreationError: LocalizedError {
             return "Invalid user or payer information"
         case .invalidTotals:
             return "Bill totals don't match calculated amounts"
+        case .firestoreError(let message):
+            return "Database error: \(message)"
+        }
+    }
+}
+
+// MARK: - Bill Update/Delete Error Types
+
+enum BillUpdateError: LocalizedError {
+    case invalidInput
+    case billNotFound
+    case notAuthorized
+    case payerNotFound
+    case invalidTotals
+    case firestoreError(String)
+    
+    var errorDescription: String? {
+        switch self {
+        case .invalidInput:
+            return "Invalid input data provided"
+        case .billNotFound:
+            return "Bill not found"
+        case .notAuthorized:
+            return "You don't have permission to edit this bill"
+        case .payerNotFound:
+            return "Selected payer not found in participants"
+        case .invalidTotals:
+            return "Bill totals don't match calculated amounts"
+        case .firestoreError(let message):
+            return "Database error: \(message)"
+        }
+    }
+}
+
+enum BillDeleteError: LocalizedError {
+    case billNotFound
+    case notAuthorized
+    case firestoreError(String)
+    
+    var errorDescription: String? {
+        switch self {
+        case .billNotFound:
+            return "Bill not found"
+        case .notAuthorized:
+            return "You don't have permission to delete this bill"
         case .firestoreError(let message):
             return "Database error: \(message)"
         }
@@ -958,6 +1339,118 @@ class PushNotificationService: ObservableObject {
         try await db.collection("notification_queue").addDocument(data: notificationDoc)
         print("📤 Notification queued for Cloud Function processing")
     }
+    
+    // MARK: - Bill Update Notifications
+    
+    /// Sends push notifications to all participants about a bill update
+    func sendBillUpdateNotificationToParticipants(bill: Bill, updatedBy userId: String) async {
+        print("📨 Sending bill update notifications for bill: \(bill.id)")
+        
+        // Get participant emails (excluding the updater)
+        let participantEmails = bill.participants
+            .filter { $0.id != userId }
+            .map { $0.email }
+        
+        guard !participantEmails.isEmpty else {
+            print("ℹ️ No participants to notify about update (excluding updater)")
+            return
+        }
+        
+        print("📧 Participant emails to notify about update: \(participantEmails)")
+        
+        // Get FCM tokens for participants
+        let tokenMap = await FCMTokenManager.shared.getFCMTokensForEmails(participantEmails)
+        
+        guard !tokenMap.isEmpty else {
+            print("❌ No FCM tokens found for any participants")
+            return
+        }
+        
+        // Create notification content for update
+        let notificationData = createBillUpdateNotificationData(bill: bill, updatedBy: userId)
+        
+        // Send notifications to each participant with retry logic
+        for (email, fcmToken) in tokenMap {
+            await sendNotificationWithRetry(
+                fcmToken: fcmToken,
+                data: notificationData,
+                participantEmail: email,
+                billId: bill.id
+            )
+        }
+    }
+    
+    /// Creates notification data for a bill update
+    private func createBillUpdateNotificationData(bill: Bill, updatedBy userId: String) -> [String: Any] {
+        let updaterName = bill.participants.first { $0.id == userId }?.displayName ?? "Someone"
+        let title = "\(updaterName) updated '\(bill.displayName)' bill"
+        let body = String(format: "New total: $%.2f • Tap to view changes", bill.totalAmount)
+        
+        return [
+            "title": title,
+            "body": body,
+            "billId": bill.id,
+            "billAmount": bill.totalAmount,
+            "updatedBy": updaterName,
+            "type": "bill_update"
+        ]
+    }
+    
+    // MARK: - Bill Delete Notifications
+    
+    /// Sends push notifications to all participants about a bill deletion
+    func sendBillDeleteNotificationToParticipants(bill: Bill, deletedBy userId: String) async {
+        print("📨 Sending bill deletion notifications for bill: \(bill.id)")
+        
+        // Get participant emails (excluding the deleter)
+        let participantEmails = bill.participants
+            .filter { $0.id != userId }
+            .map { $0.email }
+        
+        guard !participantEmails.isEmpty else {
+            print("ℹ️ No participants to notify about deletion (excluding deleter)")
+            return
+        }
+        
+        print("📧 Participant emails to notify about deletion: \(participantEmails)")
+        
+        // Get FCM tokens for participants
+        let tokenMap = await FCMTokenManager.shared.getFCMTokensForEmails(participantEmails)
+        
+        guard !tokenMap.isEmpty else {
+            print("❌ No FCM tokens found for any participants")
+            return
+        }
+        
+        // Create notification content for deletion
+        let notificationData = createBillDeleteNotificationData(bill: bill, deletedBy: userId)
+        
+        // Send notifications to each participant with retry logic
+        for (email, fcmToken) in tokenMap {
+            await sendNotificationWithRetry(
+                fcmToken: fcmToken,
+                data: notificationData,
+                participantEmail: email,
+                billId: bill.id
+            )
+        }
+    }
+    
+    /// Creates notification data for a bill deletion
+    private func createBillDeleteNotificationData(bill: Bill, deletedBy userId: String) -> [String: Any] {
+        let deleterName = bill.participants.first { $0.id == userId }?.displayName ?? "Someone"
+        let title = "\(deleterName) deleted '\(bill.displayName)' bill"
+        let body = "Bill has been removed and balances updated"
+        
+        return [
+            "title": title,
+            "body": body,
+            "billId": bill.id,
+            "billAmount": bill.totalAmount,
+            "deletedBy": deleterName,
+            "type": "bill_delete"
+        ]
+    }
 }
 
 // MARK: - Bill Calculation Helper
@@ -966,6 +1459,14 @@ struct BillCalculator {
     
     /// Calculates who owes whom with proper rounding to ensure totals match
     static func calculateOwedAmounts(bill: Bill) -> [String: Double] {
+        print("🧮 calculateOwedAmounts called for bill \(bill.id)")
+        print("🧮 Bill paidBy: \(bill.paidBy)")
+        print("🧮 Bill participants: \(bill.participants.map { "\($0.displayName) (\($0.id))" })")
+        print("🧮 Bill items and their participants:")
+        for item in bill.items {
+            print("🧮   - \(item.name) $\(item.price): \(item.participantIDs)")
+        }
+        
         var owedAmounts: [String: Double] = [:]
         let paidByUserID = bill.paidBy
         
@@ -973,16 +1474,26 @@ struct BillCalculator {
         for participant in bill.participants {
             if participant.id != paidByUserID {
                 owedAmounts[participant.id] = 0.0
+                print("🧮 Initialized \(participant.displayName) (\(participant.id)) with $0.00")
+            } else {
+                print("🧮 Skipping payer \(participant.displayName) (\(participant.id)) - they don't owe themselves")
             }
         }
         
         // Calculate each item's split
         for item in bill.items {
+            print("🧮 Processing item: \(item.name) $\(item.price)")
+            print("🧮 Item participants: \(item.participantIDs)")
+            
             let participantCount = item.participantIDs.count
-            guard participantCount > 0 else { continue }
+            guard participantCount > 0 else { 
+                print("🧮 ❌ No participants for item \(item.name), skipping")
+                continue 
+            }
             
             let baseAmount = item.price / Double(participantCount)
             let roundedBase = (baseAmount * 100).rounded() / 100 // Round to 2 decimal places
+            print("🧮 Base amount per person: $\(baseAmount) → $\(roundedBase)")
             
             // Calculate how much total we have after rounding
             let totalRounded = roundedBase * Double(participantCount)
@@ -990,17 +1501,25 @@ struct BillCalculator {
             
             // Distribute the remainder (should be small cents)
             let remainderCents = Int((remainder * 100).rounded())
+            print("🧮 Remainder: $\(remainder) = \(remainderCents) cents")
             
             for (index, participantID) in item.participantIDs.enumerated() {
+                print("🧮 Processing participant \(participantID) (index \(index))")
+                
                 if participantID != paidByUserID {
                     var amountOwed = roundedBase
                     
                     // Add extra cent to first few participants to handle remainder
                     if index < remainderCents {
                         amountOwed += 0.01
+                        print("🧮 Added remainder cent: $\(amountOwed)")
                     }
                     
-                    owedAmounts[participantID] = (owedAmounts[participantID] ?? 0.0) + amountOwed
+                    let previousAmount = owedAmounts[participantID] ?? 0.0
+                    owedAmounts[participantID] = previousAmount + amountOwed
+                    print("🧮 \(participantID) owes: $\(previousAmount) + $\(amountOwed) = $\(owedAmounts[participantID] ?? 0.0)")
+                } else {
+                    print("🧮 \(participantID) is the payer, skipping")
                 }
             }
         }
@@ -1033,6 +1552,34 @@ struct BillCalculator {
         let isValid = difference < 0.01
         print(isValid ? "✅ Bill totals valid" : "❌ Bill totals invalid")
         return isValid
+    }
+    
+    /// Calculates a user's net balance across all bills
+    /// Returns positive if user is owed money, negative if user owes money
+    static func calculateUserNetBalance(userId: String, bills: [Bill]) -> Double {
+        var netBalance: Double = 0.0
+        
+        for bill in bills {
+            // Skip deleted bills
+            guard !bill.isDeleted else { continue }
+            
+            if bill.paidBy == userId {
+                // User is the payer - they are owed money by others
+                let owedAmounts = calculateOwedAmounts(bill: bill)
+                let totalOwedToUser = owedAmounts.values.reduce(0) { $0 + $1 }
+                netBalance += totalOwedToUser
+                
+            } else {
+                // User is a participant - check how much they owe
+                let owedAmounts = calculateOwedAmounts(bill: bill)
+                if let amountOwed = owedAmounts[userId] {
+                    netBalance -= amountOwed // Subtract because they owe money
+                }
+            }
+        }
+        
+        // Round to 2 decimal places
+        return (netBalance * 100).rounded() / 100
     }
 }
 
