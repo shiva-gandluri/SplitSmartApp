@@ -38,6 +38,9 @@ enum BillUpdateError: LocalizedError {
     case invalidData(String)
     case concurrentModification
     case firestoreError(String)
+    case versionMismatch(localVersion: Int, serverVersion: Int)
+    case operationTimeout
+    case conflictDetected(conflict: BillConflict)
     
     var errorDescription: String? {
         switch self {
@@ -51,6 +54,12 @@ enum BillUpdateError: LocalizedError {
             return "Bill was modified by another user. Please refresh and try again."
         case .firestoreError(let message):
             return "Database error: \(message)"
+        case .versionMismatch(let localVersion, let serverVersion):
+            return "Version conflict: local version \(localVersion) vs server version \(serverVersion). Please refresh and try again."
+        case .operationTimeout:
+            return "Operation timed out. Please check your connection and try again."
+        case .conflictDetected(let conflict):
+            return "Conflict detected in fields: \(conflict.conflictingFields.joined(separator: ", ")). Manual resolution required."
         }
     }
 }
@@ -78,35 +87,243 @@ final class BillService: ObservableObject {
     
     /// Creates a new bill in Firestore with atomic transactions
     func createBill(from session: BillSplitSession, authViewModel: AuthViewModel, contactsManager: ContactsManager) async throws -> Bill {
-        // TODO: Move implementation from original DataModels.swift
-        // This is a placeholder during the refactoring process
-        fatalError("Implementation needs to be moved from DataModels.swift")
+        guard let currentUser = authViewModel.currentUser else {
+            throw BillCreationError.authenticationRequired
+        }
+        
+        // Validate session data
+        guard !session.items.isEmpty else {
+            throw BillCreationError.invalidData("Bill must have at least one item")
+        }
+        
+        guard session.totalAmount > 0 else {
+            throw BillCreationError.invalidAmount
+        }
+        
+        guard let paidByParticipant = session.participants.first(where: { $0.id == session.paidBy }) else {
+            throw BillCreationError.participantNotFound
+        }
+        
+        // Create bill with initial version
+        let bill = Bill(
+            createdBy: currentUser.uid,
+            createdByDisplayName: currentUser.displayName ?? "Unknown",
+            createdByEmail: currentUser.email ?? "unknown@example.com",
+            paidBy: session.paidBy,
+            paidByDisplayName: paidByParticipant.displayName,
+            paidByEmail: paidByParticipant.email,
+            billName: session.billName,
+            totalAmount: session.totalAmount,
+            currency: session.currency,
+            items: session.items,
+            participants: session.participants,
+            calculatedTotals: session.calculatedTotals,
+            roundingAdjustments: session.roundingAdjustments,
+            version: 1,
+            operationId: UUID().uuidString
+        )
+        
+        try await saveBillToFirestore(bill: bill)
+        return bill
     }
     
-    /// Updates an existing bill with new data
+    /// Updates an existing bill with new data using optimistic locking
     func updateBill(billId: String, session: BillSplitSession, currentUserId: String, authViewModel: AuthViewModel, contactsManager: ContactsManager) async throws {
-        // TODO: Move implementation from original DataModels.swift
-        fatalError("Implementation needs to be moved from DataModels.swift")
+        guard let currentUser = authViewModel.currentUser else {
+            throw BillUpdateError.unauthorizedUpdate
+        }
+        
+        try await db.runTransaction({ (transaction, errorPointer) -> Any? in
+            let billRef = self.db.collection("bills").document(billId)
+            let billSnapshot: DocumentSnapshot
+            
+            do {
+                billSnapshot = try transaction.getDocument(billRef)
+            } catch {
+                errorPointer?.pointee = NSError(domain: "BillService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch bill"])
+                return nil
+            }
+            
+            guard billSnapshot.exists else {
+                errorPointer?.pointee = NSError(domain: "BillService", code: 2, userInfo: [NSLocalizedDescriptionKey: "Bill not found"])
+                return nil
+            }
+            
+            guard let billData = try? billSnapshot.data(as: Bill.self) else {
+                errorPointer?.pointee = NSError(domain: "BillService", code: 3, userInfo: [NSLocalizedDescriptionKey: "Invalid bill data"])
+                return nil
+            }
+            
+            // Check authorization
+            guard billData.createdBy == currentUserId else {
+                errorPointer?.pointee = NSError(domain: "BillService", code: 4, userInfo: [NSLocalizedDescriptionKey: "Unauthorized update"])
+                return nil
+            }
+            
+            // Check version for optimistic locking with detailed conflict detection
+            if let expectedVersion = session.expectedVersion, billData.version != expectedVersion {
+                // Create local bill representation from session
+                let localBill = Bill(
+                    id: billData.id,
+                    createdBy: billData.createdBy,
+                    createdByDisplayName: billData.createdByDisplayName,
+                    createdByEmail: billData.createdByEmail,
+                    paidBy: session.paidBy,
+                    paidByDisplayName: session.participants.first(where: { $0.id == session.paidBy })?.displayName ?? billData.paidByDisplayName,
+                    paidByEmail: session.participants.first(where: { $0.id == session.paidBy })?.email ?? billData.paidByEmail,
+                    billName: session.billName,
+                    totalAmount: session.totalAmount,
+                    currency: session.currency,
+                    date: billData.date,
+                    createdAt: billData.createdAt,
+                    items: session.items,
+                    participants: session.participants,
+                    calculatedTotals: session.calculatedTotals,
+                    roundingAdjustments: session.roundingAdjustments,
+                    isDeleted: billData.isDeleted,
+                    version: expectedVersion,
+                    operationId: UUID().uuidString
+                )
+                
+                // Detect detailed conflicts
+                let operationId = UUID().uuidString
+                if let conflict = ConflictDetectionService.detectConflicts(
+                    localBill: localBill,
+                    serverBill: billData,
+                    operationId: operationId
+                ) {
+                    // Try auto-resolution for compatible conflicts
+                    if ConflictDetectionService.canAutoResolve(conflict: conflict),
+                       let resolvedBill = ConflictDetectionService.autoResolveConflict(
+                        localBill: localBill,
+                        serverBill: billData,
+                        conflict: conflict
+                       ) {
+                        // Use auto-resolved bill
+                        try? transaction.setData(from: resolvedBill, forDocument: billRef)
+                        return nil
+                    }
+                    
+                    // Manual resolution required
+                    errorPointer?.pointee = NSError(domain: "BillService", code: 5, userInfo: [
+                        NSLocalizedDescriptionKey: "Conflict detected: \(conflict.conflictingFields.joined(separator: ", "))",
+                        "conflict": conflict
+                    ])
+                    return nil
+                }
+            }
+            
+            // Create updated bill
+            let updatedBill = Bill(
+                id: billData.id,
+                createdBy: billData.createdBy,
+                createdByDisplayName: billData.createdByDisplayName,
+                createdByEmail: billData.createdByEmail,
+                paidBy: session.paidBy,
+                paidByDisplayName: session.participants.first(where: { $0.id == session.paidBy })?.displayName ?? billData.paidByDisplayName,
+                paidByEmail: session.participants.first(where: { $0.id == session.paidBy })?.email ?? billData.paidByEmail,
+                billName: session.billName,
+                totalAmount: session.totalAmount,
+                currency: session.currency,
+                date: billData.date,
+                createdAt: billData.createdAt,
+                items: session.items,
+                participants: session.participants,
+                calculatedTotals: session.calculatedTotals,
+                roundingAdjustments: session.roundingAdjustments,
+                isDeleted: billData.isDeleted,
+                version: billData.version + 1, // Increment version
+                operationId: UUID().uuidString
+            )
+            
+            // Update with incremented version
+            try? transaction.setData(from: updatedBill, forDocument: billRef)
+            return nil
+        })
     }
     
-    /// Deletes a bill from Firestore
+    /// Deletes a bill from Firestore using soft deletion
     func deleteBill(billId: String, currentUserId: String) async throws {
-        // TODO: Move implementation from original DataModels.swift
-        fatalError("Implementation needs to be moved from DataModels.swift")
+        try await db.runTransaction({ (transaction, errorPointer) -> Any? in
+            let billRef = self.db.collection("bills").document(billId)
+            let billSnapshot: DocumentSnapshot
+            
+            do {
+                billSnapshot = try transaction.getDocument(billRef)
+            } catch {
+                errorPointer?.pointee = NSError(domain: "BillService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch bill"])
+                return nil
+            }
+            
+            guard billSnapshot.exists else {
+                errorPointer?.pointee = NSError(domain: "BillService", code: 2, userInfo: [NSLocalizedDescriptionKey: "Bill not found"])
+                return nil
+            }
+            
+            guard let billData = try? billSnapshot.data(as: Bill.self) else {
+                errorPointer?.pointee = NSError(domain: "BillService", code: 3, userInfo: [NSLocalizedDescriptionKey: "Invalid bill data"])
+                return nil
+            }
+            
+            // Check authorization - only creator can delete
+            guard billData.createdBy == currentUserId else {
+                errorPointer?.pointee = NSError(domain: "BillService", code: 4, userInfo: [NSLocalizedDescriptionKey: "Unauthorized delete"])
+                return nil
+            }
+            
+            // Soft delete by setting isDeleted flag and incrementing version
+            var updatedBill = billData
+            updatedBill.isDeleted = true
+            updatedBill.version += 1
+            updatedBill.operationId = UUID().uuidString
+            
+            try? transaction.setData(from: updatedBill, forDocument: billRef)
+            return nil
+        })
     }
     
     // MARK: - Private Helper Methods
     
     /// Saves bill to Firestore using atomic batch operations
     private func saveBillToFirestore(bill: Bill) async throws {
-        // TODO: Move implementation from original DataModels.swift
-        fatalError("Implementation needs to be moved from DataModels.swift")
+        let batch = db.batch()
+        
+        // Add bill document
+        let billRef = db.collection("bills").document(bill.id)
+        try batch.setData(from: bill, forDocument: billRef)
+        
+        // Update participant balances (for caching/aggregation)
+        for participant in bill.participants {
+            let participantRef = db.collection("participants").document(participant.id)
+            batch.updateData([
+                "lastActivity": Timestamp(),
+                "isActive": true
+            ], forDocument: participantRef)
+        }
+        
+        // Commit batch atomically
+        try await batch.commit()
     }
     
     /// Updates bill in Firestore using atomic operations
     private func updateBillInFirestore(bill: Bill) async throws {
-        // TODO: Move implementation from original DataModels.swift
-        fatalError("Implementation needs to be moved from DataModels.swift")
+        let batch = db.batch()
+        
+        // Update bill document
+        let billRef = db.collection("bills").document(bill.id)
+        try batch.setData(from: bill, forDocument: billRef)
+        
+        // Update participant activity timestamps
+        for participant in bill.participants {
+            let participantRef = db.collection("participants").document(participant.id)
+            batch.updateData([
+                "lastActivity": Timestamp(),
+                "isActive": true
+            ], forDocument: participantRef)
+        }
+        
+        // Commit batch atomically
+        try await batch.commit()
     }
 }
 

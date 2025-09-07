@@ -64,9 +64,13 @@ final class BillSplitSession: ObservableObject, Identifiable {
     @Published var billName: String = ""
     @Published var scannedImage: UIImage?
     @Published var ocrResult: OCRResult?
-    @Published var items: [UIItem] = []
-    @Published var participants: [UIParticipant] = []
-    @Published var selectedPayerId: Int?
+    @Published var items: [BillItem] = []
+    @Published var participants: [BillParticipant] = []
+    @Published var paidBy: String = ""
+    @Published var totalAmount: Double = 0.0
+    @Published var currency: String = "USD"
+    @Published var calculatedTotals: [String: Double] = [:]
+    @Published var roundingAdjustments: [String: Double] = [:]
     @Published var additionalCharges: AdditionalCharges = AdditionalCharges()
     
     // Validation state
@@ -88,6 +92,7 @@ final class BillSplitSession: ObservableObject, Identifiable {
     // Editing mode (for existing bill modifications)
     private(set) var isEditingMode: Bool = false
     private(set) var originalBill: Bill?
+    private(set) var expectedVersion: Int?
     
     init(configuration: SessionConfiguration = .default) {
         self.configuration = configuration
@@ -103,6 +108,7 @@ final class BillSplitSession: ObservableObject, Identifiable {
         self.lastModifiedAt = Date()
         self.isEditingMode = true
         self.originalBill = bill
+        self.expectedVersion = bill.version
         
         // Load bill data into session
         loadBillForEditing(bill)

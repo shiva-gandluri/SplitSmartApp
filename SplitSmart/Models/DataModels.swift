@@ -872,15 +872,16 @@ class BillService: ObservableObject {
         for userId in affectedUserIds {
             do {
                 // Get all bills for this user except the one being deleted
-                // TEMPORARY FIX: Remove composite index requirement
+                // SERVER-SIDE FILTERING: Secure filtering of deleted bills  
                 let userBillsQuery = db.collection("bills")
                     .whereField("participantIds", arrayContains: userId)
+                    .whereField("isDeleted", isEqualTo: false)
                 
                 let snapshot = try await userBillsQuery.getDocuments()
                 let userBills = snapshot.documents.compactMap { doc -> Bill? in
                     guard let bill = try? doc.data(as: Bill.self),
-                          bill.id != billToDelete.id,
-                          !bill.isDeleted else { return nil } // Filter deleted bills client-side
+                          bill.id != billToDelete.id else { return nil }
+                    // Server-side filtering ensures only active bills are received
                     return bill
                 }
                 
@@ -968,9 +969,10 @@ class BillManager: ObservableObject {
         print("📡 Setting up real-time bill listener for user: \(userId)")
         
         // Listen for bills where user is involved as participant (excluding deleted bills)
-        // TEMPORARY FIX: Remove composite index requirement by filtering deleted bills in client
+        // SERVER-SIDE FILTERING: Secure filtering of deleted bills on server
         billsListener = db.collection("bills")
             .whereField("participantIds", arrayContains: userId)
+            .whereField("isDeleted", isEqualTo: false)
             .order(by: "createdAt", descending: true)
             .addSnapshotListener { [weak self] snapshot, error in
                 DispatchQueue.main.async {
@@ -997,8 +999,8 @@ class BillManager: ObservableObject {
                         do {
                             let bill = try doc.data(as: Bill.self)
                             print("✅ Loaded bill: \(bill.id) - $\(bill.totalAmount) - isDeleted: \(bill.isDeleted)")
-                            // Filter out deleted bills on client side (temporary fix for missing index)
-                            return bill.isDeleted ? nil : bill
+                            // Server-side filtering ensures only active bills are received
+                            return bill
                         } catch {
                             AppLog.billError("Failed to decode bill document \(doc.documentID)", error: error)
                             #if DEBUG

@@ -1,0 +1,9 @@
+{
+  "projects": {
+    "dev": "splitsmartapp-bd116",
+    "staging": "splitsmart-staging", 
+    "prod": "splitsmart-prod"
+  },
+  "targets": {},
+  "etags": {}
+}
