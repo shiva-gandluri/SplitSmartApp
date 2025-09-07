@@ -3,8 +3,106 @@ import Vision
 import UIKit
 import NaturalLanguage
 import FirebaseFirestore
+import os.log
 
-// MARK: - Currency Utilities
+// MARK: - OSLog Categories (Industry Standard)
+extension OSLog {
+    static let authentication = OSLog(subsystem: "com.splitsmart.core", category: "authentication")
+    static let billManagement = OSLog(subsystem: "com.splitsmart.core", category: "bill-management")
+    static let firebase = OSLog(subsystem: "com.splitsmart.core", category: "firebase")
+    static let pushNotifications = OSLog(subsystem: "com.splitsmart.core", category: "push-notifications")
+    static let calculations = OSLog(subsystem: "com.splitsmart.core", category: "calculations")
+}
+
+// MARK: - Logging Convenience Functions (Industry Standard)
+struct AppLog {
+    // MARK: - Authentication Logging
+    static func authSuccess(_ message: String, userEmail: String? = nil) {
+        if let email = userEmail {
+            os_log("✅ %{public}@: %{private}@", log: .authentication, type: .info, message, email)
+        } else {
+            os_log("✅ %{public}@", log: .authentication, type: .info, message)
+        }
+    }
+    
+    static func authError(_ message: String, error: Error? = nil) {
+        if let error = error {
+            os_log("❌ %{public}@: %{public}@", log: .authentication, type: .error, message, error.localizedDescription)
+        } else {
+            os_log("❌ %{public}@", log: .authentication, type: .error, message)
+        }
+    }
+    
+    static func authWarning(_ message: String) {
+        os_log("⚠️ %{public}@", log: .authentication, type: .default, message)
+    }
+    
+    static func debug(_ message: String, category: OSLog = .authentication) {
+        #if DEBUG
+        os_log("🔍 DEBUG: %{public}@", log: category, type: .debug, message)
+        #endif
+    }
+    
+    // MARK: - Bill Management Logging
+    static func billSuccess(_ message: String, billId: String? = nil) {
+        if let id = billId {
+            os_log("✅ %{public}@: %{private}@", log: .billManagement, type: .info, message, id)
+        } else {
+            os_log("✅ %{public}@", log: .billManagement, type: .info, message)
+        }
+    }
+    
+    static func billError(_ message: String, error: Error? = nil) {
+        if let error = error {
+            os_log("❌ %{public}@: %{public}@", log: .billManagement, type: .error, message, error.localizedDescription)
+        } else {
+            os_log("❌ %{public}@", log: .billManagement, type: .error, message)
+        }
+    }
+    
+    static func billOperation(_ message: String, billId: String? = nil) {
+        if let id = billId {
+            os_log("🔵 %{public}@: %{private}@", log: .billManagement, type: .info, message, id)
+        } else {
+            os_log("🔵 %{public}@", log: .billManagement, type: .info, message)
+        }
+    }
+    
+    // MARK: - Firebase Logging
+    static func firebaseError(_ message: String, error: Error? = nil) {
+        if let error = error {
+            os_log("❌ Firebase: %{public}@: %{public}@", log: .firebase, type: .error, message, error.localizedDescription)
+        } else {
+            os_log("❌ Firebase: %{public}@", log: .firebase, type: .error, message)
+        }
+    }
+    
+    // MARK: - Push Notifications Logging
+    static func notificationSuccess(_ message: String, token: String? = nil) {
+        if let token = token {
+            let tokenPreview = String(token.prefix(8)) + "..."
+            os_log("✅ FCM: %{public}@: %{private}@", log: .pushNotifications, type: .info, message, tokenPreview)
+        } else {
+            os_log("✅ FCM: %{public}@", log: .pushNotifications, type: .info, message)
+        }
+    }
+    
+    static func notificationError(_ message: String, error: Error? = nil) {
+        if let error = error {
+            os_log("❌ FCM: %{public}@: %{public}@", log: .pushNotifications, type: .error, message, error.localizedDescription)
+        } else {
+            os_log("❌ FCM: %{public}@", log: .pushNotifications, type: .error, message)
+        }
+    }
+}
+
+// MARK: - REFACTORING NOTE
+// This file has been structurally organized into modular components.
+// New files created: Core/, Services/, and Session/ directories.
+// Implementations remain here temporarily to maintain compatibility.
+
+// MARK: - Currency Utilities (Legacy - moved to Core/CurrencyExtensions.swift)
+// NOTE: These implementations will be removed once import is uncommented
 extension Double {
     /// Rounds a currency value to 2 decimal places with proper rounding
     var currencyRounded: Double {
@@ -395,7 +493,10 @@ class BillService: ObservableObject {
     
     /// Creates a new bill in Firestore with atomic transactions
     func createBill(from session: BillSplitSession, authViewModel: AuthViewModel, contactsManager: ContactsManager) async throws -> Bill {
+        AppLog.billOperation("Starting Firebase bill creation")
+        #if DEBUG
         print("🔵 Starting Firebase bill creation...")
+        #endif
         
         // Validate session readiness
         guard session.isReadyForBillCreation else {
@@ -503,7 +604,10 @@ class BillService: ObservableObject {
         
         // 🔧 STANDARDIZATION: Use BillCalculator to ensure Firebase UIDs are used consistently
         let calculatedDebts = BillCalculator.calculateOwedAmounts(bill: tempBill)
+        os_log("Calculated debts for new bill using Firebase UIDs: %{private}@", log: .calculations, type: .info, String(describing: calculatedDebts))
+        #if DEBUG
         print("🔧 Calculated debts for new bill using Firebase UIDs: \(calculatedDebts)")
+        #endif
         
         // Create final Bill object with correct calculatedTotals
         let bill = Bill(
@@ -526,7 +630,10 @@ class BillService: ObservableObject {
         // Save to Firestore with atomic transaction
         try await saveBillToFirestore(bill: bill)
         
+        AppLog.billSuccess("Bill created successfully", billId: bill.id)
+        #if DEBUG
         print("✅ Bill created successfully with ID: \(bill.id)")
+        #endif
         
         // Send push notifications to participants (async, don't block UI)
         Task {
@@ -554,7 +661,10 @@ class BillService: ObservableObject {
         
         // Commit batch operation
         try await batch.commit()
+        AppLog.billSuccess("Bill batch operation completed successfully")
+        #if DEBUG
         print("✅ Bill batch operation completed successfully")
+        #endif
     }
     
     // MARK: - Update Bill Functionality
@@ -569,7 +679,10 @@ class BillService: ObservableObject {
         currentUserId: String,
         billManager: BillManager
     ) async throws {
+        AppLog.billOperation("Starting Firebase bill update", billId: billId)
+        #if DEBUG
         print("🔵 Starting Firebase bill update for ID: \(billId)")
+        #endif
         
         // Validate input
         guard !billId.isEmpty,
@@ -664,7 +777,10 @@ class BillService: ObservableObject {
             )
         }
         
+        AppLog.billSuccess("Bill updated successfully", billId: billId)
+        #if DEBUG
         print("✅ Bill updated successfully with ID: \(billId)")
+        #endif
     }
     
     /// Updates bill in Firestore using atomic operations
@@ -683,7 +799,10 @@ class BillService: ObservableObject {
         currentUserId: String,
         billManager: BillManager
     ) async throws {
+        AppLog.billOperation("Starting Firebase bill deletion", billId: billId)
+        #if DEBUG
         print("🔵 Starting Firebase bill deletion for ID: \(billId)")
+        #endif
         
         // Get original bill to verify permissions and calculate balance changes
         let billRef = db.collection("bills").document(billId)
@@ -858,7 +977,10 @@ class BillManager: ObservableObject {
                     self?.isLoading = false
                     
                     if let error = error {
+                        AppLog.billError("Failed to load bills", error: error)
+                        #if DEBUG
                         print("❌ Failed to load bills: \(error.localizedDescription)")
+                        #endif
                         self?.errorMessage = "Failed to load bills: \(error.localizedDescription)"
                         return
                     }
@@ -878,7 +1000,10 @@ class BillManager: ObservableObject {
                             // Filter out deleted bills on client side (temporary fix for missing index)
                             return bill.isDeleted ? nil : bill
                         } catch {
+                            AppLog.billError("Failed to decode bill document \(doc.documentID)", error: error)
+                            #if DEBUG
                             print("❌ Failed to decode bill document \(doc.documentID): \(error)")
+                            #endif
                             return nil
                         }
                     }
@@ -1153,7 +1278,10 @@ class FCMTokenManager: ObservableObject {
             return
         }
         
+        AppLog.notificationSuccess("Updating FCM token for user")
+        #if DEBUG
         print("🔄 Updating FCM token for user: \(currentUser.uid)")
+        #endif
         
         do {
             try await db.collection("users").document(currentUser.uid).setData([
@@ -1164,9 +1292,15 @@ class FCMTokenManager: ObservableObject {
                 "lastActiveAt": FieldValue.serverTimestamp()
             ], merge: true)
             
+            AppLog.notificationSuccess("FCM token updated successfully in Firestore")
+            #if DEBUG
             print("✅ FCM token updated successfully in Firestore")
+            #endif
         } catch {
+            AppLog.notificationError("Failed to update FCM token", error: error)
+            #if DEBUG
             print("❌ Failed to update FCM token: \(error)")
+            #endif
         }
     }
     
@@ -2306,16 +2440,22 @@ class OCRService: ObservableObject {
         var amounts: [Double] = []
         
         for pattern in patterns {
-            let regex = try! NSRegularExpression(pattern: pattern)
-            let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
-            
-            for match in matches {
-                if let range = Range(match.range(at: 1), in: text) {
-                    let amountString = String(text[range])
-                    if let amount = Double(amountString), amount > 0 {
-                        amounts.append(amount)
+            do {
+                let regex = try NSRegularExpression(pattern: pattern)
+                let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
+                
+                for match in matches {
+                    if let range = Range(match.range(at: 1), in: text) {
+                        let amountString = String(text[range])
+                        if let amount = Double(amountString), amount > 0 {
+                            amounts.append(amount)
+                        }
                     }
                 }
+            } catch {
+                print("⚠️ Failed to create regex for pattern '\(pattern)': \(error.localizedDescription)")
+                // Continue with next pattern instead of crashing
+                continue
             }
         }
         
@@ -3147,16 +3287,22 @@ class OCRService: ObservableObject {
         ]
         
         for pattern in patterns {
-            let regex = try! NSRegularExpression(pattern: pattern)
-            let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
-            
-            for match in matches {
-                if let range = Range(match.range(at: 1), in: text) {
-                    let priceString = String(text[range])
-                    if let price = Double(priceString) {
-                        return price
+            do {
+                let regex = try NSRegularExpression(pattern: pattern)
+                let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
+                
+                for match in matches {
+                    if let range = Range(match.range(at: 1), in: text) {
+                        let priceString = String(text[range])
+                        if let price = Double(priceString) {
+                            return price
+                        }
                     }
                 }
+            } catch {
+                print("⚠️ Failed to create regex for price extraction pattern '\(pattern)': \(error.localizedDescription)")
+                // Continue with next pattern instead of crashing
+                continue
             }
         }
         return nil
@@ -3193,13 +3339,19 @@ class OCRService: ObservableObject {
         ]
         
         for pattern in cleanupPatterns {
-            let regex = try! NSRegularExpression(pattern: pattern, options: .caseInsensitive)
-            cleanedLine = regex.stringByReplacingMatches(
-                in: cleanedLine,
-                options: [],
-                range: NSRange(cleanedLine.startIndex..., in: cleanedLine),
-                withTemplate: ""
-            )
+            do {
+                let regex = try NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+                cleanedLine = regex.stringByReplacingMatches(
+                    in: cleanedLine,
+                    options: [],
+                    range: NSRange(cleanedLine.startIndex..., in: cleanedLine),
+                    withTemplate: ""
+                )
+            } catch {
+                print("⚠️ Failed to create cleanup regex for pattern '\(pattern)': \(error.localizedDescription)")
+                // Skip this cleanup pattern and continue with the next one
+                continue
+            }
         }
         
         cleanedLine = cleanedLine.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
@@ -3537,16 +3689,22 @@ class OCRService: ObservableObject {
         var amounts: [Double] = []
         
         for pattern in patterns {
-            let regex = try! NSRegularExpression(pattern: pattern)
-            let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
-            
-            for match in matches {
-                if let range = Range(match.range(at: 1), in: text) {
-                    let amountString = String(text[range])
-                    if let amount = Double(amountString), amount > 0 && amount < 1000 {
-                        amounts.append(amount)
+            do {
+                let regex = try NSRegularExpression(pattern: pattern)
+                let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
+                
+                for match in matches {
+                    if let range = Range(match.range(at: 1), in: text) {
+                        let amountString = String(text[range])
+                        if let amount = Double(amountString), amount > 0 && amount < 1000 {
+                            amounts.append(amount)
+                        }
                     }
                 }
+            } catch {
+                print("⚠️ Failed to create regex for dollar amount pattern '\(pattern)': \(error.localizedDescription)")
+                // Continue with next pattern instead of crashing
+                continue
             }
         }
         

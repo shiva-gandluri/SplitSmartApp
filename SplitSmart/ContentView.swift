@@ -1,6 +1,9 @@
 import SwiftUI
 import FirebaseFirestore
 
+// Ensure DataModels types are available
+// Note: In same target, should be automatically available
+
 struct ContentView: View {
     @State private var selectedTab = "home"
     @State private var isKeyboardVisible = false

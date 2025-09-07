@@ -163,5 +163,9 @@ CLAUDE.md.backup
 *.original
 *_backup.swift
 
+# Markdown files - ignore all except README.md and CLAUDE.md
+*.md
+!README.md
+
 # User documentation (typically want to track these)
 # user-stories.md should be tracked as it's project documentation

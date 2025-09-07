@@ -5,6 +5,10 @@ import FirebaseFirestore
 import GoogleSignIn
 import GoogleSignInSwift
 import Foundation
+import os.log
+
+// Note: OSLog categories and AppLog functions are defined in DataModels.swift
+// to avoid duplicate declarations across files in the same target.
 
 @MainActor
 class AuthViewModel: ObservableObject {
@@ -44,7 +48,10 @@ class AuthViewModel: ObservableObject {
     // Debug function to create test users
     func createTestUser(email: String, displayName: String, phoneNumber: String? = nil) async {
         guard let db = Firestore.firestore() as Firestore? else {
+            AppLog.firebaseError("Firestore not available")
+            #if DEBUG
             print("❌ Firestore not available")
+            #endif
             return
         }
         
@@ -66,10 +73,16 @@ class AuthViewModel: ObservableObject {
             }
             
             try await userRef.setData(userData, merge: true)
+            AppLog.authSuccess("Test user created", userEmail: email)
+            #if DEBUG
             print("✅ Test user created: \(email)")
+            #endif
             
         } catch {
+            AppLog.authError("Failed to create test user", error: error)
+            #if DEBUG
             print("❌ Failed to create test user: \(error.localizedDescription)")
+            #endif
         }
     }
     
@@ -84,13 +97,19 @@ class AuthViewModel: ObservableObject {
         
         // Check if we're within rate limits
         guard queryCount < maxQueriesPerMinute else {
+            AppLog.authWarning("Rate limit exceeded. Please wait before making more requests.")
+            #if DEBUG
             print("⚠️ Rate limit exceeded. Please wait before making more requests.")
+            #endif
             return false
         }
         
         // Check minimum time between queries
         guard now.timeIntervalSince(lastQueryTime) >= minTimeBetweenQueries else {
+            AppLog.authWarning("Too many requests. Please wait \(minTimeBetweenQueries) seconds between requests.")
+            #if DEBUG
             print("⚠️ Too many requests. Please wait \(minTimeBetweenQueries) seconds between requests.")
+            #endif
             // Small delay to prevent rapid successive calls
             try? await Task.sleep(nanoseconds: UInt64(minTimeBetweenQueries * 1_000_000_000))
             return false
@@ -197,17 +216,26 @@ class AuthViewModel: ObservableObject {
     func isUserOnboarded(email: String? = nil, phoneNumber: String? = nil) async -> Bool {
         // SECURITY: Check rate limiting first
         guard await checkRateLimit() else {
+            AppLog.authError("Rate limit exceeded for user validation")
+            #if DEBUG
             print("❌ Rate limit exceeded for user validation")
+            #endif
             return false
         }
         
         guard let db = Firestore.firestore() as Firestore? else {
+            AppLog.firebaseError("Firestore not available")
+            #if DEBUG
             print("❌ Firestore not available")
+            #endif
             return false
         }
         
         do {
+            AppLog.debug("Checking user onboarding status...", category: .authentication)
+            #if DEBUG
             print("🔍 Checking user onboarding status...")
+            #endif
             
             // Validate and check by email first
             if let email = email {
@@ -221,7 +249,10 @@ class AuthViewModel: ObservableObject {
                     let participantSnapshot = try await participantEmailQuery.getDocuments(source: .default)
                     
                     if !participantSnapshot.isEmpty {
+                        AppLog.authSuccess("User found in participants collection", userEmail: sanitizedEmail)
+                        #if DEBUG
                         print("✅ User found in participants collection: \(sanitizedEmail)")
+                        #endif
                         return true
                     }
                     
@@ -231,7 +262,10 @@ class AuthViewModel: ObservableObject {
                     let userSnapshot = try await userEmailQuery.getDocuments(source: .default)
                     
                     if !userSnapshot.isEmpty {
+                        AppLog.authSuccess("User found in users collection", userEmail: sanitizedEmail)
+                        #if DEBUG
                         print("✅ User found in users collection: \(sanitizedEmail)")
+                        #endif
                         
                         // Auto-migrate: Create participant record for existing user
                         if let userDoc = userSnapshot.documents.first {
@@ -258,7 +292,10 @@ class AuthViewModel: ObservableObject {
                     let participantSnapshot = try await participantPhoneQuery.getDocuments(source: .default)
                     
                     if !participantSnapshot.isEmpty {
+                        AppLog.authSuccess("User found with phone in participants")
+                        #if DEBUG
                         print("✅ User found with phone in participants: \(sanitizedPhone)")
+                        #endif
                         return true
                     }
                     
@@ -268,7 +305,10 @@ class AuthViewModel: ObservableObject {
                     let userSnapshot = try await userPhoneQuery.getDocuments(source: .default)
                     
                     if !userSnapshot.isEmpty {
+                        AppLog.authSuccess("User found with phone in users collection")
+                        #if DEBUG
                         print("✅ User found with phone in users collection: \(sanitizedPhone)")
+                        #endif
                         
                         // Auto-migrate: Create participant record for existing user
                         if let userDoc = userSnapshot.documents.first {
@@ -287,7 +327,10 @@ class AuthViewModel: ObservableObject {
             return false
             
         } catch {
+            AppLog.authError("Error checking user onboarding status", error: error)
+            #if DEBUG
             print("❌ Error checking user onboarding status: \(error.localizedDescription)")
+            #endif
             return false
         }
     }
@@ -477,7 +520,10 @@ class AuthViewModel: ObservableObject {
                     
                     print("✅ User and participant record creation completed")
                 } catch {
+                    AppLog.authError("Background record creation failed", error: error)
+                    #if DEBUG
                     print("❌ Background record creation failed: \(error.localizedDescription)")
+                    #endif
                     print("ℹ️ App will continue - records will be created on retry")
                 }
             }
@@ -496,7 +542,10 @@ class AuthViewModel: ObservableObject {
             }
             
         } catch {
+            AppLog.authError("Sign-in error", error: error)
+            #if DEBUG
             print("❌ Sign-in error: \(error.localizedDescription)")
+            #endif
             await MainActor.run {
                 // Handle specific error types
                 if let nsError = error as NSError? {
@@ -594,7 +643,10 @@ class AuthViewModel: ObservableObject {
                         return
                     
                     default:
+                        AppLog.firebaseError("Firestore error", error: error)
+                        #if DEBUG
                         print("❌ Firestore error: \(error.localizedDescription)")
+                        #endif
                         throw error
                     }
                 } else {
@@ -723,7 +775,10 @@ class AuthViewModel: ObservableObject {
             let db = Firestore.firestore()
             let userId = user.uid
             
+            AppLog.debug("Checking if participant record exists for current user...", category: .authentication)
+            #if DEBUG
             print("🔍 Checking if participant record exists for current user...")
+            #endif
             
             // Check if participant record already exists
             let participantRef = db.collection("participants").document(userId)
