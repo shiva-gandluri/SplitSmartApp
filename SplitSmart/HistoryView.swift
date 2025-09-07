@@ -8,6 +8,11 @@ struct HistoryView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
     @State private var selectedFilter: ActivityFilter = .all
     
+    // Explicitly define the activities array to help with type resolution
+    private var activities: [BillActivity] {
+        return billManager.billActivities
+    }
+    
     enum ActivityFilter: String, CaseIterable {
         case all = "All"
         case created = "Created"
@@ -25,17 +30,21 @@ struct HistoryView: View {
     }
     
     var filteredActivities: [BillActivity] {
-        let activities = billManager.billActivities
-        
         switch selectedFilter {
         case .all:
             return activities
         case .created:
-            return activities.filter { $0.activityType.rawValue == "created" }
+            return activities.filter { activity in
+                activity.activityType.rawValue == "created"
+            }
         case .edited:
-            return activities.filter { $0.activityType.rawValue == "edited" }
+            return activities.filter { activity in
+                activity.activityType.rawValue == "edited"
+            }
         case .deleted:
-            return activities.filter { $0.activityType.rawValue == "deleted" }
+            return activities.filter { activity in
+                activity.activityType.rawValue == "deleted"
+            }
         }
     }
     
@@ -51,7 +60,7 @@ struct HistoryView: View {
                         Spacer()
                         
                         // Activity count badge
-                        if !billManager.billActivities.isEmpty {
+                        if !activities.isEmpty {
                             Text("\(filteredActivities.count)")
                                 .font(.caption)
                                 .fontWeight(.medium)
@@ -152,13 +161,19 @@ struct HistoryView: View {
     private func countForFilter(_ filter: ActivityFilter) -> Int {
         switch filter {
         case .all:
-            return billManager.billActivities.count
+            return activities.count
         case .created:
-            return billManager.billActivities.filter { $0.activityType.rawValue == "created" }.count
+            return activities.filter { activity in
+                activity.activityType.rawValue == "created"
+            }.count
         case .edited:
-            return billManager.billActivities.filter { $0.activityType.rawValue == "edited" }.count
+            return activities.filter { activity in
+                activity.activityType.rawValue == "edited"
+            }.count
         case .deleted:
-            return billManager.billActivities.filter { $0.activityType.rawValue == "deleted" }.count
+            return activities.filter { activity in
+                activity.activityType.rawValue == "deleted"
+            }.count
         }
     }
     
