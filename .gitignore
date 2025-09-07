@@ -163,9 +163,39 @@ CLAUDE.md.backup
 *.original
 *_backup.swift
 
-# Markdown files - ignore all except README.md and CLAUDE.md
-*.md
+# Markdown files - ignore temporary docs but keep essential project documentation
+API_SECURITY_SETUP.md
+CONTACT_MANAGEMENT.md
+CONTACTS_INTEGRATION_GUIDE.md
+DEPLOYMENT.md
+FIREBASE_SETUP.md
+USER_STORY_8_VERIFICATION.md
+code-analysis.md
+old-claude.md
+*.md.backup
+
+# Keep essential project documentation
 !README.md
 
-# User documentation (typically want to track these)
-# user-stories.md should be tracked as it's project documentation
+# Duplicate Firebase files (proper versions are in infrastructure/firebase/)
+/firebase.json
+/firestore.indexes.json
+/firestore.rules
+/firestore-appcheck.rules
+
+# Duplicate scripts (proper versions are in infrastructure/scripts/)
+/deploy.sh
+
+# One-off development scripts
+enable-app-check.sh
+fix-firebase-cli.sh
+fix-npm.sh
+migrate-users.sh
+
+# Temporary files and development artifacts
+claude-code-temporary
+temp_init.json
+app-check-config.json
+
+# Personal configuration files (don't belong in project repo)
+.zshrc
