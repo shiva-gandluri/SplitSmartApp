@@ -65,7 +65,7 @@ struct ContentView: View {
                     authViewModel: authViewModel
                 )
             case "history":
-                UIHistoryScreen(billManager: billManager)
+                HistoryView(billManager: billManager)
                     .environmentObject(authViewModel)
             case "profile":
                 UIProfileScreen()

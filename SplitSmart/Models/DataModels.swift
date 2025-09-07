@@ -484,6 +484,78 @@ struct BillParticipant: Codable, Identifiable, Equatable {
     }
 }
 
+// MARK: - Bill Activity Tracking for Epic 3: History Tab Real-Time Updates
+
+/// Represents a bill activity entry for history tracking
+struct BillActivity: Codable, Identifiable, Equatable {
+    let id: String
+    let billId: String
+    let billName: String
+    let activityType: ActivityType
+    let actorName: String // Name of person who performed the action
+    let actorEmail: String
+    let participantEmails: [String] // All participants affected by this activity
+    let timestamp: Date
+    let amount: Double // Bill amount for context
+    let currency: String
+    
+    enum ActivityType: String, Codable, CaseIterable {
+        case created = "created"
+        case edited = "edited" 
+        case deleted = "deleted"
+        
+        var displayName: String {
+            switch self {
+            case .created: return "Added"
+            case .edited: return "Edited"
+            case .deleted: return "Deleted"
+            }
+        }
+        
+        var systemIconName: String {
+            switch self {
+            case .created: return "plus.circle.fill"
+            case .edited: return "pencil.circle.fill"
+            case .deleted: return "trash.circle.fill"
+            }
+        }
+        
+        var iconColor: Color {
+            switch self {
+            case .created: return .green
+            case .edited: return .blue
+            case .deleted: return .red
+            }
+        }
+    }
+    
+    /// Display text for history list
+    var displayText: String {
+        return "\(billName) - \(activityType.displayName) by \(actorName)"
+    }
+    
+    /// Formatted amount for display
+    var formattedAmount: String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = currency
+        return formatter.string(from: NSNumber(value: amount)) ?? "\(currency) \(amount)"
+    }
+    
+    init(billId: String, billName: String, activityType: ActivityType, actorName: String, actorEmail: String, participantEmails: [String], amount: Double, currency: String) {
+        self.id = UUID().uuidString
+        self.billId = billId
+        self.billName = billName
+        self.activityType = activityType
+        self.actorName = actorName
+        self.actorEmail = actorEmail
+        self.participantEmails = participantEmails
+        self.timestamp = Date()
+        self.amount = amount
+        self.currency = currency
+    }
+}
+
 // BillStatus enum removed - bills are simply created and exist without status
 
 // MARK: - Bill Service for Firebase Operations

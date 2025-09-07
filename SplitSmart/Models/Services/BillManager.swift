@@ -1,5 +1,6 @@
 import Foundation
 import FirebaseFirestore
+import FirebaseAuth
 import Combine
 
 // MARK: - User Balance Model
@@ -53,6 +54,9 @@ final class BillManager: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
     
+    // Epic 3: History Tab Real-Time Updates
+    @Published var billActivities: [BillActivity] = []
+    
     private var billsListener: ListenerRegistration?
     private var currentUserId: String?
     private var operationTimeouts: [String: Timer] = [:]
@@ -67,6 +71,11 @@ final class BillManager: ObservableObject {
         currentUserId = userId
         loadUserBills()
         setupRealtimeListener()
+        
+        // Epic 3: Load bill activities for history tab
+        Task {
+            await loadBillActivities()
+        }
     }
     
     // MARK: - Epic 1: Optimistic Update Operations
@@ -295,7 +304,28 @@ final class BillManager: ObservableObject {
             
             await MainActor.run {
                 completeOperation(operationId: operation.id, success: true)
+                
+                // Epic 3: Record bill creation activity
+                recordBillCreatedActivity(
+                    bill: confirmedBill,
+                    creatorName: authViewModel.currentUser?.displayName ?? "Unknown",
+                    creatorEmail: authViewModel.currentUser?.email ?? ""
+                )
             }
+            
+            // Save activity to Firestore for cross-user sync
+            let activity = BillActivity(
+                billId: confirmedBill.id,
+                billName: confirmedBill.displayName,
+                activityType: .created,
+                actorName: authViewModel.currentUser?.displayName ?? "Unknown",
+                actorEmail: authViewModel.currentUser?.email ?? "",
+                participantEmails: confirmedBill.participants.map { $0.email },
+                amount: confirmedBill.totalAmount,
+                currency: confirmedBill.currency
+            )
+            await saveBillActivityToFirestore(activity)
+            
         } catch {
             await MainActor.run {
                 rollbackOperation(operationId: operation.id, error: error)
@@ -310,7 +340,28 @@ final class BillManager: ObservableObject {
             
             await MainActor.run {
                 completeOperation(operationId: operation.id, success: true)
+                
+                // Epic 3: Record bill edit activity
+                recordBillEditedActivity(
+                    bill: optimisticBill,
+                    editorName: authViewModel.currentUser?.displayName ?? "Unknown",
+                    editorEmail: authViewModel.currentUser?.email ?? ""
+                )
             }
+            
+            // Save activity to Firestore for cross-user sync
+            let activity = BillActivity(
+                billId: optimisticBill.id,
+                billName: optimisticBill.displayName,
+                activityType: .edited,
+                actorName: authViewModel.currentUser?.displayName ?? "Unknown",
+                actorEmail: authViewModel.currentUser?.email ?? "",
+                participantEmails: optimisticBill.participants.map { $0.email },
+                amount: optimisticBill.totalAmount,
+                currency: optimisticBill.currency
+            )
+            await saveBillActivityToFirestore(activity)
+            
         } catch {
             await MainActor.run {
                 rollbackOperation(operationId: operation.id, error: error)
@@ -318,14 +369,45 @@ final class BillManager: ObservableObject {
         }
     }
     
-    /// Confirms bill deletion on server
+    /// Confirms bill deletion on server  
     private func confirmBillDeletion(billId: String, operation: BillOperation) async {
+        // Get bill details before deletion for activity recording
+        guard let billToDelete = optimisticBills.first(where: { $0.id == billId }) else {
+            await MainActor.run {
+                rollbackOperation(operationId: operation.id, error: BillDeleteError.billNotFound)
+            }
+            return
+        }
+        
         do {
             try await billService.deleteBill(billId: billId, currentUserId: operation.userId)
             
             await MainActor.run {
                 completeOperation(operationId: operation.id, success: true)
+                
+                // Epic 3: Record bill deletion activity
+                let deleterName = Auth.auth().currentUser?.displayName ?? "Unknown"
+                let deleterEmail = Auth.auth().currentUser?.email ?? ""
+                recordBillDeletedActivity(
+                    bill: billToDelete,
+                    deleterName: deleterName,
+                    deleterEmail: deleterEmail
+                )
             }
+            
+            // Save activity to Firestore for cross-user sync
+            let activity = BillActivity(
+                billId: billToDelete.id,
+                billName: billToDelete.displayName,
+                activityType: .deleted,
+                actorName: Auth.auth().currentUser?.displayName ?? "Unknown",
+                actorEmail: Auth.auth().currentUser?.email ?? "",
+                participantEmails: billToDelete.participants.map { $0.email },
+                amount: billToDelete.totalAmount,
+                currency: billToDelete.currency
+            )
+            await saveBillActivityToFirestore(activity)
+            
         } catch {
             await MainActor.run {
                 rollbackOperation(operationId: operation.id, error: error)
@@ -637,6 +719,123 @@ final class BillManager: ObservableObject {
     private func updateLegacyState() {
         userBills = optimisticBills
         userBalance = optimisticBalance
+    }
+    
+    // MARK: - Epic 3: Bill Activity Tracking
+    
+    /// Records a bill activity for history tracking
+    @MainActor
+    func recordBillActivity(billId: String, billName: String, activityType: BillActivity.ActivityType, actorName: String, actorEmail: String, participantEmails: [String], amount: Double, currency: String) {
+        let activity = BillActivity(
+            billId: billId,
+            billName: billName,
+            activityType: activityType,
+            actorName: actorName,
+            actorEmail: actorEmail,
+            participantEmails: participantEmails,
+            amount: amount,
+            currency: currency
+        )
+        
+        // Add to activities list (sorted by timestamp descending - newest first)
+        billActivities.insert(activity, at: 0)
+        
+        // Limit to 100 most recent activities to prevent memory bloat
+        if billActivities.count > 100 {
+            billActivities = Array(billActivities.prefix(100))
+        }
+        
+        print("📈 Epic 3: Recorded \\(activityType.displayName) activity for bill \\(billName) by \\(actorName)")
+    }
+    
+    /// Records bill creation activity
+    @MainActor
+    func recordBillCreatedActivity(bill: Bill, creatorName: String, creatorEmail: String) {
+        recordBillActivity(
+            billId: bill.id,
+            billName: bill.displayName,
+            activityType: .created,
+            actorName: creatorName,
+            actorEmail: creatorEmail,
+            participantEmails: bill.participants.map { $0.email },
+            amount: bill.totalAmount,
+            currency: bill.currency
+        )
+    }
+    
+    /// Records bill edit activity
+    @MainActor
+    func recordBillEditedActivity(bill: Bill, editorName: String, editorEmail: String) {
+        recordBillActivity(
+            billId: bill.id,
+            billName: bill.displayName,
+            activityType: .edited,
+            actorName: editorName,
+            actorEmail: editorEmail,
+            participantEmails: bill.participants.map { $0.email },
+            amount: bill.totalAmount,
+            currency: bill.currency
+        )
+    }
+    
+    /// Records bill deletion activity
+    @MainActor
+    func recordBillDeletedActivity(bill: Bill, deleterName: String, deleterEmail: String) {
+        recordBillActivity(
+            billId: bill.id,
+            billName: bill.displayName,
+            activityType: .deleted,
+            actorName: deleterName,
+            actorEmail: deleterEmail,
+            participantEmails: bill.participants.map { $0.email },
+            amount: bill.totalAmount,
+            currency: bill.currency
+        )
+    }
+    
+    /// Loads bill activities from Firestore for current user
+    @MainActor
+    private func loadBillActivities() async {
+        guard let currentUserId = currentUserId else { return }
+        
+        do {
+            // Query activities where current user is in participants
+            let activitiesQuery = db.collection("bill_activities")
+                .whereField("participantEmails", arrayContains: await getCurrentUserEmail())
+                .order(by: "timestamp", descending: true)
+                .limit(to: 50)
+            
+            let snapshot = try await activitiesQuery.getDocuments()
+            var activities: [BillActivity] = []
+            
+            for document in snapshot.documents {
+                if let activity = try? document.data(as: BillActivity.self) {
+                    activities.append(activity)
+                }
+            }
+            
+            billActivities = activities
+            print("📈 Epic 3: Loaded \\(activities.count) bill activities for user")
+            
+        } catch {
+            print("❌ Epic 3: Failed to load bill activities: \\(error.localizedDescription)")
+        }
+    }
+    
+    /// Saves bill activity to Firestore for cross-user synchronization
+    private func saveBillActivityToFirestore(_ activity: BillActivity) async {
+        do {
+            let activityRef = db.collection("bill_activities").document(activity.id)
+            try await activityRef.setData(from: activity)
+            print("✅ Epic 3: Saved activity \\(activity.activityType.displayName) to Firestore")
+        } catch {
+            print("❌ Epic 3: Failed to save activity to Firestore: \\(error.localizedDescription)")
+        }
+    }
+    
+    /// Gets current user email for activity queries
+    private func getCurrentUserEmail() async -> String {
+        return Auth.auth().currentUser?.email ?? ""
     }
     
     deinit {
