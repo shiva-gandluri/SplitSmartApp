@@ -2,203 +2,386 @@ import Foundation
 import FirebaseFirestore
 import Combine
 
-// MARK: - Notification Types
-enum NotificationType: String, Codable {
-    case billCreated = "bill_created"
-    case billUpdated = "bill_updated"
-    case billDeleted = "bill_deleted"
-    case paymentReminder = "payment_reminder"
-    case balanceSettled = "balance_settled"
-    
-    var title: String {
-        switch self {
-        case .billCreated: return "New Bill Created"
-        case .billUpdated: return "Bill Updated"
-        case .billDeleted: return "Bill Deleted"
-        case .paymentReminder: return "Payment Reminder"
-        case .balanceSettled: return "Balance Settled"
-        }
-    }
-}
+// MARK: - Push Notification Service with Epic 2 Implementation
 
-// MARK: - Notification Payload
-struct NotificationPayload: Codable {
-    let type: NotificationType
-    let title: String
-    let body: String
-    let billId: String?
-    let amount: Double?
-    let currency: String
-    let deepLinkData: [String: String]?
-    let priority: NotificationPriority
-    let scheduledTime: Date?
-    
-    enum NotificationPriority: String, Codable {
-        case low, normal, high
-    }
-}
-
-// MARK: - Notification Queue Item
-struct NotificationQueueItem: Codable, Identifiable {
-    let id: String
-    let payload: NotificationPayload
-    let targetUserIds: [String]
-    let createdAt: Date
-    var attempts: Int
-    var lastAttemptAt: Date?
-    var status: QueueStatus
-    var errorMessage: String?
-    
-    enum QueueStatus: String, Codable {
-        case pending, processing, sent, failed, cancelled
-    }
-    
-    init(payload: NotificationPayload, targetUserIds: [String]) {
-        self.id = UUID().uuidString
-        self.payload = payload
-        self.targetUserIds = targetUserIds
-        self.createdAt = Date()
-        self.attempts = 0
-        self.status = .pending
-    }
-}
-
-// MARK: - Push Notification Service
 final class PushNotificationService: ObservableObject {
     private let db = Firestore.firestore()
-    @Published var queueSize: Int = 0
-    @Published var isProcessing = false
-    @Published var lastProcessedAt: Date?
     
-    // Configuration
-    private let maxRetryAttempts = 3
-    private let batchSize = 10
-    private let processingInterval: TimeInterval = 30 // 30 seconds
-    private let exponentialBackoffBase: TimeInterval = 5 // 5 seconds base delay
+    // Retry configuration for Epic 2 requirements
+    private let maxRetryAttempts = 5
+    private let baseRetryInterval: TimeInterval = 2.0 // 2s, 4s, 8s, 16s, 32s
+    private let batchSize = 10 // Process 10 participants per batch for large groups
+    private let batchDelay: TimeInterval = 3.0 // 3-second delay between batches
     
-    private var processingTimer: Timer?
-    private var notificationQueue: [NotificationQueueItem] = []
+    // Retry queue for failed notifications
+    @Published var pendingNotifications: [PendingNotification] = []
+    @Published var notificationMetrics = NotificationMetrics()
+    
+    private var retryTimer: Timer?
+    private var cancellables = Set<AnyCancellable>()
     
     init() {
-        startQueueProcessor()
+        setupRetryQueue()
     }
     
-    // MARK: - Public Interface
+    // MARK: - Epic 2: Bill Operation Notifications
     
-    /// Sends notification for bill creation
-    func sendBillCreatedNotification(bill: Bill, excludeUserId: String) async {
-        // TODO: Move implementation from original DataModels.swift
+    /// US-SYNC-004: New Bill Creation Notifications
+    func notifyBillCreated(bill: Bill, creatorName: String, excludeUserId: String) async {
+        let notification = BillNotification(
+            type: .created,
+            billId: bill.id,
+            billName: bill.displayName,
+            actorName: creatorName,
+            message: "\(bill.displayName) - Added by \(creatorName)",
+            deepLink: "splitsmart://bill/\(bill.id)"
+        )
+        
+        // Get participant emails excluding the creator
+        let participantEmails = bill.participants
+            .filter { $0.id != excludeUserId }
+            .map { $0.email }
+        
+        await sendNotificationToParticipants(
+            notification: notification,
+            participantEmails: participantEmails
+        )
+        
+        // Update metrics
+        await MainActor.run {
+            notificationMetrics.totalSent += participantEmails.count
+            notificationMetrics.createdNotifications += 1
+        }
     }
     
-    /// Sends notification for bill updates
-    func sendBillUpdatedNotification(bill: Bill, changes: [String], excludeUserId: String) async {
-        // TODO: Move implementation from original DataModels.swift
+    /// US-SYNC-005: Bill Edit Notifications with Retry Queue
+    func notifyBillEdited(bill: Bill, editorName: String, excludeUserId: String) async {
+        let notification = BillNotification(
+            type: .edited,
+            billId: bill.id,
+            billName: bill.displayName,
+            actorName: editorName,
+            message: "\(bill.displayName) - Edited by \(editorName)",
+            deepLink: "splitsmart://bill/\(bill.id)"
+        )
+        
+        let participantEmails = bill.participants
+            .filter { $0.id != excludeUserId }
+            .map { $0.email }
+        
+        await sendNotificationToParticipants(
+            notification: notification,
+            participantEmails: participantEmails
+        )
+        
+        await MainActor.run {
+            notificationMetrics.totalSent += participantEmails.count
+            notificationMetrics.editedNotifications += 1
+        }
     }
     
-    /// Sends notification for bill deletion
-    func sendBillDeletedNotification(billName: String, amount: Double, participantIds: [String], excludeUserId: String) async {
-        // TODO: Move implementation from original DataModels.swift
+    /// US-SYNC-006: Bill Deletion Notifications
+    func notifyBillDeleted(bill: Bill, deleterName: String, excludeUserId: String) async {
+        let notification = BillNotification(
+            type: .deleted,
+            billId: bill.id,
+            billName: bill.displayName,
+            actorName: deleterName,
+            message: "\(bill.displayName) - Deleted by \(deleterName)",
+            deepLink: "splitsmart://home" // Go to home screen for deleted bills
+        )
+        
+        let participantEmails = bill.participants
+            .filter { $0.id != excludeUserId }
+            .map { $0.email }
+        
+        await sendNotificationToParticipants(
+            notification: notification,
+            participantEmails: participantEmails
+        )
+        
+        await MainActor.run {
+            notificationMetrics.totalSent += participantEmails.count
+            notificationMetrics.deletedNotifications += 1
+        }
     }
     
-    /// Sends payment reminder notifications
-    func sendPaymentReminder(to userId: String, amount: Double, billName: String) async {
-        // TODO: Move implementation from original DataModels.swift
+    // MARK: - US-SYNC-007: Batch Processing for Large Groups
+    
+    private func sendNotificationToParticipants(notification: BillNotification, participantEmails: [String]) async {
+        // For large groups (>10 participants), use batch processing
+        if participantEmails.count > batchSize {
+            await sendBatchedNotifications(notification: notification, participantEmails: participantEmails)
+        } else {
+            await sendSingleBatchNotification(notification: notification, participantEmails: participantEmails)
+        }
     }
     
-    /// Queues notification for batch processing
-    func queueNotification(_ payload: NotificationPayload, for userIds: [String]) {
-        // TODO: Move implementation from original DataModels.swift
+    /// US-SYNC-007: Batch notifications for large groups with rate limiting
+    private func sendBatchedNotifications(notification: BillNotification, participantEmails: [String]) async {
+        let batches = participantEmails.chunked(into: batchSize)
+        
+        for (index, batch) in batches.enumerated() {
+            // Add delay between batches (except first batch)
+            if index > 0 {
+                try? await Task.sleep(nanoseconds: UInt64(batchDelay * 1_000_000_000))
+            }
+            
+            await sendSingleBatchNotification(notification: notification, participantEmails: batch)
+            
+            await MainActor.run {
+                notificationMetrics.batchesSent += 1
+            }
+        }
     }
     
-    // MARK: - Queue Management
-    
-    /// Starts the automatic queue processor
-    private func startQueueProcessor() {
-        // TODO: Move implementation from original DataModels.swift
+    private func sendSingleBatchNotification(notification: BillNotification, participantEmails: [String]) async {
+        do {
+            // Get FCM tokens for participant emails
+            let tokenMap = await FCMTokenManager.shared.getFCMTokensForEmails(participantEmails)
+            
+            // Send notifications to valid tokens
+            for (email, token) in tokenMap {
+                await sendNotificationWithRetry(
+                    notification: notification,
+                    token: token,
+                    participantEmail: email
+                )
+            }
+        } catch {
+            print("❌ Error sending batch notification: \(error.localizedDescription)")
+            
+            await MainActor.run {
+                notificationMetrics.totalFailed += participantEmails.count
+            }
+        }
     }
     
-    /// Processes pending notifications in batches
-    private func processNotificationQueue() async {
-        // TODO: Move implementation from original DataModels.swift
+    // MARK: - Retry Logic with Exponential Backoff
+    
+    /// US-SYNC-005: Retry queue with exponential backoff (2s, 4s, 8s, 16s, 32s)
+    private func sendNotificationWithRetry(notification: BillNotification, token: String, participantEmail: String) async {
+        let pendingNotification = PendingNotification(
+            id: UUID().uuidString,
+            notification: notification,
+            token: token,
+            participantEmail: participantEmail,
+            attemptCount: 0,
+            nextRetryAt: Date(),
+            createdAt: Date()
+        )
+        
+        let success = await attemptNotificationDelivery(pendingNotification)
+        
+        if !success {
+            await MainActor.run {
+                self.pendingNotifications.append(pendingNotification)
+            }
+        }
     }
     
-    /// Processes a single notification item
-    private func processNotificationItem(_ item: NotificationQueueItem) async -> Bool {
-        // TODO: Move implementation from original DataModels.swift
-        return false
+    private func attemptNotificationDelivery(_ pendingNotification: PendingNotification) async -> Bool {
+        do {
+            // Simulate FCM API call (would use Firebase Cloud Functions or FCM API)
+            let success = await sendFCMNotification(
+                token: pendingNotification.token,
+                title: "SplitSmart",
+                body: pendingNotification.notification.message,
+                deepLink: pendingNotification.notification.deepLink,
+                billId: pendingNotification.notification.billId
+            )
+            
+            if success {
+                await MainActor.run {
+                    notificationMetrics.totalDelivered += 1
+                }
+                return true
+            } else {
+                throw NotificationError.deliveryFailed("FCM delivery failed")
+            }
+        } catch {
+            print("❌ Notification delivery failed for \(pendingNotification.participantEmail): \(error.localizedDescription)")
+            
+            await MainActor.run {
+                notificationMetrics.totalFailed += 1
+            }
+            return false
+        }
     }
     
-    /// Implements exponential backoff retry logic
-    private func shouldRetryItem(_ item: NotificationQueueItem) -> Bool {
-        // TODO: Move implementation from original DataModels.swift
-        return false
+    /// Sets up retry queue processing
+    private func setupRetryQueue() {
+        // Process retry queue every 30 seconds
+        retryTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
+            Task {
+                await self?.processRetryQueue()
+            }
+        }
     }
     
-    /// Calculates next retry delay using exponential backoff
-    private func calculateRetryDelay(attempt: Int) -> TimeInterval {
-        // TODO: Move implementation from original DataModels.swift
-        return 0
+    /// Processes failed notifications with exponential backoff
+    private func processRetryQueue() async {
+        let now = Date()
+        var notificationsToRetry: [PendingNotification] = []
+        var notificationsToKeep: [PendingNotification] = []
+        
+        await MainActor.run {
+            for notification in pendingNotifications {
+                if notification.attemptCount >= maxRetryAttempts {
+                    // Max retries reached, drop notification
+                    notificationMetrics.totalDropped += 1
+                } else if now >= notification.nextRetryAt {
+                    // Ready for retry
+                    notificationsToRetry.append(notification)
+                } else {
+                    // Still waiting for next retry
+                    notificationsToKeep.append(notification)
+                }
+            }
+            
+            pendingNotifications = notificationsToKeep
+        }
+        
+        // Retry failed notifications
+        for var notification in notificationsToRetry {
+            let success = await attemptNotificationDelivery(notification)
+            
+            if !success && notification.attemptCount < maxRetryAttempts {
+                notification.attemptCount += 1
+                // Exponential backoff: 2s, 4s, 8s, 16s, 32s
+                let delaySeconds = baseRetryInterval * pow(2, Double(notification.attemptCount - 1))
+                notification.nextRetryAt = Date().addingTimeInterval(delaySeconds)
+                
+                await MainActor.run {
+                    self.pendingNotifications.append(notification)
+                }
+            }
+        }
     }
     
-    // MARK: - Firebase Cloud Functions Integration
+    // MARK: - FCM Integration
     
-    /// Sends notification via Firebase Cloud Function
-    private func sendNotificationViaCloudFunction(payload: NotificationPayload, userIds: [String]) async throws {
-        // TODO: Move implementation from original DataModels.swift
-        fatalError("Implementation needs to be moved from DataModels.swift")
+    /// Simulates sending FCM notification (would integrate with Firebase Cloud Functions)
+    private func sendFCMNotification(token: String, title: String, body: String, deepLink: String, billId: String) async -> Bool {
+        // This would typically call Firebase Cloud Functions or FCM REST API
+        // For now, we'll simulate the API call
+        
+        do {
+            // Simulate network delay and potential failures
+            try await Task.sleep(nanoseconds: UInt64.random(in: 100_000_000...500_000_000)) // 0.1-0.5s delay
+            
+            // Simulate 95% success rate (5% failure for retry testing)
+            let success = Int.random(in: 1...100) <= 95
+            
+            if success {
+                print("✅ FCM notification sent to token \(String(token.prefix(10)))... - \(body)")
+                return true
+            } else {
+                print("❌ FCM notification failed for token \(String(token.prefix(10)))...")
+                return false
+            }
+        } catch {
+            return false
+        }
     }
     
-    /// Validates user tokens before sending
-    private func validateUserTokens(_ userIds: [String]) async -> [String: String] {
-        // TODO: Move implementation from original DataModels.swift
-        return [:]
+    /// US-SYNC-015: Deep linking support (will be used by UI)
+    func handleNotificationTap(deepLink: String) {
+        // This would be called by the app delegate or scene delegate
+        // when user taps notification to navigate to specific bill
+        print("🔗 Handling deep link: \(deepLink)")
     }
     
-    // MARK: - Analytics and Monitoring
+    // MARK: - Metrics and Monitoring
     
-    /// Logs notification delivery metrics
-    private func logNotificationMetrics(item: NotificationQueueItem, success: Bool, error: String?) {
-        // TODO: Move implementation from original DataModels.swift
+    func getNotificationMetrics() -> NotificationMetrics {
+        return notificationMetrics
     }
     
-    /// Gets queue statistics for monitoring
-    func getQueueStatistics() -> [String: Any] {
-        // TODO: Move implementation from original DataModels.swift
-        return [:]
+    func resetMetrics() {
+        notificationMetrics = NotificationMetrics()
     }
     
     deinit {
-        processingTimer?.invalidate()
+        retryTimer?.invalidate()
+        cancellables.forEach { $0.cancel() }
     }
 }
 
-// MARK: - Notification Error Types
+// MARK: - Data Models
+
+struct BillNotification: Codable, Identifiable {
+    let id = UUID()
+    let type: NotificationType
+    let billId: String
+    let billName: String
+    let actorName: String
+    let message: String
+    let deepLink: String
+    let timestamp = Date()
+    
+    enum NotificationType: String, Codable {
+        case created = "created"
+        case edited = "edited"
+        case deleted = "deleted"
+    }
+}
+
+struct PendingNotification: Identifiable {
+    let id: String
+    let notification: BillNotification
+    let token: String
+    let participantEmail: String
+    var attemptCount: Int
+    var nextRetryAt: Date
+    let createdAt: Date
+}
+
+struct NotificationMetrics: Codable {
+    var totalSent: Int = 0
+    var totalDelivered: Int = 0
+    var totalFailed: Int = 0
+    var totalDropped: Int = 0
+    var createdNotifications: Int = 0
+    var editedNotifications: Int = 0
+    var deletedNotifications: Int = 0
+    var batchesSent: Int = 0
+    
+    var successRate: Double {
+        return totalSent > 0 ? Double(totalDelivered) / Double(totalSent) : 0.0
+    }
+    
+    var failureRate: Double {
+        return totalSent > 0 ? Double(totalFailed) / Double(totalSent) : 0.0
+    }
+}
+
 enum NotificationError: LocalizedError {
-    case invalidPayload(String)
-    case cloudFunctionError(String)
-    case tokenValidationFailed
-    case rateLimitExceeded
+    case deliveryFailed(String)
+    case tokenNotFound
+    case rateLimited
     case networkError(String)
     
     var errorDescription: String? {
         switch self {
-        case .invalidPayload(let message):
-            return "Invalid notification payload: \(message)"
-        case .cloudFunctionError(let message):
-            return "Cloud function error: \(message)"
-        case .tokenValidationFailed:
-            return "Failed to validate user tokens"
-        case .rateLimitExceeded:
-            return "Notification rate limit exceeded"
+        case .deliveryFailed(let message):
+            return "Notification delivery failed: \(message)"
+        case .tokenNotFound:
+            return "FCM token not found for participant"
+        case .rateLimited:
+            return "FCM rate limit exceeded"
         case .networkError(let message):
             return "Network error: \(message)"
         }
     }
 }
 
-// MARK: - Temporary Note
-/*
- This file contains the structure for PushNotificationService extracted from DataModels.swift.
- The actual implementation is temporarily left in the original file to avoid breaking changes.
- Once all files are created, we'll move the implementations in phases.
- */
+// MARK: - Array Extension for Batching
+
+extension Array {
+    func chunked(into size: Int) -> [[Element]] {
+        return stride(from: 0, to: count, by: size).map {
+            Array(self[$0..<Swift.min($0 + size, count)])
+        }
+    }
+}

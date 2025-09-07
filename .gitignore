@@ -157,6 +157,7 @@ coverage/
 # Claude Code
 .claude/
 CLAUDE.md.backup
+CLAUDE.md
 
 # Temporary refactoring files
 *.swift.backup
@@ -172,6 +173,7 @@ FIREBASE_SETUP.md
 USER_STORY_8_VERIFICATION.md
 code-analysis.md
 old-claude.md
+user-stories.md
 *.md.backup
 
 # Keep essential project documentation

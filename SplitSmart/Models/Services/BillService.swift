@@ -84,6 +84,7 @@ enum BillDeleteError: LocalizedError {
 // MARK: - Bill Service for Firebase Operations
 final class BillService: ObservableObject {
     private let db = Firestore.firestore()
+    private let pushNotificationService = PushNotificationService()
     
     /// Creates a new bill in Firestore with atomic transactions
     func createBill(from session: BillSplitSession, authViewModel: AuthViewModel, contactsManager: ContactsManager) async throws -> Bill {
@@ -124,6 +125,14 @@ final class BillService: ObservableObject {
         )
         
         try await saveBillToFirestore(bill: bill)
+        
+        // Send push notifications to other participants (Epic 2: US-SYNC-004)
+        await pushNotificationService.notifyBillCreated(
+            bill: bill,
+            creatorName: currentUser.displayName ?? "Unknown",
+            excludeUserId: currentUser.uid
+        )
+        
         return bill
     }
     
@@ -238,8 +247,40 @@ final class BillService: ObservableObject {
             
             // Update with incremented version
             try? transaction.setData(from: updatedBill, forDocument: billRef)
-            return nil
+            return updatedBill // Return updated bill for notification
         })
+        
+        // Send push notifications to other participants after successful update (Epic 2: US-SYNC-005)
+        if let currentUser = authViewModel.currentUser {
+            // Create temporary bill object for notification
+            let notificationBill = Bill(
+                id: billId,
+                createdBy: currentUserId,
+                createdByDisplayName: currentUser.displayName ?? "Unknown",
+                createdByEmail: currentUser.email ?? "unknown@example.com",
+                paidBy: session.paidBy,
+                paidByDisplayName: session.participants.first(where: { $0.id == session.paidBy })?.displayName ?? "Unknown",
+                paidByEmail: session.participants.first(where: { $0.id == session.paidBy })?.email ?? "unknown@example.com",
+                billName: session.billName,
+                totalAmount: session.totalAmount,
+                currency: session.currency,
+                date: Date(),
+                createdAt: Date(),
+                items: session.items,
+                participants: session.participants,
+                calculatedTotals: session.calculatedTotals,
+                roundingAdjustments: session.roundingAdjustments,
+                isDeleted: false,
+                version: 1,
+                operationId: UUID().uuidString
+            )
+            
+            await pushNotificationService.notifyBillEdited(
+                bill: notificationBill,
+                editorName: currentUser.displayName ?? "Unknown",
+                excludeUserId: currentUserId
+            )
+        }
     }
     
     /// Deletes a bill from Firestore using soft deletion
@@ -278,8 +319,28 @@ final class BillService: ObservableObject {
             updatedBill.operationId = UUID().uuidString
             
             try? transaction.setData(from: updatedBill, forDocument: billRef)
-            return nil
+            return updatedBill // Return updated bill for notification
         })
+        
+        // Send push notifications to other participants after successful deletion (Epic 2: US-SYNC-006)
+        // We need to get the updated bill data to send notifications
+        do {
+            let billSnapshot = try await db.collection("bills").document(billId).getDocument()
+            if let deletedBill = try? billSnapshot.data(as: Bill.self),
+               let currentUserDoc = try? await db.collection("users").document(currentUserId).getDocument(),
+               let userData = currentUserDoc.data() {
+                
+                let deleterName = userData["displayName"] as? String ?? "Unknown"
+                
+                await pushNotificationService.notifyBillDeleted(
+                    bill: deletedBill,
+                    deleterName: deleterName,
+                    excludeUserId: currentUserId
+                )
+            }
+        } catch {
+            print("⚠️ Failed to send deletion notification: \(error.localizedDescription)")
+        }
     }
     
     // MARK: - Private Helper Methods
