@@ -31,11 +31,11 @@ struct HistoryView: View {
         case .all:
             return activities
         case .created:
-            return activities.filter { $0.activityType == .created }
+            return activities.filter { $0.activityType.rawValue == "created" }
         case .edited:
-            return activities.filter { $0.activityType == .edited }
+            return activities.filter { $0.activityType.rawValue == "edited" }
         case .deleted:
-            return activities.filter { $0.activityType == .deleted }
+            return activities.filter { $0.activityType.rawValue == "deleted" }
         }
     }
     
@@ -154,11 +154,11 @@ struct HistoryView: View {
         case .all:
             return billManager.billActivities.count
         case .created:
-            return billManager.billActivities.filter { $0.activityType == .created }.count
+            return billManager.billActivities.filter { $0.activityType.rawValue == "created" }.count
         case .edited:
-            return billManager.billActivities.filter { $0.activityType == .edited }.count
+            return billManager.billActivities.filter { $0.activityType.rawValue == "edited" }.count
         case .deleted:
-            return billManager.billActivities.filter { $0.activityType == .deleted }.count
+            return billManager.billActivities.filter { $0.activityType.rawValue == "deleted" }.count
         }
     }
     
