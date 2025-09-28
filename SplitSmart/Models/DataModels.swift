@@ -211,14 +211,21 @@ struct UIPersonDebt: Identifiable {
 
 // MARK: - Assign Screen Models
 struct UIParticipant: Identifiable, Hashable {
-    let id: Int
+    let id: String  // Firebase UID for consistency with BillParticipant
     let name: String
     let color: Color
-    
+
+    // Hash-based color assignment for consistent colors per Firebase UID
+    var assignedColor: Color {
+        let colors: [Color] = [.blue, .red, .green, .orange, .purple, .pink, .cyan, .yellow]
+        let hashValue = abs(id.hashValue) % colors.count
+        return colors[hashValue]
+    }
+
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
     }
-    
+
     static func == (lhs: UIParticipant, rhs: UIParticipant) -> Bool {
         return lhs.id == rhs.id
     }
@@ -258,39 +265,39 @@ struct ContactValidationResult {
 }
 
 struct UIItem: Identifiable {
-    let id: Int
+    let id: Int  // Keep item ID as Int for internal bill session management
     var name: String
     var price: Double
-    var assignedTo: Int? // Legacy: single participant assignment (for backward compatibility)
-    var assignedToParticipants: Set<Int> // New: multiple participants per item
+    var assignedTo: String? // Legacy: single participant assignment (Firebase UID)
+    var assignedToParticipants: Set<String> // New: multiple participants per item (Firebase UIDs)
     var confidence: ConfidenceLevel
-    
+
     // Store original detected values for confidence display
     let originalDetectedName: String?
     let originalDetectedPrice: Double?
-    
+
     // Computed property to get the cost per assigned participant (simple division, for display)
     var costPerParticipant: Double {
         let participantCount = assignedToParticipants.isEmpty ? 1 : assignedToParticipants.count
         return price.currencyDivide(by: participantCount)
     }
-    
+
     // Get the exact cost for a specific participant using smart distribution
-    func getCostForParticipant(participantId: Int) -> Double {
+    func getCostForParticipant(participantId: String) -> Double {
         guard assignedToParticipants.contains(participantId) else { return 0.0 }
-        
+
         let participantIds = Array(assignedToParticipants).sorted()
         let distribution = Double.smartDistribute(total: price, among: participantIds.count)
-        
+
         if let index = participantIds.firstIndex(of: participantId) {
             return distribution[index]
         }
-        
+
         return 0.0
     }
-    
+
     // Initialize with multiple participants support
-    init(id: Int, name: String, price: Double, assignedTo: Int? = nil, assignedToParticipants: Set<Int> = [], confidence: ConfidenceLevel = .high, originalDetectedName: String? = nil, originalDetectedPrice: Double? = nil) {
+    init(id: Int, name: String, price: Double, assignedTo: String? = nil, assignedToParticipants: Set<String> = [], confidence: ConfidenceLevel = .high, originalDetectedName: String? = nil, originalDetectedPrice: Double? = nil) {
         self.id = id
         self.name = name
         self.price = price
@@ -313,7 +320,7 @@ struct UISummary {
 }
 
 struct UISummaryParticipant: Identifiable {
-    let id: Int
+    let id: String  // Firebase UID for consistency
     let name: String
     let color: Color
     let owes: Double
@@ -321,7 +328,7 @@ struct UISummaryParticipant: Identifiable {
 }
 
 struct UIBreakdown: Identifiable {
-    let id: Int
+    let id: String  // Firebase UID for consistency
     let name: String
     let color: Color
     let items: [UIBreakdownItem]
@@ -597,8 +604,7 @@ class BillService: ObservableObject {
         // Get participant details from contacts and current user
         var billParticipants: [BillParticipant] = []
         
-        // Create mapping from session participant IDs to Firebase UIDs
-        var sessionIDToFirebaseUID: [Int: String] = [:]
+        // UIParticipant.id is now Firebase UID directly - no mapping needed
         
         // Add current user as participant
         let currentUserParticipant = BillParticipant(
@@ -608,11 +614,8 @@ class BillService: ObservableObject {
         )
         billParticipants.append(currentUserParticipant)
         
-        // Add current user to session ID mapping
-        if let currentUserSessionParticipant = session.participants.first(where: { $0.name == "You" }) {
-            sessionIDToFirebaseUID[currentUserSessionParticipant.id] = currentUser.uid
-            print("🔧 Mapped session ID \(currentUserSessionParticipant.id) to Firebase UID: \(currentUser.uid)")
-        }
+        // Current user participant already has Firebase UID as ID
+        print("✅ Current user Firebase UID: \(currentUser.uid)")
         
         // Add other participants from transaction contacts and complete the mapping
         for participant in session.participants where participant.name != "You" {
@@ -630,9 +633,8 @@ class BillService: ObservableObject {
                 )
                 billParticipants.append(billParticipant)
                 
-                // Add to mapping for item participant ID conversion
-                sessionIDToFirebaseUID[participant.id] = participantUserID
-                print("🔧 Mapped session ID \(participant.id) to Firebase UID: \(participantUserID)")
+                // Participant ID is already Firebase UID
+                print("🔧 Participant Firebase UID: \(participant.id)")
                 
                 print("🔍 Added participant: \(contact.displayName) with ID: \(participantUserID)")
             }
@@ -640,15 +642,8 @@ class BillService: ObservableObject {
         
         // Now convert session data to Bill format with proper Firebase UID mapping
         let billItems = session.assignedItems.map { item in
-            let mappedParticipantIDs = Array(item.assignedToParticipants).compactMap { sessionID in
-                if let firebaseUID = sessionIDToFirebaseUID[sessionID] {
-                    print("🔧 Mapped item participant: session ID \(sessionID) → Firebase UID \(firebaseUID)")
-                    return firebaseUID
-                } else {
-                    print("⚠️ Could not map session ID \(sessionID) to Firebase UID")
-                    return nil
-                }
-            }
+            let mappedParticipantIDs = Array(item.assignedToParticipants)
+            print("🔧 Item participants (Firebase UIDs): \(mappedParticipantIDs)")
             
             return BillItem(
                 name: item.name,
@@ -4578,12 +4573,10 @@ class BillSplitSession: ObservableObject {
     @Published var expectedItemCount: Int = 0
     
     // Participants
-    @Published var participants: [UIParticipant] = [
-        UIParticipant(id: 1, name: "You", color: .blue) // Always start with "You"
-    ]
-    
+    @Published var participants: [UIParticipant] = []
+
     // Bill payer selection (mandatory for bill creation)
-    @Published var paidByParticipantID: Int? = nil
+    @Published var paidByParticipantID: String? = nil
     
     // Bill name (optional, defaults to item count description)
     @Published var billName: String = ""
@@ -4634,8 +4627,8 @@ class BillSplitSession: ObservableObject {
         
         print("✅ Session reset complete - all state cleared")
         
-        // Keep "You" but remove other participants
-        participants = [UIParticipant(id: 1, name: "You", color: .blue)]
+        // Clear all participants - "You" will be added when session starts with auth context
+        participants.removeAll()
         assignedItems.removeAll()
         
         // Reset bill payer selection and name
@@ -4669,7 +4662,7 @@ class BillSplitSession: ObservableObject {
                 name: receiptItem.name,
                 price: receiptItem.price,
                 assignedTo: nil,  // Legacy: Start unassigned
-                assignedToParticipants: Set<Int>(), // New: Start with no participants
+                assignedToParticipants: Set<String>(), // New: Start with no participants
                 confidence: receiptItem.confidence,
                 originalDetectedName: receiptItem.originalDetectedName,
                 originalDetectedPrice: receiptItem.originalDetectedPrice
@@ -4684,48 +4677,140 @@ class BillSplitSession: ObservableObject {
     
     // SECURITY: Removed unvalidated addParticipant method
     // All participant additions must go through addParticipantWithValidation for US-EDGE-003 compliance
+
+    // Initialize session with current user as "You" participant
+    func initializeWithCurrentUser(authViewModel: AuthViewModel) async {
+        let currentUser = await MainActor.run { authViewModel.user }
+        guard let currentUser = currentUser else {
+            print("❌ No current user to initialize session")
+            return
+        }
+
+        print("🔍 INIT DEBUG: Current user email: \(currentUser.email ?? "nil")")
+        print("🔍 INIT DEBUG: Current user UID: \(currentUser.uid)")
+
+        let tempParticipant = UIParticipant(
+            id: currentUser.uid,
+            name: "You",
+            color: .blue
+        )
+        let currentUserParticipant = UIParticipant(
+            id: currentUser.uid,
+            name: "You",
+            color: tempParticipant.assignedColor
+        )
+
+        print("🔍 INIT DEBUG: Creating 'You' participant with UID: \(currentUser.uid)")
+
+        await MainActor.run {
+            participants = [currentUserParticipant]
+            paidByParticipantID = currentUser.uid  // Default to current user as payer
+        }
+
+        print("✅ Session initialized with current user: \(currentUser.uid)")
+        print("👥 After initialization - participants count: \(participants.count)")
+        for participant in participants {
+            print("👥 Initialized participant: \(participant.name) (\(participant.id)) - color: \(participant.color)")
+        }
+    }
     
-    func addParticipantWithValidation(name: String, email: String? = nil, phoneNumber: String? = nil, authViewModel: AuthViewModel, contactsManager: ContactsManager? = nil) async -> (participant: UIParticipant?, error: String?, needsContact: Bool) {
+    func addParticipantWithValidation(name: String, email: String? = nil, phoneNumber: String? = nil, authViewModel: AuthViewModel, contactsManager: ContactsManager? = nil, firebaseUID: String? = nil) async -> (participant: UIParticipant?, error: String?, needsContact: Bool) {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         
         guard !trimmedName.isEmpty else { 
             return (nil, "Name cannot be empty", false)
         }
         
-        // Check if trying to add yourself
+        // Get current user info for validation
+        let currentUser = await MainActor.run { authViewModel.user }
+
+        // Check if trying to add yourself by name
         if trimmedName.lowercased() == "you" {
             print("⚠️ Cannot add yourself - already in bill")
             return (nil, "You are already in this bill", false)
         }
-        
+
         // Check if email matches current user's email
-        if let email = email {
-            let currentUserEmail = await MainActor.run { authViewModel.user?.email }
-            if let currentUserEmail = currentUserEmail {
-                let emailValidation = AuthViewModel.validateEmail(email)
-                if emailValidation.isValid, let validEmail = emailValidation.sanitized {
-                    if validEmail.lowercased() == currentUserEmail.lowercased() {
-                        print("⚠️ Cannot add your own email - already in bill")
-                        return (nil, "You are already in this bill", false)
-                    }
+        if let email = email, let currentUser = currentUser {
+            print("🔍 EMAIL DEBUG: Checking email: \(email)")
+            print("🔍 EMAIL DEBUG: Current user email: \(currentUser.email ?? "nil")")
+            let emailValidation = AuthViewModel.validateEmail(email)
+            if emailValidation.isValid, let validEmail = emailValidation.sanitized {
+                print("🔍 EMAIL DEBUG: Sanitized email: \(validEmail)")
+                if validEmail.lowercased() == currentUser.email?.lowercased() {
+                    print("⚠️ Cannot add your own email - you're already in this bill as 'You'")
+                    return (nil, "You're already in this bill as 'You'", false)
+                } else {
+                    print("✅ EMAIL DEBUG: Different emails - \(validEmail.lowercased()) != \(currentUser.email?.lowercased() ?? "nil")")
                 }
             }
         }
+
+        // Remove incorrect check here - we need to check the actual email being added, not current user
         
-        // Check for duplicates (case-insensitive)
+        // Check for duplicates by name (case-insensitive)
         if participants.contains(where: { $0.name.lowercased() == trimmedName.lowercased() }) {
-            print("⚠️ Participant \(trimmedName) already exists")
+            print("⚠️ Participant \(trimmedName) already exists by name")
             return (nil, "Participant already exists", false)
         }
         
         // SECURITY: First validate user is registered with SplitSmart
-        let isOnboarded = await authViewModel.isUserOnboarded(email: email, phoneNumber: phoneNumber)
-        
-        if !isOnboarded {
-            print("❌ User \(trimmedName) is not onboarded to SplitSmart")
-            return (nil, "User not found. Only registered SplitSmart users can be added to bills", false)
+        // If firebaseUID is provided, user is already validated
+        var validatedFirebaseUID: String
+
+        if let providedUID = firebaseUID {
+            validatedFirebaseUID = providedUID
+            print("✅ Using provided Firebase UID: \(providedUID)")
+        } else {
+            print("🔍 Starting validation for user: \(trimmedName), email: \(email ?? "nil"), phone: \(phoneNumber ?? "nil")")
+
+            let isOnboarded = await authViewModel.isUserOnboarded(email: email, phoneNumber: phoneNumber)
+
+            if !isOnboarded {
+                print("❌ User \(trimmedName) is not onboarded to SplitSmart")
+                return (nil, "User not found. Only registered SplitSmart users can be added to bills", false)
+            }
+
+            print("✅ User \(trimmedName) is onboarded, retrieving Firebase UID...")
+
+            // Get Firebase UID from email/phone lookup
+            guard let uid = await authViewModel.getFirebaseUID(email: email, phoneNumber: phoneNumber) else {
+                print("❌ Failed to retrieve Firebase UID for email: \(email ?? "nil"), phone: \(phoneNumber ?? "nil")")
+                print("❌ This indicates a data inconsistency - user passed onboarding check but UID lookup failed")
+                let errorMessage = "Could not retrieve user ID. This user may have incomplete registration data. Please contact support."
+                return (nil, errorMessage, false)
+            }
+            validatedFirebaseUID = uid
+            print("✅ Retrieved Firebase UID: \(uid) for email: \(email ?? "nil"), phone: \(phoneNumber ?? "nil")")
         }
-        
+
+        print("🔍 VALIDATION DEBUG: Final validatedFirebaseUID: \(validatedFirebaseUID)")
+        print("🔍 VALIDATION DEBUG: Current user UID: \(currentUser?.uid ?? "nil")")
+        print("🔍 VALIDATION DEBUG: Are they equal? \(validatedFirebaseUID == currentUser?.uid)")
+
+        // Check if this Firebase UID is already in participants
+        if let currentUser = currentUser {
+            print("🔍 UID DEBUG: Current user UID: \(currentUser.uid)")
+            print("🔍 UID DEBUG: Validated Firebase UID to add: \(validatedFirebaseUID)")
+            print("🔍 UID DEBUG: Existing participants:")
+            for participant in participants {
+                print("🔍 UID DEBUG:   - \(participant.name) (\(participant.id))")
+            }
+
+            if participants.contains(where: { $0.id == validatedFirebaseUID }) {
+                print("⚠️ UID DEBUG: Firebase UID \(validatedFirebaseUID) already exists in participants")
+                if validatedFirebaseUID == currentUser.uid {
+                    print("⚠️ UID DEBUG: This is the current user - blocking duplicate")
+                    return (nil, "You're already in this bill as 'You'", false)
+                } else {
+                    print("⚠️ UID DEBUG: This is a different user with duplicate UID - blocking")
+                    return (nil, "Participant already exists", false)
+                }
+            } else {
+                print("✅ UID DEBUG: Firebase UID \(validatedFirebaseUID) not found in participants - safe to add")
+            }
+        }
+
         // Splitwise-style: Check if email is in user's transaction history
         if let email = email, let contactsManager = contactsManager {
             let emailValidation = AuthViewModel.validateEmail(email)
@@ -4746,17 +4831,23 @@ class BillSplitSession: ObservableObject {
             }
         }
         
-        let newId = (participants.map { $0.id }.max() ?? 0) + 1
-        let colorIndex = participants.count % colors.count
-        
-        let newParticipant = UIParticipant(
-            id: newId,
+        // Duplicate check already handled above - proceed with creation
+
+        let tempParticipant = UIParticipant(
+            id: validatedFirebaseUID,
             name: trimmedName,
-            color: colors[colorIndex]
+            color: .blue
         )
-        
-        participants.append(newParticipant)
-        print("✅ Added validated participant: \(trimmedName)")
+        let newParticipant = UIParticipant(
+            id: validatedFirebaseUID,
+            name: trimmedName,
+            color: tempParticipant.assignedColor
+        )
+
+        await MainActor.run {
+            participants.append(newParticipant)
+        }
+        print("✅ Added validated participant: \(trimmedName) (\(validatedFirebaseUID))")
         return (newParticipant, nil, false)
     }
     
@@ -4780,10 +4871,10 @@ class BillSplitSession: ObservableObject {
         print("🗑️ Removed participant: \(participant.name)")
     }
     
-    func assignItem(itemId: Int, to participantId: Int?) {
+    func assignItem(itemId: Int, to participantId: String?) {
         if let index = assignedItems.firstIndex(where: { $0.id == itemId }) {
             assignedItems[index].assignedTo = participantId
-            
+
             let participantName = participants.first { $0.id == participantId }?.name ?? "Unassigned"
             print("📝 Assigned \(assignedItems[index].name) to \(participantName)")
         }
@@ -4791,7 +4882,7 @@ class BillSplitSession: ObservableObject {
     
     // MARK: - Multiple Participant Assignment Methods
     
-    func addParticipantToItem(itemId: Int, participantId: Int) {
+    func addParticipantToItem(itemId: Int, participantId: String) {
         if let index = assignedItems.firstIndex(where: { $0.id == itemId }) {
             assignedItems[index].assignedToParticipants.insert(participantId)
             
@@ -4800,7 +4891,7 @@ class BillSplitSession: ObservableObject {
         }
     }
     
-    func removeParticipantFromItem(itemId: Int, participantId: Int) {
+    func removeParticipantFromItem(itemId: Int, participantId: String) {
         if let index = assignedItems.firstIndex(where: { $0.id == itemId }) {
             assignedItems[index].assignedToParticipants.remove(participantId)
             
@@ -4933,52 +5024,51 @@ class BillSplitSession: ObservableObject {
     /// Calculates individual debts - how much each participant owes to the person who paid
     var individualDebts: [String: Double] {
         guard let paidByID = paidByParticipantID else { return [:] }
-        
+
         var debts: [String: Double] = [:]
-        
+
         // Initialize all participants (except the payer) with $0 debt
         for participant in participants {
             if participant.id != paidByID {
-                debts[String(participant.id)] = 0.0
+                debts[participant.id] = 0.0
             }
         }
-        
+
         // Calculate debt for each item
         for item in assignedItems {
             guard !item.assignedToParticipants.isEmpty else { continue }
-            
+
             let participantCount = item.assignedToParticipants.count
             let baseAmount = item.price / Double(participantCount)
             let roundedBase = (baseAmount * 100).rounded() / 100
-            
+
             // Handle remainder distribution (like in BillCalculator)
             let totalRounded = roundedBase * Double(participantCount)
             let remainder = item.price - totalRounded
             let remainderCents = Int((remainder * 100).rounded())
-            
+
             // Sort participant IDs for consistent remainder distribution
             let sortedParticipants = Array(item.assignedToParticipants).sorted()
-            
+
             for (index, participantID) in sortedParticipants.enumerated() {
                 if participantID != paidByID {
                     var amountOwed = roundedBase
-                    
+
                     // Add extra cent to first few participants to handle remainder
                     if index < remainderCents {
                         amountOwed += 0.01
                     }
-                    
-                    let participantKey = String(participantID)
-                    debts[participantKey] = (debts[participantKey] ?? 0.0) + amountOwed
+
+                    debts[participantID] = (debts[participantID] ?? 0.0) + amountOwed
                 }
             }
         }
-        
+
         // Final rounding to ensure 2 decimal places
         for participantKey in debts.keys {
             debts[participantKey] = ((debts[participantKey] ?? 0.0) * 100).rounded() / 100
         }
-        
+
         return debts
     }
     

@@ -105,14 +105,14 @@ class AuthViewModel: ObservableObject {
         }
         
         // Check minimum time between queries
-        guard now.timeIntervalSince(lastQueryTime) >= minTimeBetweenQueries else {
-            AppLog.authWarning("Too many requests. Please wait \(minTimeBetweenQueries) seconds between requests.")
+        if now.timeIntervalSince(lastQueryTime) < minTimeBetweenQueries {
+            let waitTime = minTimeBetweenQueries - now.timeIntervalSince(lastQueryTime)
+            AppLog.authWarning("Rate limiting: waiting \(waitTime) seconds before proceeding")
             #if DEBUG
-            print("⚠️ Too many requests. Please wait \(minTimeBetweenQueries) seconds between requests.")
+            print("⚠️ Rate limiting: waiting \(waitTime) seconds before proceeding")
             #endif
-            // Small delay to prevent rapid successive calls
-            try? await Task.sleep(nanoseconds: UInt64(minTimeBetweenQueries * 1_000_000_000))
-            return false
+            // Wait for the required time and then proceed
+            try? await Task.sleep(nanoseconds: UInt64(waitTime * 1_000_000_000))
         }
         
         // Update rate limiting counters
@@ -334,7 +334,140 @@ class AuthViewModel: ObservableObject {
             return false
         }
     }
-    
+
+    // Get Firebase UID for validated user (used for participant ID consistency)
+    func getFirebaseUID(email: String? = nil, phoneNumber: String? = nil) async -> String? {
+        // SECURITY: Check rate limiting first
+        guard await checkRateLimit() else {
+            AppLog.authError("Rate limit exceeded for Firebase UID lookup")
+            #if DEBUG
+            print("❌ Rate limit exceeded for Firebase UID lookup")
+            #endif
+            return nil
+        }
+
+        guard let db = Firestore.firestore() as Firestore? else {
+            AppLog.firebaseError("Firestore not available")
+            #if DEBUG
+            print("❌ Firestore not available")
+            #endif
+            return nil
+        }
+
+        do {
+            AppLog.debug("Getting Firebase UID for user...", category: .authentication)
+            #if DEBUG
+            print("🔍 Getting Firebase UID for user...")
+            #endif
+
+            // Validate and check by email first
+            if let email = email {
+                let emailValidation = AuthViewModel.validateEmail(email)
+                if emailValidation.isValid, let sanitizedEmail = emailValidation.sanitized {
+                    print("📧 LOOKUP DEBUG: Email to lookup UID: \(sanitizedEmail)")
+
+                    // First check the participants collection
+                    let participantsRef = db.collection("participants")
+                    let participantEmailQuery = participantsRef.whereField("email", isEqualTo: sanitizedEmail)
+                    let participantSnapshot = try await participantEmailQuery.getDocuments(source: .default)
+
+                    print("📧 LOOKUP DEBUG: Found \(participantSnapshot.documents.count) participants with email \(sanitizedEmail)")
+
+                    if let participantDoc = participantSnapshot.documents.first {
+                        let firebaseUID = participantDoc.documentID
+                        let data = participantDoc.data()
+                        print("📧 LOOKUP DEBUG: Participants collection result:")
+                        print("📧   - Document ID (Firebase UID): \(firebaseUID)")
+                        print("📧   - Email in document: \(data["email"] as? String ?? "nil")")
+                        print("📧   - Name in document: \(data["name"] as? String ?? "nil")")
+
+                        AppLog.authSuccess("Firebase UID found in participants collection", userEmail: sanitizedEmail)
+                        #if DEBUG
+                        print("✅ Firebase UID found in participants: \(firebaseUID)")
+                        #endif
+                        return firebaseUID
+                    }
+
+                    // If not found in participants, check the users collection
+                    let usersRef = db.collection("users")
+                    let userEmailQuery = usersRef.whereField("email", isEqualTo: sanitizedEmail)
+                    let userSnapshot = try await userEmailQuery.getDocuments(source: .default)
+
+                    print("📧 LOOKUP DEBUG: Found \(userSnapshot.documents.count) users with email \(sanitizedEmail)")
+
+                    if let userDoc = userSnapshot.documents.first {
+                        let firebaseUID = userDoc.documentID
+                        let data = userDoc.data()
+                        print("📧 LOOKUP DEBUG: Users collection result:")
+                        print("📧   - Document ID (Firebase UID): \(firebaseUID)")
+                        print("📧   - Email in document: \(data["email"] as? String ?? "nil")")
+                        print("📧   - Name in document: \(data["name"] as? String ?? "nil")")
+
+                        AppLog.authSuccess("Firebase UID found in users collection", userEmail: sanitizedEmail)
+                        #if DEBUG
+                        print("✅ Firebase UID found in users: \(firebaseUID)")
+                        #endif
+                        return firebaseUID
+                    }
+
+                    print("❌ LOOKUP DEBUG: No user found with email \(sanitizedEmail) in either collection")
+                } else {
+                    print("⚠️ Invalid email format provided: \(emailValidation.error ?? "Unknown error")")
+                    return nil
+                }
+            }
+
+            // Validate and check by phone number if email not found
+            if let phoneNumber = phoneNumber {
+                let phoneValidation = AuthViewModel.validatePhoneNumber(phoneNumber)
+                if phoneValidation.isValid, let sanitizedPhone = phoneValidation.sanitized {
+                    print("📱 Phone to lookup UID: \(sanitizedPhone)")
+
+                    // First check the participants collection
+                    let participantsRef = db.collection("participants")
+                    let participantPhoneQuery = participantsRef.whereField("phoneNumber", isEqualTo: sanitizedPhone)
+                    let participantSnapshot = try await participantPhoneQuery.getDocuments(source: .default)
+
+                    if let participantDoc = participantSnapshot.documents.first {
+                        let firebaseUID = participantDoc.documentID
+                        AppLog.authSuccess("Firebase UID found with phone in participants")
+                        #if DEBUG
+                        print("✅ Firebase UID found with phone in participants: \(firebaseUID)")
+                        #endif
+                        return firebaseUID
+                    }
+
+                    // If not found in participants, check the users collection
+                    let usersRef = db.collection("users")
+                    let userPhoneQuery = usersRef.whereField("phoneNumber", isEqualTo: sanitizedPhone)
+                    let userSnapshot = try await userPhoneQuery.getDocuments(source: .default)
+
+                    if let userDoc = userSnapshot.documents.first {
+                        let firebaseUID = userDoc.documentID
+                        AppLog.authSuccess("Firebase UID found with phone in users collection")
+                        #if DEBUG
+                        print("✅ Firebase UID found with phone in users: \(firebaseUID)")
+                        #endif
+                        return firebaseUID
+                    }
+                } else {
+                    print("⚠️ Invalid phone format provided: \(phoneValidation.error ?? "Unknown error")")
+                    return nil
+                }
+            }
+
+            print("❌ Firebase UID not found for provided credentials")
+            return nil
+
+        } catch {
+            AppLog.authError("Error getting Firebase UID", error: error)
+            #if DEBUG
+            print("❌ Error getting Firebase UID: \(error.localizedDescription)")
+            #endif
+            return nil
+        }
+    }
+
     // Auto-migration helper: Creates participant record from existing user data
     private func autoMigrateUserToParticipant(userDoc: DocumentSnapshot, db: Firestore) async {
         do {

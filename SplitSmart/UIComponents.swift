@@ -556,76 +556,96 @@ struct UIAssignScreen: View {
     private var canContinue: Bool {
         return !session.assignedItems.isEmpty && totalsMatch
     }
+
+    // Extract complex menu label into computed property
+    @ViewBuilder
+    private var paidByMenuLabel: some View {
+        HStack {
+            if let paidByID = session.paidByParticipantID,
+               let paidByParticipant = session.participants.first(where: { $0.id == paidByID }) {
+                Circle()
+                    .fill(paidByParticipant.color)
+                    .frame(width: 20, height: 20)
+                Text(paidByParticipant.name)
+                    .foregroundColor(.primary)
+            } else {
+                Text("Select who paid")
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.down")
+                .foregroundColor(.secondary)
+                .font(.caption)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(.systemGray6))
+        .cornerRadius(8)
+    }
+
+    // Extract header section
+    @ViewBuilder
+    private var headerSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Assign Items")
+                .font(.title2)
+                .fontWeight(.bold)
+
+            Text("Drag items to assign them to participants")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+
+            // Who Paid Selection (Mandatory)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Who paid this bill?")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    Text("*")
+                        .foregroundColor(.red)
+                        .fontWeight(.bold)
+                }
+
+                Menu {
+                    ForEach(session.participants) { participant in
+                        Button(action: {
+                            print("👉 Selected \(participant.name) (\(participant.id)) as payer")
+                            session.paidByParticipantID = participant.id
+                        }) {
+                            HStack {
+                                Circle()
+                                    .fill(participant.color)
+                                    .frame(width: 16, height: 16)
+                                Text(participant.name)
+                                if session.paidByParticipantID == participant.id {
+                                    Spacer()
+                                    Image(systemName: "checkmark")
+                                        .foregroundColor(.blue)
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    paidByMenuLabel
+                }
+                .onTapGesture {
+                    // Debug log when Menu is tapped
+                    print("🔍 Menu tapped - participants count: \(session.participants.count)")
+                    for participant in session.participants {
+                        print("🔍 Menu participant: \(participant.name) (\(participant.id))")
+                    }
+                }
+            }
+            .padding(.top, 12)
+        }
+    }
     
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
                 // Header with image preview
                 HStack {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Assign Items")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                        
-                        Text("Drag items to assign them to participants")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        
-                        // Who Paid Selection (Mandatory)
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text("Who paid this bill?")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                Text("*")
-                                    .foregroundColor(.red)
-                                    .fontWeight(.bold)
-                            }
-                            
-                            Menu {
-                                ForEach(session.participants) { participant in
-                                    Button(action: {
-                                        session.paidByParticipantID = participant.id
-                                    }) {
-                                        HStack {
-                                            Circle()
-                                                .fill(participant.color)
-                                                .frame(width: 16, height: 16)
-                                            Text(participant.name)
-                                            if session.paidByParticipantID == participant.id {
-                                                Spacer()
-                                                Image(systemName: "checkmark")
-                                                    .foregroundColor(.blue)
-                                            }
-                                        }
-                                    }
-                                }
-                            } label: {
-                                HStack {
-                                    if let paidByID = session.paidByParticipantID,
-                                       let paidByParticipant = session.participants.first(where: { $0.id == paidByID }) {
-                                        Circle()
-                                            .fill(paidByParticipant.color)
-                                            .frame(width: 20, height: 20)
-                                        Text(paidByParticipant.name)
-                                            .foregroundColor(.primary)
-                                    } else {
-                                        Text("Select who paid")
-                                            .foregroundColor(.secondary)
-                                    }
-                                    Spacer()
-                                    Image(systemName: "chevron.down")
-                                        .foregroundColor(.secondary)
-                                        .font(.caption)
-                                }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                                .background(Color(.systemGray6))
-                                .cornerRadius(8)
-                            }
-                        }
-                        .padding(.top, 12)
-                    }
+                    headerSection
                     
                     Spacer()
                     
@@ -712,7 +732,7 @@ struct UIAssignScreen: View {
                                     name: receiptItem.name,
                                     price: receiptItem.price,
                                     assignedTo: nil,
-                                    assignedToParticipants: Set<Int>(),
+                                    assignedToParticipants: Set<String>(),
                                     confidence: receiptItem.confidence,
                                     originalDetectedName: receiptItem.originalDetectedName,
                                     originalDetectedPrice: receiptItem.originalDetectedPrice
@@ -960,32 +980,72 @@ struct UIAssignScreen: View {
             .padding(.top)
         }
         .onAppear {
-            // Always trigger dual processing when screen appears to ensure fresh results
-            // Clear any existing results first to prevent showing stale data
+            // First ensure current user is initialized in the session
             Task {
-                await MainActor.run {
-                    session.regexDetectedItems.removeAll()
-                    session.llmDetectedItems.removeAll()
+                print("🔍 UIAssignScreen: onAppear - checking participants...")
+                print("👥 Current participants count: \(session.participants.count)")
+                for participant in session.participants {
+                    print("👥 Participant: \(participant.name) (\(participant.id))")
                 }
-                
-                // Only process if we have the necessary data from the current session
-                if session.confirmedTotal > 0 && !session.rawReceiptText.isEmpty && session.expectedItemCount > 0 {
-                    print("🔄 UIAssignScreen: Triggering dual processing for new bill")
-                    print("   - confirmedTotal: \(session.confirmedTotal)")
-                    print("   - expectedItemCount: \(session.expectedItemCount)")
-                    print("   - rawReceiptText length: \(session.rawReceiptText.count)")
-                    
-                    await session.processWithBothApproaches(
-                        confirmedTax: session.confirmedTax,
-                        confirmedTip: session.confirmedTip,
-                        confirmedTotal: session.confirmedTotal,
-                        expectedItemCount: session.expectedItemCount
-                    )
+
+                // Initialize current user as "You" participant if not already present
+                if session.participants.isEmpty {
+                    print("🔄 UIAssignScreen: Initializing session with current user...")
+                    await session.initializeWithCurrentUser(authViewModel: authViewModel)
+                    print("👥 UIAssignScreen: After initialization - participants count: \(session.participants.count)")
+                    for participant in session.participants {
+                        print("👥 UIAssignScreen participant: \(participant.name) (\(participant.id)) - color: \(participant.color)")
+                    }
                 } else {
-                    print("❌ UIAssignScreen: Not processing - missing required data")
-                    print("   - confirmedTotal: \(session.confirmedTotal)")
-                    print("   - expectedItemCount: \(session.expectedItemCount)")
-                    print("   - rawReceiptText isEmpty: \(session.rawReceiptText.isEmpty)")
+                    // Check if "You" participant exists
+                    let hasYouParticipant = session.participants.contains { $0.name == "You" }
+                    if !hasYouParticipant {
+                        print("🔄 UIAssignScreen: No 'You' participant found, initializing...")
+                        await session.initializeWithCurrentUser(authViewModel: authViewModel)
+                        print("👥 UIAssignScreen: After initialization - participants count: \(session.participants.count)")
+                    } else {
+                        print("✅ UIAssignScreen: 'You' participant already exists")
+                        print("👥 UIAssignScreen: Current participants count: \(session.participants.count)")
+                        for participant in session.participants {
+                            print("👥 UIAssignScreen participant: \(participant.name) (\(participant.id)) - color: \(participant.color)")
+                        }
+                    }
+                }
+
+                // Check if this is edit mode (assignments already exist) or new bill mode
+                if !session.assignedItems.isEmpty && !session.regexDetectedItems.isEmpty && !session.llmDetectedItems.isEmpty {
+                    // Edit mode: Items are already populated, don't reprocess
+                    print("✅ UIAssignScreen: Edit mode detected, skipping processing (items already assigned)")
+                    print("   - assignedItems: \(session.assignedItems.count)")
+                    print("   - regexDetectedItems: \(session.regexDetectedItems.count)")
+                    print("   - llmDetectedItems: \(session.llmDetectedItems.count)")
+                } else {
+                    // New bill mode: Trigger dual processing when screen appears to ensure fresh results
+                    // Clear any existing results first to prevent showing stale data
+                    await MainActor.run {
+                        session.regexDetectedItems.removeAll()
+                        session.llmDetectedItems.removeAll()
+                    }
+
+                    // Only process if we have the necessary data from the current session
+                    if session.confirmedTotal > 0 && !session.rawReceiptText.isEmpty && session.expectedItemCount > 0 {
+                        print("🔄 UIAssignScreen: Triggering dual processing for new bill")
+                        print("   - confirmedTotal: \(session.confirmedTotal)")
+                        print("   - expectedItemCount: \(session.expectedItemCount)")
+                        print("   - rawReceiptText length: \(session.rawReceiptText.count)")
+
+                        await session.processWithBothApproaches(
+                            confirmedTax: session.confirmedTax,
+                            confirmedTip: session.confirmedTip,
+                            confirmedTotal: session.confirmedTotal,
+                            expectedItemCount: session.expectedItemCount
+                        )
+                    } else {
+                        print("❌ UIAssignScreen: Not processing - missing required data")
+                        print("   - confirmedTotal: \(session.confirmedTotal)")
+                        print("   - expectedItemCount: \(session.expectedItemCount)")
+                        print("   - rawReceiptText isEmpty: \(session.rawReceiptText.isEmpty)")
+                    }
                 }
             }
         }
@@ -1804,6 +1864,166 @@ struct UISummaryScreen: View {
         let itemCount = session.assignedItems.count
         return itemCount == 1 ? session.assignedItems[0].name : "\(itemCount) items"
     }
+
+    // Extract complex paid by section
+    @ViewBuilder
+    private var paidBySection: some View {
+        if let paidByID = session.paidByParticipantID,
+           let paidByParticipant = session.participants.first(where: { $0.id == paidByID }) {
+            Circle()
+                .fill(paidByParticipant.color)
+                .frame(width: 24, height: 24)
+                .overlay(
+                    Image(systemName: "person.fill")
+                        .foregroundColor(.white)
+                        .font(.caption)
+                )
+            Text("Bill paid by \(paidByParticipant.name)")
+                .fontWeight(.medium)
+                .foregroundColor(.blue)
+        } else {
+            Text("Bill paid by Unknown")
+                .fontWeight(.medium)
+                .foregroundColor(.red)
+        }
+    }
+
+    // Extract bill name editing section
+    @ViewBuilder
+    private var billNameSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Bill Name")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                Spacer()
+                Text("Optional")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            TextField("Enter bill name (e.g., \"Dinner at Olive Garden\")", text: Binding(
+                get: { session.billName },
+                set: { session.billName = $0 }
+            ))
+            .textFieldStyle(RoundedBorderTextFieldStyle())
+            .autocorrectionDisabled()
+
+            Text("Leave empty to use default: \"\(defaultBillName)\"")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding(.horizontal)
+    }
+
+    // Extract complex "Who Owes Whom" section
+    @ViewBuilder
+    private var whoOwesWhomSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Who Owes Whom")
+                .font(.body)
+                .fontWeight(.medium)
+                .padding(.horizontal)
+
+            if let paidByID = session.paidByParticipantID,
+               let paidByParticipant = session.participants.first(where: { $0.id == paidByID }) {
+
+                // Calculate individual debts to the payer
+                ForEach(session.individualDebts.sorted(by: { $0.key < $1.key }), id: \.key) { participantID, amountOwed in
+                    if let debtor = session.participants.first(where: { $0.id == participantID }),
+                       amountOwed > 0.01 { // Only show significant amounts
+
+                        HStack {
+                            // From person (debtor)
+                            HStack(spacing: 8) {
+                                Circle()
+                                    .fill(debtor.color)
+                                    .frame(width: 32, height: 32)
+                                    .overlay(
+                                        Image(systemName: "person.fill")
+                                            .foregroundColor(.white)
+                                            .font(.caption)
+                                    )
+                                Text(debtor.name)
+                                    .fontWeight(.medium)
+                            }
+
+                            Image(systemName: "arrow.right")
+                                .foregroundColor(.gray)
+                                .padding(.horizontal, 8)
+
+                            // To person (payer)
+                            HStack(spacing: 8) {
+                                Circle()
+                                    .fill(paidByParticipant.color)
+                                    .frame(width: 32, height: 32)
+                                    .overlay(
+                                        Image(systemName: "person.fill")
+                                            .foregroundColor(.white)
+                                            .font(.caption)
+                                    )
+                                Text(paidByParticipant.name)
+                                    .fontWeight(.medium)
+                            }
+
+                            Spacer()
+
+                            // Amount owed
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text("$\(amountOwed, specifier: "%.2f")")
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.red)
+                                Text("owes")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .padding()
+                        .background(Color(.systemBackground))
+                        .cornerRadius(12)
+                        .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.red.opacity(0.2), lineWidth: 1)
+                        )
+                        .padding(.horizontal)
+                    }
+                }
+
+                // Show "No debts" message if everyone paid their share
+                if session.individualDebts.allSatisfy({ $0.value <= 0.01 }) {
+                    VStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                            .font(.title2)
+                        Text("Everyone paid their share!")
+                            .fontWeight(.medium)
+                            .foregroundColor(.green)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.green.opacity(0.1))
+                    .cornerRadius(12)
+                    .padding(.horizontal)
+                }
+            } else {
+                // Error state - no payer selected
+                VStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.red)
+                        .font(.title2)
+                    Text("Error: No payer selected")
+                        .fontWeight(.medium)
+                        .foregroundColor(.red)
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color.red.opacity(0.1))
+                .cornerRadius(12)
+                .padding(.horizontal)
+            }
+        }
+    }
     
     var body: some View {
         ScrollView {
@@ -1819,51 +2039,12 @@ struct UISummaryScreen: View {
                 .padding(.horizontal)
                 
                 // Bill name editing section
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Text("Bill Name")
-                            .font(.headline)
-                            .fontWeight(.semibold)
-                        Spacer()
-                        Text("Optional")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    TextField("Enter bill name (e.g., \"Dinner at Olive Garden\")", text: Binding(
-                        get: { session.billName },
-                        set: { session.billName = $0 }
-                    ))
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .autocorrectionDisabled()
-                    
-                    Text("Leave empty to use default: \"\(defaultBillName)\"")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.horizontal)
+                billNameSection
                 
                 // Bill paid by section
                 VStack(spacing: 12) {
                     HStack {
-                        if let paidByID = session.paidByParticipantID,
-                           let paidByParticipant = session.participants.first(where: { $0.id == paidByID }) {
-                            Circle()
-                                .fill(paidByParticipant.color)
-                                .frame(width: 24, height: 24)
-                                .overlay(
-                                    Image(systemName: "person.fill")
-                                        .foregroundColor(.white)
-                                        .font(.caption)
-                                )
-                            Text("Bill paid by \(paidByParticipant.name)")
-                                .fontWeight(.medium)
-                                .foregroundColor(.blue)
-                        } else {
-                            Text("Bill paid by Unknown")
-                                .fontWeight(.medium)
-                                .foregroundColor(.red)
-                        }
+                        paidBySection
                         Spacer()
                     }
                     
@@ -1893,110 +2074,7 @@ struct UISummaryScreen: View {
                 .padding(.horizontal)
                 
                 // Who Owes Whom section - Individual debts (not net amounts)
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Who Owes Whom")
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .padding(.horizontal)
-                    
-                    if let paidByID = session.paidByParticipantID,
-                       let paidByParticipant = session.participants.first(where: { $0.id == paidByID }) {
-                        
-                        // Calculate individual debts to the payer
-                        ForEach(session.individualDebts.sorted(by: { $0.key < $1.key }), id: \.key) { participantID, amountOwed in
-                            if let debtor = session.participants.first(where: { $0.id == Int(participantID) }),
-                               amountOwed > 0.01 { // Only show significant amounts
-                                
-                                HStack {
-                                    // From person (debtor)
-                                    HStack(spacing: 8) {
-                                        Circle()
-                                            .fill(debtor.color)
-                                            .frame(width: 32, height: 32)
-                                            .overlay(
-                                                Image(systemName: "person.fill")
-                                                    .foregroundColor(.white)
-                                                    .font(.caption)
-                                            )
-                                        Text(debtor.name)
-                                            .fontWeight(.medium)
-                                    }
-                                    
-                                    Image(systemName: "arrow.right")
-                                        .foregroundColor(.gray)
-                                        .padding(.horizontal, 8)
-                                    
-                                    // To person (payer)
-                                    HStack(spacing: 8) {
-                                        Circle()
-                                            .fill(paidByParticipant.color)
-                                            .frame(width: 32, height: 32)
-                                            .overlay(
-                                                Image(systemName: "person.fill")
-                                                    .foregroundColor(.white)
-                                                    .font(.caption)
-                                            )
-                                        Text(paidByParticipant.name)
-                                            .fontWeight(.medium)
-                                    }
-                                    
-                                    Spacer()
-                                    
-                                    // Amount owed
-                                    VStack(alignment: .trailing, spacing: 2) {
-                                        Text("$\(amountOwed, specifier: "%.2f")")
-                                            .fontWeight(.bold)
-                                            .foregroundColor(.red)
-                                        Text("owes")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                }
-                                .padding()
-                                .background(Color(.systemBackground))
-                                .cornerRadius(12)
-                                .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .stroke(Color.red.opacity(0.2), lineWidth: 1)
-                                )
-                                .padding(.horizontal)
-                            }
-                        }
-                        
-                        // Show "No debts" message if everyone paid their share
-                        if session.individualDebts.allSatisfy({ $0.value <= 0.01 }) {
-                            VStack(spacing: 8) {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
-                                    .font(.title2)
-                                Text("Everyone paid their share!")
-                                    .fontWeight(.medium)
-                                    .foregroundColor(.green)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.green.opacity(0.1))
-                            .cornerRadius(12)
-                            .padding(.horizontal)
-                        }
-                    } else {
-                        // Error state - no payer selected
-                        VStack(spacing: 8) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundColor(.red)
-                                .font(.title2)
-                            Text("Error: No payer selected")
-                                .fontWeight(.medium)
-                                .foregroundColor(.red)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.red.opacity(0.1))
-                        .cornerRadius(12)
-                        .padding(.horizontal)
-                    }
-                }
+                whoOwesWhomSection
                 
                 // Detailed breakdown section
                 VStack(alignment: .leading, spacing: 12) {
@@ -2395,13 +2473,13 @@ struct UIProfileMenuItem: View {
 struct ParticipantAssignmentRow: View {
     let item: UIItem
     let participants: [UIParticipant]
-    let onParticipantToggle: (Int) -> Void
-    let onParticipantRemove: (Int) -> Void
+    let onParticipantToggle: (String) -> Void
+    let onParticipantRemove: (String) -> Void
     let everyoneSelected: Bool
     let onEveryoneToggle: () -> Void
-    
+
     @State private var showingFeedback = false
-    @State private var feedbackParticipant: Int? = nil
+    @State private var feedbackParticipant: String? = nil
     
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -2409,7 +2487,7 @@ struct ParticipantAssignmentRow: View {
                 // Everyone button styled like other participant buttons
                 Button(action: {
                     onEveryoneToggle()
-                    triggerFeedback(for: -1) // Use -1 for everyone button
+                    triggerFeedback(for: "everyone") // Use "everyone" for everyone button
                 }) {
                     HStack(spacing: 6) {
                         Text("Everyone")
@@ -2469,7 +2547,7 @@ struct ParticipantAssignmentRow: View {
         .frame(minHeight: 60) // Increased height to accommodate padding and prevent border cut-off
     }
     
-    private func triggerFeedback(for participantId: Int) {
+    private func triggerFeedback(for participantId: String) {
         feedbackParticipant = participantId
         showingFeedback = true
         
@@ -2625,21 +2703,21 @@ struct ItemRowWithParticipants: View {
         }
     }
     
-    private func toggleParticipant(_ participantId: Int) {
+    private func toggleParticipant(_ participantId: String) {
         if item.assignedToParticipants.contains(participantId) {
             removeParticipant(participantId)
         } else {
             addParticipant(participantId)
         }
     }
-    
-    private func addParticipant(_ participantId: Int) {
+
+    private func addParticipant(_ participantId: String) {
         item.assignedToParticipants.insert(participantId)
         onItemUpdate(item)
         triggerSuccessAnimation()
     }
-    
-    private func removeParticipant(_ participantId: Int) {
+
+    private func removeParticipant(_ participantId: String) {
         item.assignedToParticipants.remove(participantId)
         onItemUpdate(item)
         triggerSuccessAnimation()
