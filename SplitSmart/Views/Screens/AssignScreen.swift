@@ -630,77 +630,57 @@ struct UIAssignScreen: View {
     }
     
     private func handleContactSaved(_ contact: TransactionContact) {
-        // Check if trying to add yourself
-        if contact.displayName.lowercased() == "you" {
-            validationError = "You are already in this bill"
-            showValidationAlert = true
-            return
+        Task {
+            // Use proper validation even for network contacts to ensure strict security
+            let result = await session.addParticipantWithValidation(
+                name: contact.displayName,
+                email: contact.email,
+                phoneNumber: contact.phoneNumber,
+                authViewModel: authViewModel,
+                contactsManager: contactsManager
+            )
+
+            await MainActor.run {
+                if result.participant != nil {
+                    print("✅ Added validated network contact as participant: \(contact.displayName)")
+                    newParticipantName = ""
+                    successMessage = "Contact saved and added to current bill!"
+                    showSuccessAlert = true
+                } else if let error = result.error {
+                    validationError = error
+                    showValidationAlert = true
+                } else if result.needsContact {
+                    // This shouldn't happen for saved contacts, but handle gracefully
+                    validationError = "Unable to add contact to bill"
+                    showValidationAlert = true
+                }
+            }
         }
-        
-        // Check if participant already exists
-        if session.participants.contains(where: { $0.name.lowercased() == contact.displayName.lowercased() }) {
-            validationError = "\(contact.displayName) is already in this bill"
-            showValidationAlert = true
-            return
-        }
-        
-        // After saving contact, directly add them to the current bill without re-validation
-        // since we know they're now in our network
-        
-        let newId = (session.participants.map { $0.id }.max() ?? 0) + 1
-        let colorIndex = session.participants.count % session.colors.count
-        
-        let newParticipant = UIParticipant(
-            id: newId,
-            name: contact.displayName,
-            color: session.colors[colorIndex]
-        )
-        
-        session.participants.append(newParticipant)
-        
-        print("✅ Added new network contact as participant: \(contact.displayName)")
-        newParticipantName = ""
-        
-        // Show success message
-        successMessage = "Contact saved and added to current bill!"
-        showSuccessAlert = true
     }
     
     private func handleExistingContactSelected(_ contact: TransactionContact) {
         Task {
-            // SECURITY: Check if trying to add yourself by comparing emails
-            let currentUserEmail = await MainActor.run { authViewModel.user?.email }
-            if let currentUserEmail = currentUserEmail,
-               contact.email.lowercased() == currentUserEmail.lowercased() {
-                await MainActor.run {
-                    validationError = "You cannot add yourself to the bill"
-                    showValidationAlert = true
-                }
-                return
-            }
-            
+            // Use proper validation for existing contacts to ensure strict security
+            let result = await session.addParticipantWithValidation(
+                name: contact.displayName,
+                email: contact.email,
+                phoneNumber: contact.phoneNumber,
+                authViewModel: authViewModel,
+                contactsManager: contactsManager
+            )
+
             await MainActor.run {
-                // Check if participant already exists
-                if session.participants.contains(where: { $0.name.lowercased() == contact.displayName.lowercased() }) {
-                    validationError = "\(contact.displayName) is already in this bill"
+                if result.participant != nil {
+                    print("✅ Added validated existing contact as participant: \(contact.displayName)")
+                    newParticipantName = ""
+                } else if let error = result.error {
+                    validationError = error
                     showValidationAlert = true
-                    return
+                } else if result.needsContact {
+                    // This shouldn't happen for existing contacts, but handle gracefully
+                    validationError = "Unable to add contact to bill"
+                    showValidationAlert = true
                 }
-                
-                // Add existing contact to current bill
-                let newId = (session.participants.map { $0.id }.max() ?? 0) + 1
-                let colorIndex = session.participants.count % session.colors.count
-                
-                let newParticipant = UIParticipant(
-                    id: newId,
-                    name: contact.displayName,
-                    color: session.colors[colorIndex]
-                )
-                
-                session.participants.append(newParticipant)
-                
-                print("✅ Added existing contact as participant: \(contact.displayName)")
-                newParticipantName = ""
             }
         }
     }

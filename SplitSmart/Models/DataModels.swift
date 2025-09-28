@@ -4682,30 +4682,8 @@ class BillSplitSession: ObservableObject {
         sessionState = .assigning
     }
     
-    func addParticipant(name: String) -> UIParticipant? {
-        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        guard !trimmedName.isEmpty else { return nil }
-        
-        // Check for duplicates (case-insensitive)
-        if participants.contains(where: { $0.name.lowercased() == trimmedName.lowercased() }) {
-            print("⚠️ Participant \(trimmedName) already exists")
-            return nil
-        }
-        
-        let newId = (participants.map { $0.id }.max() ?? 0) + 1
-        let colorIndex = participants.count % colors.count
-        
-        let newParticipant = UIParticipant(
-            id: newId,
-            name: trimmedName,
-            color: colors[colorIndex]
-        )
-        
-        participants.append(newParticipant)
-        print("✅ Added participant: \(trimmedName)")
-        return newParticipant
-    }
+    // SECURITY: Removed unvalidated addParticipant method
+    // All participant additions must go through addParticipantWithValidation for US-EDGE-003 compliance
     
     func addParticipantWithValidation(name: String, email: String? = nil, phoneNumber: String? = nil, authViewModel: AuthViewModel, contactsManager: ContactsManager? = nil) async -> (participant: UIParticipant?, error: String?, needsContact: Bool) {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -4745,7 +4723,7 @@ class BillSplitSession: ObservableObject {
         
         if !isOnboarded {
             print("❌ User \(trimmedName) is not onboarded to SplitSmart")
-            return (nil, "User is not registered with SplitSmart. Only registered users can be added to bills.", false)
+            return (nil, "User not found. Only registered SplitSmart users can be added to bills", false)
         }
         
         // Splitwise-style: Check if email is in user's transaction history
