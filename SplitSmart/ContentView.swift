@@ -1100,20 +1100,17 @@ struct BillEditFlow: View {
         // Add current user as "You" first
         if let currentUserId = authViewModel.user?.uid,
            let currentUser = bill.participants.first(where: { $0.id == currentUserId }) {
-            uiParticipants.append(UIParticipant(id: 1, name: "You", color: .blue))
+            uiParticipants.append(UIParticipant(id: currentUserId, name: "You", color: .blue))
         }
-        
-        // Add other participants
-        var participantId = 2
+
+        // Add other participants with Firebase UIDs
         for participant in bill.participants {
             if participant.id != authViewModel.user?.uid {
-                let colors: [Color] = [.red, .green, .orange, .purple, .pink, .cyan]
                 uiParticipants.append(UIParticipant(
-                    id: participantId,
+                    id: participant.id,  // Use Firebase UID directly
                     name: participant.displayName,
-                    color: colors[participantId % colors.count]
+                    color: .blue  // Use assignedColor computed property for consistent colors
                 ))
-                participantId += 1
             }
         }
         
@@ -1141,19 +1138,7 @@ struct BillEditFlow: View {
                 name: billItem.name,
                 price: billItem.price,
                 assignedTo: nil,
-                assignedToParticipants: Set(billItem.participantIDs.compactMap { billParticipantId in
-                    // Map BillParticipant IDs to UIParticipant IDs
-                    if billParticipantId == authViewModel.user?.uid {
-                        return 1 // "You" is always ID 1
-                    } else {
-                        // Find the UIParticipant with matching name
-                        if let billParticipant = bill.participants.first(where: { $0.id == billParticipantId }),
-                           let uiParticipant = uiParticipants.first(where: { $0.name == billParticipant.displayName }) {
-                            return uiParticipant.id
-                        }
-                    }
-                    return nil
-                }),
+                assignedToParticipants: Set(billItem.participantIDs),  // Use Firebase UIDs directly
                 confidence: .high,
                 originalDetectedName: nil,
                 originalDetectedPrice: nil
@@ -1500,7 +1485,7 @@ struct BillEditSummaryScreen: View {
                         
                         // Calculate individual debts to the payer
                         ForEach(session.individualDebts.sorted(by: { $0.key < $1.key }), id: \.key) { participantID, amountOwed in
-                            if let debtor = session.participants.first(where: { $0.id == Int(participantID) }),
+                            if let debtor = session.participants.first(where: { $0.id == participantID }),
                                amountOwed > 0.01 { // Only show significant amounts
                                 
                                 HStack {
@@ -1711,7 +1696,7 @@ struct BillEditSummaryScreen: View {
     @MainActor
     private func updateBill() async {
         guard session.isReadyForBillCreation else {
-            updateError = "Session is not ready for bill update"
+            updateError = session.billCreationErrorMessage ?? "Session is not ready for bill update"
             showingError = true
             return
         }
@@ -1727,95 +1712,36 @@ struct BillEditSummaryScreen: View {
                 BillItem(
                     name: assignedItem.name,
                     price: assignedItem.price,
-                    participantIDs: assignedItem.assignedToParticipants.compactMap { uiParticipantId in
-                        // Map UIParticipant IDs back to BillParticipant IDs
-                        print("🔍 Mapping UIParticipant ID \(uiParticipantId) back to Firebase UID")
-                        
-                        if uiParticipantId == 1 { // "You" is always ID 1
-                            let yourUID = authViewModel.user?.uid
-                            print("🔍 UIParticipant ID 1 ('You') → \(yourUID ?? "nil")")
-                            return yourUID
-                        } else {
-                            // Find the original BillParticipant with matching name
-                            if let uiParticipant = session.participants.first(where: { $0.id == uiParticipantId }) {
-                                print("🔍 Found UIParticipant: \(uiParticipant.name)")
-                                print("🔍 Available BillParticipants for item: \(bill.participants.map { "\($0.displayName) (\($0.id))" })")
-                                
-                                // Try exact name match first
-                                if let billParticipant = bill.participants.first(where: { $0.displayName == uiParticipant.name }) {
-                                    print("🔍 ✅ Exact name match: \(uiParticipant.name) → \(billParticipant.id)")
-                                    return billParticipant.id
-                                }
-                                
-                                // Try case-insensitive match
-                                if let billParticipant = bill.participants.first(where: { 
-                                    $0.displayName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) == 
-                                    uiParticipant.name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) 
-                                }) {
-                                    print("🔍 ✅ Case-insensitive name match: \(uiParticipant.name) → \(billParticipant.id)")
-                                    return billParticipant.id
-                                }
-                                
-                                // If name matching fails, use the other participant (fallback for 2-person bills)
-                                let otherParticipant = bill.participants.first(where: { $0.id != authViewModel.user?.uid })
-                                if let other = otherParticipant {
-                                    print("🔍 ⚠️ Fallback: Using other participant \(other.displayName) → \(other.id)")
-                                    print("🔍 This fallback might cause incorrect item assignments!")
-                                    return other.id
-                                }
-                                
-                                print("❌ No matching BillParticipant found for UIParticipant: \(uiParticipant.name)")
-                            } else {
-                                print("❌ UIParticipant ID \(uiParticipantId) not found in session.participants")
-                            }
-                        }
-                        return nil
-                    }
+                    participantIDs: Array(assignedItem.assignedToParticipants)  // Use Firebase UIDs directly
                 )
             }
             
-            let paidByParticipantId: String
-            if let paidByID = session.paidByParticipantID {
-                print("🔍 Mapping payer UIParticipant ID \(paidByID) to Firebase UID")
-                
-                if paidByID == 1 { // "You"
-                    paidByParticipantId = authViewModel.user?.uid ?? ""
-                    print("🔍 Payer is 'You' → \(paidByParticipantId)")
-                } else {
-                    // Find the original BillParticipant with matching name
-                    if let uiParticipant = session.participants.first(where: { $0.id == paidByID }) {
-                        print("🔍 Found payer UIParticipant: \(uiParticipant.name)")
-                        print("🔍 Available BillParticipants: \(bill.participants.map { "\($0.displayName) (\($0.id))" })")
-                        
-                        // Try exact name match first
-                        if let billParticipant = bill.participants.first(where: { $0.displayName == uiParticipant.name }) {
-                            paidByParticipantId = billParticipant.id
-                            print("🔍 ✅ Exact name match for payer: \(uiParticipant.name) → \(billParticipant.id)")
-                        } else {
-                            // Try case-insensitive match
-                            if let billParticipant = bill.participants.first(where: { 
-                                $0.displayName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) == 
-                                uiParticipant.name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) 
-                            }) {
-                                paidByParticipantId = billParticipant.id
-                                print("🔍 ✅ Case-insensitive name match for payer: \(uiParticipant.name) → \(billParticipant.id)")
-                            } else {
-                                // Final fallback: find the other participant (non-current user)
-                                let otherParticipant = bill.participants.first(where: { $0.id != authViewModel.user?.uid })
-                                paidByParticipantId = otherParticipant?.id ?? authViewModel.user?.uid ?? ""
-                                print("🔍 ⚠️ No name match found, using other participant fallback → \(paidByParticipantId)")
-                                print("🔍 This might cause incorrect calculations!")
-                            }
-                        }
+            let paidByParticipantId: String = {
+                if let paidByID = session.paidByParticipantID {
+                    print("🔍 Mapping payer UIParticipant ID \(paidByID) to Firebase UID")
+
+                    if paidByID == authViewModel.user?.uid { // Current user
+                        print("🔍 Payer is current user → \(paidByID)")
+                        return authViewModel.user?.uid ?? ""
                     } else {
-                        paidByParticipantId = authViewModel.user?.uid ?? ""
-                        print("❌ Payer UIParticipant not found, defaulting to current user")
+                        // Use the Firebase UID directly since UIParticipant.id is now Firebase UID
+                        print("🔍 Payer is other participant → \(paidByID)")
+
+                        // Verify the participant exists in bill participants
+                        if bill.participants.contains(where: { $0.id == paidByID }) {
+                            print("🔍 ✅ Payer Firebase UID verified in bill participants")
+                            return paidByID
+                        } else {
+                            print("⚠️ Payer Firebase UID not found in bill participants, using fallback")
+                            return authViewModel.user?.uid ?? ""
+                        }
                     }
+                } else {
+                    let originalPayer = bill.paidBy
+                    print("🔍 No payer change, keeping original: \(originalPayer)")
+                    return originalPayer
                 }
-            } else {
-                paidByParticipantId = bill.paidBy // Keep original payer
-                print("🔍 No payer change, keeping original: \(paidByParticipantId)")
-            }
+            }()
             
             // Update bill using BillService
             try await billService.updateBill(

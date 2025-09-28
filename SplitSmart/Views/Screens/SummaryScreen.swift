@@ -357,7 +357,7 @@ struct UISummaryScreen: View {
     @MainActor
     private func createBill() async {
         guard session.isReadyForBillCreation else {
-            billCreationError = "Session is not ready for bill creation"
+            billCreationError = session.billCreationErrorMessage ?? "Session is not ready for bill creation"
             showingError = true
             return
         }

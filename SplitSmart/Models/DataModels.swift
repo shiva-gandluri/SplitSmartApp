@@ -1111,36 +1111,36 @@ class BillManager: ObservableObject {
             return 
         }
         
-        print("🧮 Calculating balance for user: \(userId)")
-        print("🧮 Processing \(userBills.count) bills")
+        print("⏳ Calculating balance for user: \(userId)")
+        print("⏳ Processing \(userBills.count) bills")
         
         var totalOwed: Double = 0.0
         var totalOwedTo: Double = 0.0
         var activeBills: [String] = []
         
         for bill in userBills {
-            print("🧮 Processing bill \(bill.id): paidBy=\(bill.paidBy), total=\(bill.totalAmount)")
-            print("🧮 Bill calculatedTotals: \(bill.calculatedTotals)")
+            print("⏳ Processing bill \(bill.id): paidBy=\(bill.paidBy), total=\(bill.totalAmount)")
+            print("⏳ Bill calculatedTotals: \(bill.calculatedTotals)")
             
             activeBills.append(bill.id)
             
             // If user is the payer, they are owed money
             if bill.paidBy == userId {
-                    print("🧮 User is the payer for this bill")
+                    print("⏳ User is the payer for this bill")
                     for (participantID, amount) in bill.calculatedTotals {
                         if participantID != userId && amount > 0.01 {
                             totalOwedTo += amount
-                            print("🧮 Participant \(participantID) owes user $\(amount)")
+                            print("⏳ Participant \(participantID) owes user $\(amount)")
                         }
                     }
                 } else {
-                    print("🧮 User is NOT the payer for this bill")
+                    print("⏳ User is NOT the payer for this bill")
                     // If user is a participant who owes money
                     if let amountOwed = bill.calculatedTotals[userId], amountOwed > 0.01 {
                         totalOwed += amountOwed
-                        print("🧮 User owes $\(amountOwed) for this bill")
+                        print("⏳ User owes $\(amountOwed) for this bill")
                     } else {
-                        print("🧮 User not found in calculatedTotals or owes $0")
+                        print("⏳ User not found in calculatedTotals or owes $0")
                     }
                 }
         }
@@ -1162,7 +1162,7 @@ class BillManager: ObservableObject {
             return [] 
         }
         
-        print("🧮 Calculating net balances for user: \(userId)")
+        print("⏳ Calculating net balances for user: \(userId)")
         
         var balances: [String: Double] = [:] // participantID -> net amount (+ they owe you, - you owe them)
         var participantInfo: [String: (name: String, email: String)] = [:]
@@ -1179,13 +1179,13 @@ class BillManager: ObservableObject {
         }
         
         for bill in userBills {
-            print("🧮 Processing bill \(bill.id) for net balance")
-            print("🧮 Bill paidBy: \(bill.paidBy), current user: \(userId)")
-            print("🧮 Bill calculatedTotals: \(bill.calculatedTotals)")
+            print("⏳ Processing bill \(bill.id) for net balance")
+            print("⏳ Bill paidBy: \(bill.paidBy), current user: \(userId)")
+            print("⏳ Bill calculatedTotals: \(bill.calculatedTotals)")
             
             // Process all bills (no status filtering)
             if bill.paidBy == userId {
-                print("🧮 User paid - others owe user")
+                print("⏳ User paid - others owe user")
                 // User paid - others owe them (positive balance)
                 for (participantUID, amount) in bill.calculatedTotals {
                     if participantUID != userId && amount > 0.01 {
@@ -1194,28 +1194,28 @@ class BillManager: ObservableObject {
                             let normalizedID = normalizeParticipantID(otherParticipant.id, displayName: otherParticipant.displayName, email: otherParticipant.email)
                             balances[normalizedID, default: 0.0] += amount
                             participantInfo[normalizedID] = (otherParticipant.displayName, otherParticipant.email)
-                            print("🧮 \(otherParticipant.displayName) owes user +$\(amount) (running total: $\(balances[normalizedID] ?? 0.0))")
+                            print("⏳ \(otherParticipant.displayName) owes user +$\(amount) (running total: $\(balances[normalizedID] ?? 0.0))")
                         } else {
-                            print("🧮 ⚠️ Participant with UID \(participantUID) not found in bill.participants")
+                            print("⏳ ⚠️ Participant with UID \(participantUID) not found in bill.participants")
                         }
                     }
                 }
             } else {
-                print("🧮 User did not pay - checking if user owes")
+                print("⏳ User did not pay - checking if user owes")
                 // User didn't pay - check if user owes money (negative balance)
                 // Use Firebase UID instead of session ID "1"
                 if let amountOwed = bill.calculatedTotals[userId], amountOwed > 0.01 {
                     let normalizedID = normalizeParticipantID(bill.paidBy, displayName: bill.paidByDisplayName, email: bill.paidByEmail)
                     balances[normalizedID, default: 0.0] -= amountOwed
                     participantInfo[normalizedID] = (bill.paidByDisplayName, bill.paidByEmail)
-                    print("🧮 User owes \(bill.paidByDisplayName) -$\(amountOwed) (running total: $\(balances[normalizedID] ?? 0.0))")
+                    print("⏳ User owes \(bill.paidByDisplayName) -$\(amountOwed) (running total: $\(balances[normalizedID] ?? 0.0))")
                 } else {
-                    print("🧮 User not found in calculatedTotals or owes $0")
+                    print("⏳ User not found in calculatedTotals or owes $0")
                 }
             }
         }
         
-        print("🧮 Final net balances: \(balances)")
+        print("⏳ Final net balances: \(balances)")
         
         let result = balances.compactMap { (participantID, netAmount) -> UIPersonDebt? in
             guard abs(netAmount) > 0.01,
@@ -1243,7 +1243,7 @@ class BillManager: ObservableObject {
             debt1.total > debt2.total
         }
         
-        print("🧮 Returning \(result.count) net balances")
+        print("⏳ Returning \(result.count) net balances")
         return result
     }
     
@@ -1401,7 +1401,7 @@ enum BillCreationError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .sessionNotReady:
-            return "Session is not ready for bill creation"
+            return "Please complete all required fields before creating the bill"
         case .invalidUser:
             return "Invalid user or payer information"
         case .invalidTotals:
@@ -1788,12 +1788,12 @@ struct BillCalculator {
     
     /// Calculates who owes whom with proper rounding to ensure totals match
     static func calculateOwedAmounts(bill: Bill) -> [String: Double] {
-        print("🧮 calculateOwedAmounts called for bill \(bill.id)")
-        print("🧮 Bill paidBy: \(bill.paidBy)")
-        print("🧮 Bill participants: \(bill.participants.map { "\($0.displayName) (\($0.id))" })")
-        print("🧮 Bill items and their participants:")
+        print("⏳ calculateOwedAmounts called for bill \(bill.id)")
+        print("⏳ Bill paidBy: \(bill.paidBy)")
+        print("⏳ Bill participants: \(bill.participants.map { "\($0.displayName) (\($0.id))" })")
+        print("⏳ Bill items and their participants:")
         for item in bill.items {
-            print("🧮   - \(item.name) $\(item.price): \(item.participantIDs)")
+            print("⏳   - \(item.name) $\(item.price): \(item.participantIDs)")
         }
         
         var owedAmounts: [String: Double] = [:]
@@ -1803,26 +1803,26 @@ struct BillCalculator {
         for participant in bill.participants {
             if participant.id != paidByUserID {
                 owedAmounts[participant.id] = 0.0
-                print("🧮 Initialized \(participant.displayName) (\(participant.id)) with $0.00")
+                print("⏳ Initialized \(participant.displayName) (\(participant.id)) with $0.00")
             } else {
-                print("🧮 Skipping payer \(participant.displayName) (\(participant.id)) - they don't owe themselves")
+                print("⏳ Skipping payer \(participant.displayName) (\(participant.id)) - they don't owe themselves")
             }
         }
         
         // Calculate each item's split
         for item in bill.items {
-            print("🧮 Processing item: \(item.name) $\(item.price)")
-            print("🧮 Item participants: \(item.participantIDs)")
+            print("⏳ Processing item: \(item.name) $\(item.price)")
+            print("⏳ Item participants: \(item.participantIDs)")
             
             let participantCount = item.participantIDs.count
             guard participantCount > 0 else { 
-                print("🧮 ❌ No participants for item \(item.name), skipping")
+                print("⏳ ❌ No participants for item \(item.name), skipping")
                 continue 
             }
             
             let baseAmount = item.price / Double(participantCount)
             let roundedBase = (baseAmount * 100).rounded() / 100 // Round to 2 decimal places
-            print("🧮 Base amount per person: $\(baseAmount) → $\(roundedBase)")
+            print("⏳ Base amount per person: $\(baseAmount) → $\(roundedBase)")
             
             // Calculate how much total we have after rounding
             let totalRounded = roundedBase * Double(participantCount)
@@ -1830,10 +1830,10 @@ struct BillCalculator {
             
             // Distribute the remainder (should be small cents)
             let remainderCents = Int((remainder * 100).rounded())
-            print("🧮 Remainder: $\(remainder) = \(remainderCents) cents")
+            print("⏳ Remainder: $\(remainder) = \(remainderCents) cents")
             
             for (index, participantID) in item.participantIDs.enumerated() {
-                print("🧮 Processing participant \(participantID) (index \(index))")
+                print("⏳ Processing participant \(participantID) (index \(index))")
                 
                 if participantID != paidByUserID {
                     var amountOwed = roundedBase
@@ -1841,14 +1841,14 @@ struct BillCalculator {
                     // Add extra cent to first few participants to handle remainder
                     if index < remainderCents {
                         amountOwed += 0.01
-                        print("🧮 Added remainder cent: $\(amountOwed)")
+                        print("⏳ Added remainder cent: $\(amountOwed)")
                     }
                     
                     let previousAmount = owedAmounts[participantID] ?? 0.0
                     owedAmounts[participantID] = previousAmount + amountOwed
-                    print("🧮 \(participantID) owes: $\(previousAmount) + $\(amountOwed) = $\(owedAmounts[participantID] ?? 0.0)")
+                    print("⏳ \(participantID) owes: $\(previousAmount) + $\(amountOwed) = $\(owedAmounts[participantID] ?? 0.0)")
                 } else {
-                    print("🧮 \(participantID) is the payer, skipping")
+                    print("⏳ \(participantID) is the payer, skipping")
                 }
             }
         }
@@ -3616,7 +3616,7 @@ class OCRService: ObservableObject {
         confirmedTotal: Double,
         expectedItemCount: Int
     ) async -> [ReceiptItem] {
-        print("🧮 Processing with mathematical approach...")
+        print("⏳ Processing with mathematical approach...")
         print("   Target price: $\(confirmedTotal - confirmedTax - confirmedTip)")
         print("   Expected items: \(expectedItemCount)")
         
@@ -5020,7 +5020,33 @@ class BillSplitSession: ObservableObject {
         print("✅ isReadyForBillCreation: All validations passed")
         return true
     }
-    
+
+    /// Provides specific error message when bill creation is not ready
+    var billCreationErrorMessage: String? {
+        // Must have assigned items
+        guard !assignedItems.isEmpty else {
+            return "No items have been added to this bill"
+        }
+
+        // All items must be assigned to participants
+        let allItemsAssigned = assignedItems.allSatisfy { !$0.assignedToParticipants.isEmpty }
+        guard allItemsAssigned else {
+            return "Please assign all items to participants"
+        }
+
+        // Must have selected who paid the bill
+        guard paidByParticipantID != nil else {
+            return "Please select who paid this bill"
+        }
+
+        // Must have at least 2 participants (including "You")
+        guard participants.count >= 2 else {
+            return "This bill only includes you. Please add at least one more participant to create a bill"
+        }
+
+        return nil // No error - ready for creation
+    }
+
     /// Calculates individual debts - how much each participant owes to the person who paid
     var individualDebts: [String: Double] {
         guard let paidByID = paidByParticipantID else { return [:] }
