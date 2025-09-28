@@ -59,10 +59,11 @@ struct ContentView: View {
                     session: billSplitSession,
                     onDone: {
                         billSplitSession.completeSession()
-                        selectedTab = "home" 
+                        selectedTab = "home"
                     },
                     contactsManager: contactsManager,
-                    authViewModel: authViewModel
+                    authViewModel: authViewModel,
+                    billManager: billManager
                 )
             case "history":
                 HistoryView(billManager: billManager)

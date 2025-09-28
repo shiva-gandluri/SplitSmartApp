@@ -336,7 +336,7 @@ struct UIBreakdownItem {
 
 import FirebaseFirestore
 import FirebaseAuth
-// TODO: Add FirebaseMessaging via Xcode Package Dependencies
+// TODO: Uncomment after adding FirebaseMessaging dependency in Xcode
 // import FirebaseMessaging
 
 struct Bill: Codable, Identifiable {
@@ -551,6 +551,19 @@ struct BillActivity: Codable, Identifiable, Equatable {
         self.actorEmail = actorEmail
         self.participantEmails = participantEmails
         self.timestamp = Date()
+        self.amount = amount
+        self.currency = currency
+    }
+
+    init(id: String, billId: String, billName: String, activityType: ActivityType, actorName: String, actorEmail: String, participantEmails: [String], timestamp: Date, amount: Double, currency: String) {
+        self.id = id
+        self.billId = billId
+        self.billName = billName
+        self.activityType = activityType
+        self.actorName = actorName
+        self.actorEmail = actorEmail
+        self.participantEmails = participantEmails
+        self.timestamp = timestamp
         self.amount = amount
         self.currency = currency
     }
@@ -988,6 +1001,7 @@ class BillManager: ObservableObject {
     @Published var userBalance: UserBalance = UserBalance()
     @Published var isLoading = false
     @Published var errorMessage: String?
+    @Published var billActivities: [BillActivity] = []
     
     private var currentUserId: String?
     private var billsListener: ListenerRegistration?
@@ -1002,11 +1016,17 @@ class BillManager: ObservableObject {
             billsListener = nil
             self.userBills = []
             self.userBalance = UserBalance()
+            self.billActivities = []
             self.errorMessage = nil
         }
         
         self.currentUserId = userId
         loadUserBills()
+        
+        // Load bill activities
+        Task {
+            await loadBillActivities()
+        }
     }
     
     func clearCurrentUser() {
@@ -1240,6 +1260,112 @@ class BillManager: ObservableObject {
     /// Gets list of people the current user owes money to (NET negative balances only)
     func getPeopleUserOwes() -> [UIPersonDebt] {
         return getNetBalances().filter { $0.color == .red }
+    }
+
+    
+    // MARK: - Bill Activity Management
+    
+    /// Adds a new bill activity record to track bill events
+    func addBillActivity(billId: String, billName: String, activityType: BillActivity.ActivityType, actorName: String, actorEmail: String, participantEmails: [String], amount: Double, currency: String) {
+        let activity = BillActivity(
+            billId: billId,
+            billName: billName,
+            activityType: activityType,
+            actorName: actorName,
+            actorEmail: actorEmail,
+            participantEmails: participantEmails,
+            amount: amount,
+            currency: currency
+        )
+        
+        DispatchQueue.main.async {
+            self.billActivities.append(activity)
+            // Sort by timestamp (newest first)
+            self.billActivities.sort { $0.timestamp > $1.timestamp }
+        }
+        
+        // Store in Firestore for persistence
+        Task {
+            await saveBillActivityToFirestore(activity)
+        }
+    }
+    
+    /// Saves bill activity to Firestore
+    private func saveBillActivityToFirestore(_ activity: BillActivity) async {
+        guard let userId = currentUserId else { return }
+        
+        do {
+            try await db.collection("users").document(userId)
+                .collection("billActivities").document(activity.id)
+                .setData([
+                    "id": activity.id,
+                    "billId": activity.billId,
+                    "billName": activity.billName,
+                    "activityType": activity.activityType.rawValue,
+                    "actorName": activity.actorName,
+                    "actorEmail": activity.actorEmail,
+                    "participantEmails": activity.participantEmails,
+                    "timestamp": activity.timestamp,
+                    "amount": activity.amount,
+                    "currency": activity.currency
+                ])
+            print("✅ Bill activity saved to Firestore: \(activity.activityType.rawValue)")
+        } catch {
+            print("❌ Failed to save bill activity to Firestore: \(error.localizedDescription)")
+        }
+    }
+    
+    /// Loads bill activities from Firestore
+    private func loadBillActivities() async {
+        guard let userId = currentUserId else { return }
+        
+        do {
+            let snapshot = try await db.collection("users").document(userId)
+                .collection("billActivities")
+                .order(by: "timestamp", descending: true)
+                .getDocuments()
+            
+            let activities = snapshot.documents.compactMap { document -> BillActivity? in
+                let data = document.data()
+                guard 
+                    let id = data["id"] as? String,
+                    let billId = data["billId"] as? String,
+                    let billName = data["billName"] as? String,
+                    let activityTypeRaw = data["activityType"] as? String,
+                    let activityType = BillActivity.ActivityType(rawValue: activityTypeRaw),
+                    let actorName = data["actorName"] as? String,
+                    let actorEmail = data["actorEmail"] as? String,
+                    let participantEmails = data["participantEmails"] as? [String],
+                    let timestamp = data["timestamp"] as? Date,
+                    let amount = data["amount"] as? Double,
+                    let currency = data["currency"] as? String
+                else {
+                    print("⚠️ Failed to parse bill activity document: \(document.documentID)")
+                    return nil
+                }
+                
+                return BillActivity(
+                    id: id,
+                    billId: billId,
+                    billName: billName,
+                    activityType: activityType,
+                    actorName: actorName,
+                    actorEmail: actorEmail,
+                    participantEmails: participantEmails,
+                    timestamp: timestamp,
+                    amount: amount,
+                    currency: currency
+                )
+            }
+            
+            await MainActor.run {
+                self.billActivities = activities
+            }
+            
+            print("✅ Loaded \(activities.count) bill activities")
+        } catch {
+            print("❌ Failed to load bill activities: \(error.localizedDescription)")
+        }
     }
 }
 

@@ -497,7 +497,7 @@ extension View {
 struct UIScanScreen: View {
     let session: BillSplitSession
     let onContinue: () -> Void
-    
+
     @State private var scanComplete = false
     @State private var scanningStatus = ""
     @State private var capturedImage: UIImage?
@@ -690,7 +690,7 @@ struct UIScanScreen: View {
         capturedImage = nil
         scanningStatus = ""
     }
-    
+
     private func processWithConfirmedData(result: OCRResult, confirmedData: ConfirmedReceiptData) async {
         // Use mathematical approach to find item combinations
         let ocrService = OCRService()
@@ -1043,7 +1043,6 @@ struct OCRResultsView: View {
     let onRetry: () -> Void
     
     @State private var showRawText = false
-    @State private var showingManualEntry = false
     
     var body: some View {
         VStack(spacing: 0) {
@@ -1059,7 +1058,6 @@ struct OCRResultsView: View {
                 OCREmptyStateView(
                     identifiedTotal: identifiedTotal,
                     suggestedAmounts: suggestedAmounts,
-                    onManualEntry: { showingManualEntry = true },
                     onRetry: onRetry
                 )
             } else {
@@ -1068,8 +1066,7 @@ struct OCRResultsView: View {
                     items: $items,
                     identifiedTotal: identifiedTotal,
                     suggestedAmounts: suggestedAmounts,
-                    onContinue: { onContinue(items) },
-                    onAddMore: { showingManualEntry = true }
+                    onContinue: { onContinue(items) }
                 )
             }
         }
@@ -1086,15 +1083,6 @@ struct OCRResultsView: View {
         }
         .sheet(isPresented: $showRawText) {
             RawTextView(text: rawText)
-        }
-        .sheet(isPresented: $showingManualEntry) {
-            ManualItemEntryView(
-                suggestedAmounts: suggestedAmounts,
-                identifiedTotal: identifiedTotal,
-                currentTotal: items.reduce(0) { $0.currencyAdd($1.price) }
-            ) { newItem in
-                items.append(newItem)
-            }
         }
     }
 }
@@ -1177,7 +1165,6 @@ struct OCRItemListView: View {
     let identifiedTotal: Double?
     let suggestedAmounts: [Double]
     let onContinue: () -> Void
-    let onAddMore: () -> Void
     
     var totalAmount: Double {
         let total = items.reduce(0) { $0.currencyAdd($1.price) }
@@ -1202,15 +1189,6 @@ struct OCRItemListView: View {
                 Text("Found \(items.count) items! Tap any item to edit its name or price.")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
-                
-                Button(action: onAddMore) {
-                    HStack {
-                        Image(systemName: "plus.circle.fill")
-                        Text("Add More Items")
-                    }
-                    .font(.caption)
-                    .foregroundColor(.blue)
-                }
             }
             .padding()
             .background(Color(.systemGroupedBackground))
@@ -1453,7 +1431,6 @@ struct EditableItemRow: View {
 struct OCREmptyStateView: View {
     let identifiedTotal: Double?
     let suggestedAmounts: [Double]
-    let onManualEntry: () -> Void
     let onRetry: () -> Void
     
     var body: some View {
@@ -1527,19 +1504,6 @@ struct OCREmptyStateView: View {
             }
             
             VStack(spacing: 12) {
-                Button(action: onManualEntry) {
-                    HStack {
-                        Image(systemName: "plus")
-                        Text("Add Items Manually")
-                    }
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(Color.blue)
-                    .cornerRadius(12)
-                }
-                
                 Button(action: onRetry) {
                     HStack {
                         Image(systemName: "camera.rotate")
@@ -1586,189 +1550,6 @@ struct RawTextView: View {
     }
 }
 
-// MARK: - Manual Item Entry View
-struct ManualItemEntryView: View {
-    let suggestedAmounts: [Double]
-    let identifiedTotal: Double?
-    let currentTotal: Double
-    let onAdd: (ReceiptItem) -> Void
-    @Environment(\.dismiss) private var dismiss
-    
-    @State private var itemName = ""
-    @State private var itemPrice = ""
-    @FocusState private var isNameFieldFocused: Bool
-    
-    var remainingToAdd: Double? {
-        guard let total = identifiedTotal else { return nil }
-        return max(0, total - currentTotal)
-    }
-    
-    var body: some View {
-        NavigationView {
-            VStack(spacing: 0) {
-                // Header with total reference
-                if let total = identifiedTotal {
-                    VStack(spacing: 8) {
-                        Text("Receipt Total: $\(total, specifier: "%.2f")")
-                            .font(.headline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.green)
-                        
-                        Text("Add items that sum to this total")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        
-                        // Show quick calculation helper
-                        if let remainingAmount = remainingToAdd {
-                            if remainingAmount > 0 {
-                                Text("Remaining: $\(remainingAmount, specifier: "%.2f")")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                    .foregroundColor(.blue)
-                            }
-                        }
-                    }
-                    .padding()
-                    .background(Color.green.opacity(0.1))
-                }
-                
-                ScrollView {
-                    VStack(spacing: 24) {
-                        VStack(alignment: .leading, spacing: 16) {
-                            Text("Add New Item")
-                                .font(.title2)
-                                .fontWeight(.semibold)
-                            
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Item Name")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                
-                                TextField("Enter item name", text: $itemName)
-                                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                                    .focused($isNameFieldFocused)
-                            }
-                            
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Price")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                
-                                HStack {
-                                    Text("$")
-                                        .font(.body)
-                                    TextField("0.00", text: $itemPrice)
-                                        .keyboardType(.decimalPad)
-                                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                                }
-                            }
-                        }
-                        .padding()
-                        
-                        // Quick amount selection
-                        if !suggestedAmounts.isEmpty {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("Quick Price Selection")
-                                    .font(.headline)
-                                    .fontWeight(.medium)
-                                    .padding(.horizontal)
-                                
-                                Text("Tap any amount to use as price:")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                                    .padding(.horizontal)
-                                
-                                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 12) {
-                                    // Add remaining amount as first option if available
-                                    if let remaining = remainingToAdd, remaining > 0 && remaining <= 100 {
-                                        Button(action: {
-                                            itemPrice = String(format: "%.2f", remaining)
-                                        }) {
-                                            VStack(spacing: 4) {
-                                                Text("Remaining")
-                                                    .font(.caption)
-                                                    .foregroundColor(.green)
-                                                Text("$\(remaining, specifier: "%.2f")")
-                                                    .font(.body)
-                                                    .fontWeight(.semibold)
-                                                    .foregroundColor(.green)
-                                            }
-                                            .frame(maxWidth: .infinity)
-                                            .padding(.vertical, 12)
-                                            .background(Color.green.opacity(0.1))
-                                            .cornerRadius(8)
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 8)
-                                                    .stroke(Color.green.opacity(0.3), lineWidth: 1)
-                                            )
-                                        }
-                                    }
-                                    
-                                    ForEach(suggestedAmounts, id: \.self) { amount in
-                                        Button(action: {
-                                            itemPrice = String(format: "%.2f", amount)
-                                        }) {
-                                            Text("$\(amount, specifier: "%.2f")")
-                                                .font(.body)
-                                                .fontWeight(.medium)
-                                                .foregroundColor(.blue)
-                                                .frame(maxWidth: .infinity)
-                                                .padding(.vertical, 12)
-                                                .background(Color.blue.opacity(0.1))
-                                                .cornerRadius(8)
-                                        }
-                                    }
-                                }
-                                .padding(.horizontal)
-                            }
-                            .padding(.bottom)
-                        }
-                    }
-                }
-                
-                Spacer()
-                
-                Button(action: addItem) {
-                    Text("Add Item")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(canAddItem ? Color.blue : Color.gray)
-                        .cornerRadius(12)
-                }
-                .padding()
-                .disabled(!canAddItem)
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-            }
-            .onAppear {
-                isNameFieldFocused = true
-            }
-        }
-    }
-    
-    private var canAddItem: Bool {
-        !itemName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        Double(itemPrice) != nil &&
-        Double(itemPrice)! > 0
-    }
-    
-    private func addItem() {
-        let trimmedName = itemName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let price = Double(itemPrice), price > 0 {
-            let newItem = ReceiptItem(name: trimmedName, price: price)
-            onAdd(newItem)
-            dismiss()
-        }
-    }
-}
 
 // MARK: - Confirmation Data Structure
 struct ConfirmedReceiptData {

@@ -164,16 +164,8 @@ CLAUDE.md
 *.original
 *_backup.swift
 
-# Markdown files - ignore temporary docs but keep essential project documentation
-API_SECURITY_SETUP.md
-CONTACT_MANAGEMENT.md
-CONTACTS_INTEGRATION_GUIDE.md
-DEPLOYMENT.md
-FIREBASE_SETUP.md
-USER_STORY_8_VERIFICATION.md
-code-analysis.md
-old-claude.md
-user-stories.md
+# Markdown files - exclude all markdown files except README.md
+*.md
 *.md.backup
 
 # Keep essential project documentation

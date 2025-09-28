@@ -1812,6 +1812,7 @@ struct UISummaryScreen: View {
     let onDone: () -> Void
     @ObservedObject var contactsManager: ContactsManager
     @ObservedObject var authViewModel: AuthViewModel
+    @ObservedObject var billManager: BillManager
     
     @StateObject private var billService = BillService()
     @State private var isCreatingBill = false
@@ -2164,12 +2165,26 @@ struct UISummaryScreen: View {
                 authViewModel: authViewModel,
                 contactsManager: contactsManager
             )
-            
+
             createdBill = bill
             print("✅ Bill creation successful! ID: \(bill.id)")
-            
-            // TODO: Phase 3 - Send push notifications here
-            
+
+            // Phase 3: Add bill activity to history tracking
+            if let currentUser = authViewModel.user {
+                let participantEmails = bill.participants.map { $0.email }
+                billManager.addBillActivity(
+                    billId: bill.id,
+                    billName: bill.billName ?? "Unnamed Bill",
+                    activityType: .created,
+                    actorName: currentUser.displayName ?? "Unknown User",
+                    actorEmail: currentUser.email ?? "",
+                    participantEmails: participantEmails,
+                    amount: bill.totalAmount,
+                    currency: bill.currency
+                )
+                print("✅ Bill activity added to history")
+            }
+
             // Call the completion handler
             onDone()
             
