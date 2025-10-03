@@ -496,7 +496,8 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 struct SplitSmartApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @StateObject private var authViewModel = AuthViewModel()
-    
+    @StateObject private var sessionRecoveryManager = SessionRecoveryManager()
+
     var body: some Scene {
         WindowGroup {
             Group {
@@ -506,6 +507,11 @@ struct SplitSmartApp: App {
                 } else if authViewModel.isSignedIn {
                     ContentView()
                         .environmentObject(authViewModel)
+                        .environmentObject(sessionRecoveryManager)
+                        .onAppear {
+                            // Check for saved session when app starts
+                            sessionRecoveryManager.checkForSavedSession()
+                        }
                 } else {
                     AuthView()
                         .environmentObject(authViewModel)

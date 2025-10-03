@@ -218,6 +218,10 @@ struct UIAssignScreen: View {
                                 participants: session.participants,
                                 onItemUpdate: { updatedItem in
                                     session.updateItemAssignments(updatedItem)
+
+                                    // Auto-save session after assignment change
+                                    print("💾 AssignScreen: Auto-saving session after assignment changed")
+                                    session.autoSaveSession()
                                 }
                             )
                             .padding(.horizontal)
@@ -337,6 +341,10 @@ struct UIAssignScreen: View {
                                 participants: session.participants,
                                 onItemUpdate: { updatedItem in
                                     session.updateItemAssignments(updatedItem)
+
+                                    // Auto-save session after assignment change
+                                    print("💾 AssignScreen: Auto-saving session after assignment changed")
+                                    session.autoSaveSession()
                                 }
                             )
                             .padding(.horizontal)
@@ -646,6 +654,10 @@ struct UIAssignScreen: View {
                     newParticipantName = ""
                     successMessage = "Contact saved and added to current bill!"
                     showSuccessAlert = true
+
+                    // Auto-save session after participant change
+                    print("💾 AssignScreen: Auto-saving session after participant added")
+                    session.autoSaveSession()
                 } else if let error = result.error {
                     validationError = error
                     showValidationAlert = true
@@ -673,6 +685,10 @@ struct UIAssignScreen: View {
                 if result.participant != nil {
                     print("✅ Added validated existing contact as participant: \(contact.displayName)")
                     newParticipantName = ""
+
+                    // Auto-save session after participant change
+                    print("💾 AssignScreen: Auto-saving session after participant added")
+                    session.autoSaveSession()
                 } else if let error = result.error {
                     validationError = error
                     showValidationAlert = true
@@ -774,6 +790,10 @@ struct UIAssignScreen: View {
                         print("✅ Added validated participant manually: \(trimmedName)")
                         newParticipantName = ""
                         showAddParticipantOptions = false
+
+                        // Auto-save session after participant change
+                        print("💾 AssignScreen: Auto-saving session after participant added")
+                        session.autoSaveSession()
                     } else if result.needsContact {
                         print("📝 Showing contact modal for email: \(email ?? "nil")")
                         // Show new contact modal for unregistered email

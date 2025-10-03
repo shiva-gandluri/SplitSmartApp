@@ -8,57 +8,63 @@ struct ContentView: View {
     @State private var selectedTab = "home"
     @State private var isKeyboardVisible = false
     @EnvironmentObject var authViewModel: AuthViewModel
+    @EnvironmentObject var sessionRecoveryManager: SessionRecoveryManager
     @StateObject private var billSplitSession = BillSplitSession()
     @StateObject private var contactsManager = ContactsManager()
     @StateObject private var billManager = BillManager()
-    
+
     var showBackButton: Bool {
         return ["scan", "assign", "summary"].contains(selectedTab)
     }
-    
+
     var body: some View {
-        VStack(spacing: 0) {
-            // Back button for navigation flows
-            if showBackButton {
-                HStack {
-                    Button(action: handleBackAction) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "chevron.left")
-                                .font(.system(size: 16, weight: .medium))
-                            Text("Back")
-                                .font(.body)
+        ZStack {
+            VStack(spacing: 0) {
+                // Back button for navigation flows
+                if showBackButton {
+                    HStack {
+                        Button(action: handleBackAction) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "chevron.left")
+                                    .font(.system(size: 16, weight: .medium))
+                                Text("Back")
+                                    .font(.body)
+                            }
+                            .foregroundColor(.blue)
                         }
-                        .foregroundColor(.blue)
+                        .padding(.horizontal)
+                        .padding(.top, 12)
+
+                        Spacer()
                     }
-                    .padding(.horizontal)
-                    .padding(.top, 12)
-                    
-                    Spacer()
                 }
-            }
             
             switch selectedTab {
             case "home":
-                UIHomeScreen(session: billSplitSession, billManager: billManager, authViewModel: authViewModel) { 
+                UIHomeScreen(session: billSplitSession, billManager: billManager, authViewModel: authViewModel) {
                     billSplitSession.startNewSession()
-                    selectedTab = "scan" 
+                    billSplitSession.currentScreenIndex = 1 // Moving to scan
+                    selectedTab = "scan"
                 }
             case "groups":
                 UIGroupsScreen()
             case "scan":
-                UIScanScreen(session: billSplitSession) { 
-                    selectedTab = "assign" 
+                UIScanScreen(session: billSplitSession) {
+                    billSplitSession.currentScreenIndex = 2 // Moving to assign
+                    selectedTab = "assign"
                 }
             case "assign":
-                UIAssignScreen(session: billSplitSession, contactsManager: contactsManager) { 
+                UIAssignScreen(session: billSplitSession, contactsManager: contactsManager) {
                     billSplitSession.completeAssignment()
-                    selectedTab = "summary" 
+                    billSplitSession.currentScreenIndex = 3 // Moving to summary
+                    selectedTab = "summary"
                 }
             case "summary":
                 UISummaryScreen(
                     session: billSplitSession,
                     onDone: {
                         billSplitSession.completeSession()
+                        billSplitSession.currentScreenIndex = 0 // Returning to home
                         selectedTab = "home"
                     },
                     contactsManager: contactsManager,
@@ -72,40 +78,74 @@ struct ContentView: View {
                 UIProfileScreen()
                     .environmentObject(authViewModel)
             default:
-                UIHomeScreen(session: billSplitSession, billManager: billManager, authViewModel: authViewModel) { 
+                UIHomeScreen(session: billSplitSession, billManager: billManager, authViewModel: authViewModel) {
                     billSplitSession.startNewSession()
-                    selectedTab = "scan" 
+                    billSplitSession.currentScreenIndex = 1 // Moving to scan
+                    selectedTab = "scan"
                 }
             }
             
-            // Only show TabBar when keyboard is not visible
-            if !isKeyboardVisible {
-                TabBarView(selectedTab: $selectedTab)
+                // Only show TabBar when keyboard is not visible
+                if !isKeyboardVisible {
+                    TabBarView(selectedTab: $selectedTab)
+                }
             }
-        }
-        .onAppear {
-            setupKeyboardObservers()
-            
-            // Initialize managers with current user
-            if let userId = authViewModel.user?.uid {
-                contactsManager.setCurrentUser(userId)
-                billManager.setCurrentUser(userId)
+            .onAppear {
+                setupKeyboardObservers()
+
+                // Initialize managers with current user
+                if let userId = authViewModel.user?.uid {
+                    contactsManager.setCurrentUser(userId)
+                    billManager.setCurrentUser(userId)
+                }
             }
-        }
-        .onChange(of: authViewModel.user?.uid) { oldUserId, newUserId in
-            // Handle user changes (logout/login with different user)
-            if let userId = newUserId {
-                contactsManager.setCurrentUser(userId)
-                billManager.setCurrentUser(userId)
-            } else {
-                contactsManager.clearCurrentUser()
-                billManager.clearCurrentUser()
+            .onChange(of: authViewModel.user?.uid) { oldUserId, newUserId in
+                // Handle user changes (logout/login with different user)
+                if let userId = newUserId {
+                    contactsManager.setCurrentUser(userId)
+                    billManager.setCurrentUser(userId)
+                } else {
+                    contactsManager.clearCurrentUser()
+                    billManager.clearCurrentUser()
+                }
             }
-        }
-        .onDisappear {
-            removeKeyboardObservers()
+            .onChange(of: scenePhase) { oldPhase, newPhase in
+                // Auto-save when app goes to background
+                if newPhase == .background {
+                    print("📱 ContentView: App backgrounding - auto-saving session")
+                    billSplitSession.autoSaveSession()
+                }
+            }
+            .onDisappear {
+                removeKeyboardObservers()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+                // Auto-save on memory warning
+                print("⚠️ ContentView: Memory warning received - auto-saving session")
+                billSplitSession.autoSaveSession()
+            }
+
+            // Session recovery banner overlay
+            if sessionRecoveryManager.showRecoveryBanner {
+                VStack {
+                    SessionRecoveryBanner(
+                        onRestore: {
+                            restoreSession()
+                        },
+                        onDiscard: {
+                            sessionRecoveryManager.discardRecovery()
+                        }
+                    )
+
+                    Spacer()
+                }
+                .transition(.move(edge: .top))
+                .animation(.easeInOut(duration: 0.3), value: sessionRecoveryManager.showRecoveryBanner)
+            }
         }
     }
+
+    @Environment(\.scenePhase) private var scenePhase
     
     private func handleBackAction() {
         switch selectedTab {
@@ -123,6 +163,52 @@ struct ContentView: View {
         }
     }
     
+    // MARK: - Session Recovery
+
+    private func restoreSession() {
+        print("🔄 ContentView: Restoring session...")
+
+        guard let snapshot = sessionRecoveryManager.savedSessionSnapshot else {
+            print("❌ ContentView: No snapshot available for recovery")
+            sessionRecoveryManager.discardRecovery()
+            return
+        }
+
+        // Restore session data
+        billSplitSession.restoreFrom(snapshot: snapshot)
+
+        // Navigate to appropriate screen based on saved state
+        let targetScreenIndex = snapshot.currentScreenIndex
+
+        switch targetScreenIndex {
+        case 0:
+            // Home screen - should not happen, but handle gracefully
+            selectedTab = "home"
+        case 1:
+            // Scan screen - unlikely but possible
+            selectedTab = "scan"
+        case 2:
+            // Assign screen - most common recovery point
+            selectedTab = "assign"
+        case 3:
+            // Summary screen
+            selectedTab = "summary"
+        default:
+            // Default to assign screen for safety
+            selectedTab = "assign"
+        }
+
+        print("✅ ContentView: Session restored, navigated to: \(selectedTab)")
+
+        // Accept recovery and hide banner
+        sessionRecoveryManager.acceptRecovery()
+
+        // Reset recovery manager after successful restoration
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            sessionRecoveryManager.reset()
+        }
+    }
+
     // MARK: - Keyboard Handling
     private func setupKeyboardObservers() {
         NotificationCenter.default.addObserver(
@@ -134,7 +220,7 @@ struct ContentView: View {
                 isKeyboardVisible = true
             }
         }
-        
+
         NotificationCenter.default.addObserver(
             forName: UIResponder.keyboardWillHideNotification,
             object: nil,
@@ -145,7 +231,7 @@ struct ContentView: View {
             }
         }
     }
-    
+
     private func removeKeyboardObservers() {
         NotificationCenter.default.removeObserver(self, name: UIResponder.keyboardWillShowNotification, object: nil)
         NotificationCenter.default.removeObserver(self, name: UIResponder.keyboardWillHideNotification, object: nil)
@@ -1914,6 +2000,80 @@ struct BillRowView: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(Color(.systemGray4), lineWidth: 0.5)
         )
+    }
+}
+
+// MARK: - Session Recovery Banner Component
+
+/// Banner UI component for session recovery prompt
+struct SessionRecoveryBanner: View {
+    let onRestore: () -> Void
+    let onDiscard: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 16) {
+                // Icon
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.title2)
+                    .foregroundColor(.blue)
+
+                // Text content
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Session Restored")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+
+                    Text("Continue where you left off?")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                // Action buttons
+                HStack(spacing: 12) {
+                    Button("Discard") {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            onDiscard()
+                        }
+                    }
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+
+                    Button {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            onRestore()
+                        }
+                    } label: {
+                        Text("Restore")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 10)
+                            .background(
+                                LinearGradient(
+                                    colors: [.blue, .blue.opacity(0.8)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .cornerRadius(10)
+                    }
+                }
+            }
+            .padding()
+            .background(Color(.systemBackground))
+            .cornerRadius(16)
+            .shadow(color: .black.opacity(0.15), radius: 12, x: 0, y: 4)
+            .padding(.horizontal)
+            .padding(.top, 60) // Below status bar
+
+            Spacer()
+        }
+        .background(Color.black.opacity(0.3).edgesIgnoringSafeArea(.all))
+        .transition(.move(edge: .top))
     }
 }
 

@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		066A8FF92E8F875D00298F33 /* SessionRecoveryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066A8FF82E8F875D00298F33 /* SessionRecoveryManager.swift */; };
+		066A8FFA2E8F875D00298F33 /* SessionPersistenceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066A8FF72E8F875D00298F33 /* SessionPersistenceManager.swift */; };
 		1111111111111111111111111111111A /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD /* GoogleService-Info.plist */; };
 		1111111111111111111111111111111C /* DataModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1111111111111111111111111111111D /* DataModels.swift */; };
 		1111111111111111111111111111111E /* ScanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1111111111111111111111111111111F /* ScanView.swift */; };
@@ -26,6 +28,9 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		066A8FF62E8F84F900298F33 /* SplitSmart.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SplitSmart.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		066A8FF72E8F875D00298F33 /* SessionPersistenceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionPersistenceManager.swift; sourceTree = "<group>"; };
+		066A8FF82E8F875D00298F33 /* SessionRecoveryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRecoveryManager.swift; sourceTree = "<group>"; };
 		1111111111111111111111111111111D /* DataModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DataModels.swift; path = Models/DataModels.swift; sourceTree = "<group>"; };
 		1111111111111111111111111111111F /* ScanView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ScanView.swift; path = Views/ScanView.swift; sourceTree = "<group>"; };
 		12A247C155DBFC137AF9BF03 /* SplitSmartApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SplitSmartApp.swift; sourceTree = "<group>"; };
@@ -39,7 +44,6 @@
 		C2E4EE30ABFC4A7A9ED41DFF /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC /* AuthView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AuthView.swift; path = Views/AuthView.swift; sourceTree = "<group>"; };
 		DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD /* GoogleService-Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
-		F1A2B3C4D5E6F7A8B9C0D1E2 /* SplitSmart.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = SplitSmart.app; path = "/Users/shivagandluri/Documents/SplitSmartApp/build/Debug-iphoneos/SplitSmart.app"; sourceTree = "<absolute>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -61,12 +65,15 @@
 			isa = PBXGroup;
 			children = (
 				A1234567890ABCDEF22 /* SplitSmart */,
+				066A8FF62E8F84F900298F33 /* SplitSmart.app */,
 			);
 			sourceTree = "<group>";
 		};
 		A1234567890ABCDEF22 /* SplitSmart */ = {
 			isa = PBXGroup;
 			children = (
+				066A8FF72E8F875D00298F33 /* SessionPersistenceManager.swift */,
+				066A8FF82E8F875D00298F33 /* SessionRecoveryManager.swift */,
 				12A247C155DBFC137AF9BF03 /* SplitSmartApp.swift */,
 				29D82B63074FD10530830E3A /* ContentView.swift */,
 				9D9DE7B031454050B7E077CB /* UIComponents.swift */,
@@ -107,7 +114,7 @@
 				66666666666666666666666666666666 /* GoogleSignInSwift */,
 			);
 			productName = SplitSmart;
-			productReference = F1A2B3C4D5E6F7A8B9C0D1E2 /* SplitSmart.app */;
+			productReference = 066A8FF62E8F84F900298F33 /* SplitSmart.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -170,6 +177,8 @@
 				EEE166656769437CA8F9D9D7 /* UIComponents.swift in Sources */,
 				DFE93912CF972B4CBC2AD5A8 /* SplitSmartApp.swift in Sources */,
 				EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE /* AuthViewModel.swift in Sources */,
+				066A8FF92E8F875D00298F33 /* SessionRecoveryManager.swift in Sources */,
+				066A8FFA2E8F875D00298F33 /* SessionPersistenceManager.swift in Sources */,
 				FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF /* AuthView.swift in Sources */,
 				1111111111111111111111111111111C /* DataModels.swift in Sources */,
 				1111111111111111111111111111111E /* ScanView.swift in Sources */,

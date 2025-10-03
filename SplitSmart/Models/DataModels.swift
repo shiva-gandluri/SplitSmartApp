@@ -160,11 +160,11 @@ struct OCRResult {
     let processingTime: TimeInterval
 }
 
-enum ConfidenceLevel {
-    case high       // Exact match found in OCR text
-    case medium     // Part of close combination
-    case low        // Approximated or uncertain
-    case placeholder // User needs to fill in
+enum ConfidenceLevel: String {
+    case high = "high"           // Exact match found in OCR text
+    case medium = "medium"       // Part of close combination
+    case low = "low"             // Approximated or uncertain
+    case placeholder = "placeholder" // User needs to fill in
 }
 
 struct ReceiptItem: Identifiable, Equatable {
@@ -4587,13 +4587,13 @@ class BillSplitSession: ObservableObject {
     // Session state
     @Published var sessionState: SessionState = .home
     @Published var isSessionActive: Bool = false
-    
-    enum SessionState {
-        case home
-        case scanning
-        case assigning
-        case reviewing
-        case complete
+
+    enum SessionState: String {
+        case home = "home"
+        case scanning = "scanning"
+        case assigning = "assigning"
+        case reviewing = "reviewing"
+        case complete = "complete"
     }
     
     let colors: [Color] = [.blue, .green, .purple, .pink, .yellow, .red, .orange, .cyan, .teal, .mint]
@@ -5125,7 +5125,7 @@ class BillSplitSession: ObservableObject {
                 }
                 return nil
             }
-            
+
             return UIBreakdown(
                 id: participant.id,
                 name: participant.name,
@@ -5133,6 +5133,128 @@ class BillSplitSession: ObservableObject {
                 items: items
             )
         }
+    }
+
+    // MARK: - Session Interruption Recovery (US-EDGE-016)
+
+    /// Current screen index for navigation restoration
+    @Published var currentScreenIndex: Int = 0
+
+    /// Auto-save timer for debounced persistence
+    private var saveTimer: Timer?
+
+    /// Saves current session with 1-second debouncing
+    func autoSaveSession() {
+        // Cancel any pending save to debounce rapid changes
+        saveTimer?.invalidate()
+
+        // Schedule new save after 1 second of inactivity
+        saveTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { [weak self] _ in
+            guard let self = self else { return }
+
+            Task { @MainActor in
+                do {
+                    let snapshot = self.createSnapshot()
+                    try SessionPersistenceManager.shared.saveSession(snapshot)
+                    print("💾 BillSplitSession: Auto-saved successfully")
+                } catch {
+                    print("❌ BillSplitSession: Auto-save failed - \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    /// Creates a Codable snapshot of current session state (excludes receipt image)
+    func createSnapshot() -> BillSplitSessionSnapshot {
+        return BillSplitSessionSnapshot(
+            sessionId: UUID(), // Generate new ID for each save
+            createdAt: Date(),
+            lastSavedAt: Date(),
+            currentScreenIndex: currentScreenIndex,
+            sessionState: sessionState.rawValue,
+            billName: billName,
+            confirmedTotal: confirmedTotal,
+            confirmedTax: confirmedTax,
+            confirmedTip: confirmedTip,
+            expectedItemCount: expectedItemCount,
+            identifiedTotal: identifiedTotal ?? 0.0,
+            participants: participants.map { participant in
+                ParticipantSnapshot(
+                    id: participant.id,
+                    name: participant.name,
+                    colorHex: participant.color.toHex()
+                )
+            },
+            paidByParticipantID: paidByParticipantID,
+            assignedItems: assignedItems.map { item in
+                AssignedItemSnapshot(
+                    id: item.id,
+                    name: item.name,
+                    price: item.price,
+                    assignedToParticipants: Array(item.assignedToParticipants),
+                    confidence: item.confidence.rawValue,
+                    originalDetectedName: item.originalDetectedName,
+                    originalDetectedPrice: item.originalDetectedPrice
+                )
+            },
+            rawReceiptText: rawReceiptText,
+            ocrConfidence: ocrConfidence
+        )
+    }
+
+    /// Restores session state from a saved snapshot
+    func restoreFrom(snapshot: BillSplitSessionSnapshot) {
+        print("🔄 BillSplitSession: Restoring from snapshot...")
+
+        // Restore basic properties
+        billName = snapshot.billName
+        confirmedTotal = snapshot.confirmedTotal
+        confirmedTax = snapshot.confirmedTax
+        confirmedTip = snapshot.confirmedTip
+        expectedItemCount = snapshot.expectedItemCount
+        identifiedTotal = snapshot.identifiedTotal
+        currentScreenIndex = snapshot.currentScreenIndex
+        rawReceiptText = snapshot.rawReceiptText
+        ocrConfidence = snapshot.ocrConfidence
+
+        // Restore participants
+        participants = snapshot.participants.map { participantSnapshot in
+            UIParticipant(
+                id: participantSnapshot.id,
+                name: participantSnapshot.name,
+                color: Color(hex: participantSnapshot.colorHex)
+            )
+        }
+
+        // Restore payer selection
+        paidByParticipantID = snapshot.paidByParticipantID
+
+        // Restore assigned items
+        assignedItems = snapshot.assignedItems.map { itemSnapshot in
+            UIItem(
+                id: itemSnapshot.id,
+                name: itemSnapshot.name,
+                price: itemSnapshot.price,
+                assignedTo: nil, // Legacy field - not used in restoration
+                assignedToParticipants: Set(itemSnapshot.assignedToParticipants),
+                confidence: ConfidenceLevel(rawValue: itemSnapshot.confidence) ?? .medium,
+                originalDetectedName: itemSnapshot.originalDetectedName,
+                originalDetectedPrice: itemSnapshot.originalDetectedPrice
+            )
+        }
+
+        // Restore session state
+        if let restoredState = SessionState(rawValue: snapshot.sessionState) {
+            sessionState = restoredState
+        } else {
+            sessionState = .assigning // Safe default
+        }
+
+        print("✅ BillSplitSession: Restored session successfully")
+        print("   - Items: \(assignedItems.count)")
+        print("   - Participants: \(participants.count)")
+        print("   - Screen: \(currentScreenIndex)")
+        print("   - State: \(sessionState)")
     }
 }
 
@@ -5306,7 +5428,104 @@ class ContactsManager: ObservableObject {
             phoneNumber: validPhone,
             contactUserId: nil // Not implementing global user lookup for now
         )
-        
+
         return ContactValidationResult(isValid: true, error: nil, contact: newContact)
+    }
+}
+
+// MARK: - Session Persistence Snapshot Structures (US-EDGE-016)
+
+/// Codable snapshot of BillSplitSession for file persistence
+struct BillSplitSessionSnapshot: Codable {
+    // Session identification
+    let sessionId: UUID
+    let createdAt: Date
+    let lastSavedAt: Date
+
+    // Navigation state
+    let currentScreenIndex: Int
+    let sessionState: String // SessionState.rawValue for Codable compatibility
+
+    // Bill data
+    let billName: String
+    let confirmedTotal: Double
+    let confirmedTax: Double
+    let confirmedTip: Double
+    let expectedItemCount: Int
+    let identifiedTotal: Double
+
+    // Participants
+    let participants: [ParticipantSnapshot]
+    let paidByParticipantID: String?
+
+    // Items
+    let assignedItems: [AssignedItemSnapshot]
+
+    // Receipt data (NO image - only text metadata)
+    let rawReceiptText: String
+    let ocrConfidence: Float
+}
+
+/// Codable snapshot of UIParticipant for persistence
+struct ParticipantSnapshot: Codable {
+    let id: String
+    let name: String
+    let colorHex: String // Color stored as hex string for Codable
+}
+
+/// Codable snapshot of UIItem for persistence
+struct AssignedItemSnapshot: Codable {
+    let id: Int
+    let name: String
+    let price: Double
+    let assignedToParticipants: [String] // Array of participant IDs
+    let confidence: String // ConfidenceLevel.rawValue for Codable
+    let originalDetectedName: String?
+    let originalDetectedPrice: Double?
+}
+
+// MARK: - Color Extension for Hex Conversion (US-EDGE-016)
+
+extension Color {
+    /// Converts SwiftUI Color to hex string for Codable persistence
+    func toHex() -> String {
+        #if canImport(UIKit)
+        let uiColor = UIColor(self)
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+
+        uiColor.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+
+        let r = Int(red * 255)
+        let g = Int(green * 255)
+        let b = Int(blue * 255)
+
+        return String(format: "#%02X%02X%02X", r, g, b)
+        #else
+        return "#0000FF" // Fallback for non-UIKit platforms
+        #endif
+    }
+
+    /// Initializes SwiftUI Color from hex string
+    init(hex: String) {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+
+        let r, g, b: Double
+        switch hex.count {
+        case 6: // RGB (24-bit)
+            (r, g, b) = (
+                Double((int >> 16) & 0xFF) / 255.0,
+                Double((int >> 8) & 0xFF) / 255.0,
+                Double(int & 0xFF) / 255.0
+            )
+        default:
+            (r, g, b) = (0, 0, 1) // Default to blue for invalid hex
+        }
+
+        self.init(red: r, green: g, blue: b)
     }
 }

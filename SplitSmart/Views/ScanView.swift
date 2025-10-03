@@ -701,7 +701,7 @@ struct UIScanScreen: View {
             confirmedTotal: confirmedData.total,
             expectedItemCount: confirmedData.itemCount
         )
-        
+
         await MainActor.run {
             session.updateOCRResults(
                 processedItems,
@@ -715,6 +715,11 @@ struct UIScanScreen: View {
                 confirmedTotal: confirmedData.total,
                 expectedItemCount: confirmedData.itemCount
             )
+
+            // Auto-save session after OCR completion
+            print("💾 ScanView: Auto-saving session after OCR completion")
+            session.autoSaveSession()
+
             onContinue()
         }
     }

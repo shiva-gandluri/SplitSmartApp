@@ -377,9 +377,18 @@ struct UISummaryScreen: View {
             
             createdBill = bill
             print("✅ Bill creation successful! ID: \(bill.id)")
-            
+
+            // Clear saved session after successful bill creation
+            do {
+                try SessionPersistenceManager.shared.clearSession()
+                print("🗑️ SummaryScreen: Cleared saved session after bill creation")
+            } catch {
+                print("⚠️ SummaryScreen: Failed to clear session - \(error.localizedDescription)")
+                // Non-fatal error, continue anyway
+            }
+
             // TODO: Phase 3 - Send push notifications here
-            
+
             // Call the completion handler
             onDone()
             
