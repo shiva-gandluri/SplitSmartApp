@@ -26,19 +26,45 @@ final class SessionRecoveryManager: ObservableObject {
             savedSessionSnapshot = SessionPersistenceManager.shared.loadSession()
 
             if let snapshot = savedSessionSnapshot {
-                hasSavedSession = true
-                showRecoveryBanner = true
-                print("✅ SessionRecoveryManager: Found saved session from \(snapshot.lastSavedAt)")
-                print("   - Items: \(snapshot.assignedItems.count)")
-                print("   - Participants: \(snapshot.participants.count)")
-                print("   - Screen: \(snapshot.currentScreenIndex)")
+                // Validate session is actually incomplete and has meaningful data
+                // sessionState is stored as String (SessionState.rawValue)
+                let isIncomplete = snapshot.sessionState != "complete" && snapshot.sessionState != "home"
+                let hasMeaningfulData = !snapshot.assignedItems.isEmpty || !snapshot.participants.isEmpty
+
+                if isIncomplete && hasMeaningfulData {
+                    hasSavedSession = true
+                    showRecoveryBanner = true
+                    print("✅ SessionRecoveryManager: Found valid incomplete session from \(snapshot.lastSavedAt)")
+                    print("   - Items: \(snapshot.assignedItems.count)")
+                    print("   - Participants: \(snapshot.participants.count)")
+                    print("   - Screen: \(snapshot.currentScreenIndex)")
+                    print("   - State: \(snapshot.sessionState)")
+                } else {
+                    print("⏭️ SessionRecoveryManager: Session found but not valid for recovery")
+                    print("   - State: \(snapshot.sessionState) (must be scanning/assigning/reviewing)")
+                    print("   - Items: \(snapshot.assignedItems.count)")
+                    print("   - Participants: \(snapshot.participants.count)")
+
+                    // Clear invalid session automatically
+                    do {
+                        try SessionPersistenceManager.shared.clearSession()
+                        print("🗑️ SessionRecoveryManager: Auto-cleared invalid session")
+                    } catch {
+                        print("⚠️ SessionRecoveryManager: Failed to clear invalid session - \(error.localizedDescription)")
+                    }
+
+                    hasSavedSession = false
+                    showRecoveryBanner = false
+                }
             } else {
                 print("ℹ️ SessionRecoveryManager: Session file exists but failed to load")
                 hasSavedSession = false
+                showRecoveryBanner = false
             }
         } else {
             print("ℹ️ SessionRecoveryManager: No saved session found")
             hasSavedSession = false
+            showRecoveryBanner = false
         }
 
         isCheckingForSession = false

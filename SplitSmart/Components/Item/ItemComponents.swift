@@ -98,7 +98,10 @@ struct ParticipantChip: View {
 struct UIItemAssignCard: View {
     @Binding var item: UIItem
     let participants: [UIParticipant]
-    
+
+    @State private var showInvalidPriceAlert = false
+    @State private var tempPrice: String = ""
+
     var assignedParticipant: UIParticipant? {
         participants.first { $0.id == item.assignedTo }
     }
@@ -170,19 +173,32 @@ struct UIItemAssignCard: View {
                 
                 Spacer()
                 
-                // Editable Price
+                // Editable Price with validation
                 HStack(spacing: 4) {
                     Text("$")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    
-                    TextField("Price", value: $item.price, format: .number)
-                        .keyboardType(.numbersAndPunctuation)
+
+                    TextField("Price", text: $tempPrice)
+                        .keyboardType(.decimalPad)
                         .fixedSize()
                         .focused($isPriceFieldFocused)
+                        .onAppear {
+                            tempPrice = String(format: "%.2f", item.price)
+                        }
+                        .onChange(of: tempPrice) { newValue in
+                            validateAndUpdatePrice(newValue)
+                        }
                         .onSubmit {
                             isPriceFieldFocused = false
                         }
+                }
+                .alert("Invalid Price", isPresented: $showInvalidPriceAlert) {
+                    Button("OK", role: .cancel) {
+                        tempPrice = String(format: "%.2f", item.price)
+                    }
+                } message: {
+                    Text("Price must be greater than $0.00. Discounts and zero-amount items are not allowed.")
                 }
                 
                 if let assigned = assignedParticipant {
@@ -230,6 +246,27 @@ struct UIItemAssignCard: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(assignedParticipant != nil ? Color.gray.opacity(0.3) : Color.gray.opacity(0.2), lineWidth: 1)
         )
+    }
+
+    // MARK: - Price Validation (EDGE-001)
+
+    /// Validates price input and updates item.price only if valid (>$0.00)
+    private func validateAndUpdatePrice(_ newValue: String) {
+        // Allow empty or partial input during typing
+        guard !newValue.isEmpty else { return }
+
+        // Try to parse as Double
+        if let price = Double(newValue) {
+            if price > 0.00 {
+                // Valid price - update item
+                item.price = price
+            } else {
+                // Invalid price (zero or negative) - show alert and revert
+                showInvalidPriceAlert = true
+                print("❌ Invalid price attempt: $\(price) - must be > $0.00")
+            }
+        }
+        // If parse fails, ignore - user is still typing
     }
 }
 
@@ -353,7 +390,10 @@ struct RegexItemCard: View {
 struct EditableRegexItemCard: View {
     @Binding var item: UIItem
     let participants: [UIParticipant]
-    
+
+    @State private var showInvalidPriceAlert = false
+    @State private var tempPrice: String = ""
+
     // Confidence display properties
     var confidenceColor: Color {
         switch item.confidence {
@@ -363,16 +403,16 @@ struct EditableRegexItemCard: View {
         case .placeholder: return .gray
         }
     }
-    
+
     var confidenceText: String {
         switch item.confidence {
-        case .high: 
+        case .high:
             if let originalPrice = item.originalDetectedPrice {
                 return "Detected: $\(String(format: "%.2f", originalPrice))"
             } else {
                 return "Detected: $\(String(format: "%.2f", item.price))"
             }
-        case .medium: 
+        case .medium:
             if let originalPrice = item.originalDetectedPrice {
                 return "Detected: $\(String(format: "%.2f", originalPrice))"
             } else {
@@ -382,7 +422,7 @@ struct EditableRegexItemCard: View {
         case .placeholder: return "Please verify"
         }
     }
-    
+
     var confidenceIcon: String {
         switch item.confidence {
         case .high: return "checkmark.circle.fill"
@@ -391,10 +431,10 @@ struct EditableRegexItemCard: View {
         case .placeholder: return "questionmark.circle.fill"
         }
     }
-    
+
     @FocusState private var isNameFieldFocused: Bool
     @FocusState private var isPriceFieldFocused: Bool
-    
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .center, spacing: 12) {
@@ -406,36 +446,49 @@ struct EditableRegexItemCard: View {
                         .onSubmit {
                             isNameFieldFocused = false
                         }
-                    
+
                     // Confidence indicator
                     HStack(spacing: 4) {
                         Image(systemName: confidenceIcon)
                             .font(.caption2)
                             .foregroundColor(confidenceColor)
-                        
+
                         Text(confidenceText)
                             .font(.caption2)
                             .foregroundColor(confidenceColor)
                     }
                 }
-                
+
                 Spacer()
-                
-                // Editable Price
+
+                // Editable Price with validation
                 HStack(spacing: 4) {
                     Text("$")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    
-                    TextField("Price", value: $item.price, format: .number)
+
+                    TextField("Price", text: $tempPrice)
                         .keyboardType(.decimalPad)
                         .fixedSize()
                         .focused($isPriceFieldFocused)
+                        .onAppear {
+                            tempPrice = String(format: "%.2f", item.price)
+                        }
+                        .onChange(of: tempPrice) { newValue in
+                            validateAndUpdatePrice(newValue)
+                        }
                         .onSubmit {
                             isPriceFieldFocused = false
                         }
                 }
-                
+                .alert("Invalid Price", isPresented: $showInvalidPriceAlert) {
+                    Button("OK", role: .cancel) {
+                        tempPrice = String(format: "%.2f", item.price)
+                    }
+                } message: {
+                    Text("Price must be greater than $0.00. Discounts and zero-amount items are not allowed.")
+                }
+
                 // Regex badge
                 Text("REGEX")
                     .font(.caption2)
@@ -454,6 +507,27 @@ struct EditableRegexItemCard: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(Color.gray.opacity(0.2), lineWidth: 1)
         )
+    }
+
+    // MARK: - Price Validation (EDGE-001)
+
+    /// Validates price input and updates item.price only if valid (>$0.00)
+    private func validateAndUpdatePrice(_ newValue: String) {
+        // Allow empty or partial input during typing
+        guard !newValue.isEmpty else { return }
+
+        // Try to parse as Double
+        if let price = Double(newValue) {
+            if price > 0.00 {
+                // Valid price - update item
+                item.price = price
+            } else {
+                // Invalid price (zero or negative) - show alert and revert
+                showInvalidPriceAlert = true
+                print("❌ Invalid price attempt: $\(price) - must be > $0.00")
+            }
+        }
+        // If parse fails, ignore - user is still typing
     }
 }
 
@@ -578,13 +652,13 @@ struct LLMItemCard: View {
 struct ParticipantAssignmentRow: View {
     let item: UIItem
     let participants: [UIParticipant]
-    let onParticipantToggle: (Int) -> Void
-    let onParticipantRemove: (Int) -> Void
+    let onParticipantToggle: (String) -> Void
+    let onParticipantRemove: (String) -> Void
     let everyoneSelected: Bool
     let onEveryoneToggle: () -> Void
-    
+
     @State private var showingFeedback = false
-    @State private var feedbackParticipant: Int? = nil
+    @State private var feedbackParticipant: String? = nil
     
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -592,7 +666,7 @@ struct ParticipantAssignmentRow: View {
                 // Everyone button styled like other participant buttons
                 Button(action: {
                     onEveryoneToggle()
-                    triggerFeedback(for: -1) // Use -1 for everyone button
+                    triggerFeedback(for: "everyone") // Use "everyone" for everyone button
                 }) {
                     HStack(spacing: 6) {
                         Text("Everyone")
@@ -663,14 +737,14 @@ struct ParticipantAssignmentRow: View {
         }
     }
     
-    private func triggerFeedback(for participantId: Int) {
+    private func triggerFeedback(for participantId: String) {
         feedbackParticipant = participantId
         showingFeedback = true
-        
+
         // Light haptic feedback
         let impactFeedback = UIImpactFeedbackGenerator(style: .light)
         impactFeedback.impactOccurred()
-        
+
         // Reset feedback state after brief delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             showingFeedback = false
@@ -783,21 +857,21 @@ struct ItemRowWithParticipants: View {
         }
     }
     
-    private func toggleParticipant(_ participantId: Int) {
+    private func toggleParticipant(_ participantId: String) {
         if item.assignedToParticipants.contains(participantId) {
             removeParticipant(participantId)
         } else {
             addParticipant(participantId)
         }
     }
-    
-    private func addParticipant(_ participantId: Int) {
+
+    private func addParticipant(_ participantId: String) {
         item.assignedToParticipants.insert(participantId)
         onItemUpdate(item)
         triggerSuccessAnimation()
     }
-    
-    private func removeParticipant(_ participantId: Int) {
+
+    private func removeParticipant(_ participantId: String) {
         item.assignedToParticipants.remove(participantId)
         onItemUpdate(item)
         triggerSuccessAnimation()

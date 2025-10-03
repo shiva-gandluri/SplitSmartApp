@@ -9,6 +9,7 @@ struct ContentView: View {
     @State private var isKeyboardVisible = false
     @EnvironmentObject var authViewModel: AuthViewModel
     @EnvironmentObject var sessionRecoveryManager: SessionRecoveryManager
+    @EnvironmentObject var deepLinkCoordinator: DeepLinkCoordinator
     @StateObject private var billSplitSession = BillSplitSession()
     @StateObject private var contactsManager = ContactsManager()
     @StateObject private var billManager = BillManager()
@@ -38,7 +39,7 @@ struct ContentView: View {
                         Spacer()
                     }
                 }
-            
+
             switch selectedTab {
             case "home":
                 UIHomeScreen(session: billSplitSession, billManager: billManager, authViewModel: authViewModel) {
@@ -64,6 +65,15 @@ struct ContentView: View {
                     session: billSplitSession,
                     onDone: {
                         billSplitSession.completeSession()
+
+                        // Ensure saved session is cleared (defensive - SummaryScreen should already clear it)
+                        do {
+                            try SessionPersistenceManager.shared.clearSession()
+                            print("✅ ContentView: Cleared session after bill creation")
+                        } catch {
+                            print("⚠️ ContentView: Failed to clear session - \(error.localizedDescription)")
+                        }
+
                         billSplitSession.currentScreenIndex = 0 // Returning to home
                         selectedTab = "home"
                     },
@@ -141,6 +151,62 @@ struct ContentView: View {
                 }
                 .transition(.move(edge: .top))
                 .animation(.easeInOut(duration: 0.3), value: sessionRecoveryManager.showRecoveryBanner)
+            }
+        }
+        .onChange(of: deepLinkCoordinator.activeDestination) { oldDestination, newDestination in
+            // Handle deep link navigation
+            if case .billDetail = newDestination {
+                // Navigation handled by sheet below
+                print("🔗 Deep link activated - showing bill detail")
+            } else if case .home = newDestination {
+                print("🔗 Deep link activated - navigating to home")
+                selectedTab = "home"
+                deepLinkCoordinator.clearDestination()
+            }
+        }
+        .sheet(item: $deepLinkCoordinator.activeDestination) { destination in
+            // Present bill detail as modal when deep link activated
+            if case .billDetail(let bill) = destination {
+                // TODO: Replace with BillDetailScreen once Views/Screens is added to Xcode project
+                // BillDetailScreen(bill: bill, billManager: billManager, authViewModel: authViewModel)
+                NavigationView {
+                    VStack(spacing: 20) {
+                        Text("Bill Detail")
+                            .font(.title)
+                            .bold()
+
+                        Text(bill.billName ?? "Unnamed Bill")
+                            .font(.headline)
+
+                        Text("Total: $\(bill.totalAmount, specifier: "%.2f")")
+                            .font(.title2)
+
+                        Spacer()
+
+                        Button("Close") {
+                            deepLinkCoordinator.clearDestination()
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    .padding()
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button("Done") {
+                                deepLinkCoordinator.clearDestination()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .alert("Deep Link Error", isPresented: .constant(deepLinkCoordinator.errorMessage != nil)) {
+            Button("OK") {
+                deepLinkCoordinator.clearDestination()
+            }
+        } message: {
+            if let errorMessage = deepLinkCoordinator.errorMessage {
+                Text(errorMessage)
             }
         }
     }
@@ -2009,74 +2075,243 @@ struct BillRowView: View {
 struct SessionRecoveryBanner: View {
     let onRestore: () -> Void
     let onDiscard: () -> Void
+    @State private var scale: CGFloat = 0.9
+    @State private var opacity: Double = 0
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 16) {
-                // Icon
-                Image(systemName: "clock.arrow.circlepath")
-                    .font(.title2)
-                    .foregroundColor(.blue)
-
-                // Text content
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Session Restored")
-                        .font(.headline)
-                        .foregroundColor(.primary)
-
-                    Text("Continue where you left off?")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-
-                Spacer()
-
-                // Action buttons
+            // Card-based banner with modern iOS design
+            VStack(spacing: 16) {
+                // Icon and Header
                 HStack(spacing: 12) {
-                    Button("Discard") {
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            onDiscard()
-                        }
-                    }
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    // Circular icon background with gradient
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.blue.opacity(0.2), Color.blue.opacity(0.1)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 44, height: 44)
 
-                    Button {
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            onRestore()
-                        }
-                    } label: {
-                        Text("Restore")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 10)
-                            .background(
+                        Image(systemName: "arrow.counterclockwise.circle.fill")
+                            .font(.system(size: 24, weight: .medium))
+                            .foregroundStyle(
                                 LinearGradient(
                                     colors: [.blue, .blue.opacity(0.8)],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )
                             )
-                            .cornerRadius(10)
+                    }
+
+                    // Title and description
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Unfinished Bill")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(.primary)
+
+                        Text("Resume your previous session")
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+                }
+
+                // Action buttons with modern design
+                HStack(spacing: 12) {
+                    // Discard button - secondary style
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            onDiscard()
+                        }
+                    } label: {
+                        Text("Start Fresh")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color(.systemGray6))
+                            .cornerRadius(12)
+                    }
+
+                    // Restore button - primary style
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            onRestore()
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.right.circle.fill")
+                                .font(.system(size: 16))
+                            Text("Continue")
+                                .font(.system(size: 15, weight: .semibold))
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(
+                            LinearGradient(
+                                colors: [Color.blue, Color.blue.opacity(0.85)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .cornerRadius(12)
+                        .shadow(color: Color.blue.opacity(0.3), radius: 8, x: 0, y: 4)
                     }
                 }
             }
-            .padding()
-            .background(Color(.systemBackground))
-            .cornerRadius(16)
-            .shadow(color: .black.opacity(0.15), radius: 12, x: 0, y: 4)
-            .padding(.horizontal)
+            .padding(20)
+            .background(
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(Color(.systemBackground))
+                    .shadow(color: Color.black.opacity(0.08), radius: 16, x: 0, y: 8)
+                    .shadow(color: Color.black.opacity(0.04), radius: 4, x: 0, y: 2)
+            )
+            .padding(.horizontal, 16)
             .padding(.top, 60) // Below status bar
+            .scaleEffect(scale)
+            .opacity(opacity)
+            .onAppear {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                    scale = 1.0
+                    opacity = 1.0
+                }
+            }
 
             Spacer()
         }
-        .background(Color.black.opacity(0.3).edgesIgnoringSafeArea(.all))
-        .transition(.move(edge: .top))
+        .background(
+            Color.black.opacity(0.25)
+                .edgesIgnoringSafeArea(.all)
+                .onTapGesture {
+                    // Dismiss on backdrop tap
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                        onDiscard()
+                    }
+                }
+        )
+        .transition(.asymmetric(
+            insertion: .move(edge: .top).combined(with: .opacity),
+            removal: .move(edge: .top).combined(with: .opacity)
+        ))
     }
 }
 
 #Preview {
     ContentView()
+}
+// MARK: - Deep Link Coordinator (Temporary location - move to Services/DeepLinkCoordinator.swift later)
+
+/**
+ # DeepLinkCoordinator
+
+ Centralized deep link handler for navigation from push notifications and external URLs.
+ */
+class DeepLinkCoordinator: ObservableObject {
+    @Published var activeDestination: DeepLinkDestination?
+    @Published var pendingDeepLink: URL?
+    @Published var isLoading: Bool = false
+    @Published var errorMessage: String?
+    
+    private let db = Firestore.firestore()
+    
+    func handle(_ url: URL) {
+        print("📲 Deep link received: \(url.absoluteString)")
+        
+        guard url.scheme == "splitsmart" else {
+            print("❌ Invalid URL scheme: \(url.scheme ?? "none")")
+            errorMessage = "Invalid link format"
+            return
+        }
+        
+        let host = url.host ?? ""
+        let pathComponents = url.pathComponents.filter { $0 != "/" }
+        
+        print("🔍 Parsing URL - host: \(host), path: \(pathComponents)")
+        
+        switch host {
+        case "bill":
+            guard let billId = pathComponents.first else {
+                print("❌ Missing bill ID in URL")
+                errorMessage = "Invalid bill link - missing ID"
+                return
+            }
+            handleBillDeepLink(billId: billId)
+            
+        case "home":
+            print("🏠 Navigating to home")
+            activeDestination = .home
+            
+        default:
+            print("❌ Unknown deep link destination: \(host)")
+            errorMessage = "Unknown link destination"
+        }
+    }
+    
+    func clearDestination() {
+        activeDestination = nil
+        errorMessage = nil
+        isLoading = false
+    }
+    
+    func clearPendingDeepLink() {
+        pendingDeepLink = nil
+    }
+    
+    private func handleBillDeepLink(billId: String) {
+        print("📋 Fetching bill: \(billId)")
+        isLoading = true
+        
+        Task { @MainActor in
+            do {
+                let billDoc = try await db.collection("bills").document(billId).getDocument()
+                
+                guard billDoc.exists else {
+                    print("❌ Bill not found: \(billId)")
+                    isLoading = false
+                    errorMessage = "Bill not found or has been deleted"
+                    return
+                }
+                
+                guard let bill = try? billDoc.data(as: Bill.self) else {
+                    print("❌ Failed to decode bill: \(billId)")
+                    isLoading = false
+                    errorMessage = "Failed to load bill data"
+                    return
+                }
+                
+                print("✅ Bill loaded: \(bill.billName)")
+                isLoading = false
+                activeDestination = .billDetail(bill)
+                
+            } catch {
+                print("❌ Error fetching bill: \(error.localizedDescription)")
+                isLoading = false
+                errorMessage = "Network error. Please try again."
+            }
+        }
+    }
+}
+
+enum DeepLinkDestination: Equatable, Identifiable {
+    case billDetail(Bill)
+    case home
+    
+    var id: String {
+        switch self {
+        case .billDetail(let bill):
+            return "bill_\(bill.id)"
+        case .home:
+            return "home"
+        }
+    }
+    
+    static func == (lhs: DeepLinkDestination, rhs: DeepLinkDestination) -> Bool {
+        lhs.id == rhs.id
+    }
 }

@@ -497,6 +497,7 @@ struct SplitSmartApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @StateObject private var authViewModel = AuthViewModel()
     @StateObject private var sessionRecoveryManager = SessionRecoveryManager()
+    @StateObject private var deepLinkCoordinator = DeepLinkCoordinator()
 
     var body: some Scene {
         WindowGroup {
@@ -508,13 +509,32 @@ struct SplitSmartApp: App {
                     ContentView()
                         .environmentObject(authViewModel)
                         .environmentObject(sessionRecoveryManager)
+                        .environmentObject(deepLinkCoordinator)
                         .onAppear {
                             // Check for saved session when app starts
                             sessionRecoveryManager.checkForSavedSession()
+
+                            // Process pending deep link after successful login
+                            if let pendingDeepLink = deepLinkCoordinator.pendingDeepLink {
+                                print("🔗 Processing pending deep link after login: \(pendingDeepLink.absoluteString)")
+                                deepLinkCoordinator.handle(pendingDeepLink)
+                                deepLinkCoordinator.clearPendingDeepLink()
+                            }
+                        }
+                        .onOpenURL { url in
+                            // Handle deep links from notifications and external sources
+                            print("🔗 Received deep link: \(url.absoluteString)")
+                            deepLinkCoordinator.handle(url)
                         }
                 } else {
                     AuthView()
                         .environmentObject(authViewModel)
+                        .environmentObject(deepLinkCoordinator)
+                        .onOpenURL { url in
+                            // Store deep link for processing after login
+                            print("🔗 User not authenticated - storing deep link: \(url.absoluteString)")
+                            deepLinkCoordinator.pendingDeepLink = url
+                        }
                 }
             }
         }

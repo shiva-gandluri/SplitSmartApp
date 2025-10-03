@@ -22,11 +22,13 @@ struct UISummaryScreen: View {
     let onDone: () -> Void
     @ObservedObject var contactsManager: ContactsManager
     @ObservedObject var authViewModel: AuthViewModel
-    
+
     @StateObject private var billService = BillService()
+    @ObservedObject private var networkMonitor = NetworkMonitor.shared
     @State private var isCreatingBill = false
     @State private var billCreationError: String?
     @State private var showingError = false
+    @State private var showOfflineAlert = false
     @State private var createdBill: Bill?
     
     var defaultBillName: String {
@@ -351,17 +353,29 @@ struct UISummaryScreen: View {
         } message: {
             Text(billCreationError ?? "Unknown error occurred")
         }
+        .alert("No Internet Connection", isPresented: $showOfflineAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("SplitSmart requires an internet connection to create bills. Please connect to WiFi or cellular data and try again.")
+        }
     }
     
     // MARK: - Bill Creation Logic
     @MainActor
     private func createBill() async {
+        // EDGE-016: Block bill creation when offline
+        guard networkMonitor.isConnected else {
+            print("❌ EDGE-016: Bill creation blocked - no network connection")
+            showOfflineAlert = true
+            return
+        }
+
         guard session.isReadyForBillCreation else {
             billCreationError = session.billCreationErrorMessage ?? "Session is not ready for bill creation"
             showingError = true
             return
         }
-        
+
         isCreatingBill = true
         billCreationError = nil
         

@@ -68,19 +68,8 @@ struct UIPersonDebt: Identifiable {
 }
 
 // MARK: - Assign Screen Models
-struct UIParticipant: Identifiable, Hashable {
-    let id: Int
-    let name: String
-    let color: Color
-    
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
-    }
-    
-    static func == (lhs: UIParticipant, rhs: UIParticipant) -> Bool {
-        return lhs.id == rhs.id
-    }
-}
+// NOTE: UIParticipant definition moved to Models/DataModels.swift (String-based ID for Firebase consistency)
+// This file retains only legacy UI models not yet migrated
 
 // MARK: - Transaction Contact Models (Splitwise-style)
 struct TransactionContact: Identifiable, Codable {
@@ -115,77 +104,6 @@ struct ContactValidationResult {
     let contact: TransactionContact?
 }
 
-struct UIItem: Identifiable {
-    let id: Int
-    var name: String
-    var price: Double
-    var assignedTo: Int? // Legacy: single participant assignment (for backward compatibility)
-    var assignedToParticipants: Set<Int> // New: multiple participants per item
-    var confidence: ConfidenceLevel
-    
-    // Store original detected values for confidence display
-    let originalDetectedName: String?
-    let originalDetectedPrice: Double?
-    
-    // Computed property to get the cost per assigned participant (simple division, for display)
-    var costPerParticipant: Double {
-        let participantCount = assignedToParticipants.isEmpty ? 1 : assignedToParticipants.count
-        return price.currencyDivide(by: participantCount)
-    }
-    
-    // Get the exact cost for a specific participant using smart distribution
-    func getCostForParticipant(participantId: Int) -> Double {
-        guard assignedToParticipants.contains(participantId) else { return 0.0 }
-        
-        let participantIds = Array(assignedToParticipants).sorted()
-        let distribution = Double.smartDistribute(total: price, among: participantIds.count)
-        
-        if let index = participantIds.firstIndex(of: participantId) {
-            return distribution[index]
-        }
-        
-        return 0.0
-    }
-    
-    // Initialize with multiple participants support
-    init(id: Int, name: String, price: Double, assignedTo: Int? = nil, assignedToParticipants: Set<Int> = [], confidence: ConfidenceLevel = .high, originalDetectedName: String? = nil, originalDetectedPrice: Double? = nil) {
-        self.id = id
-        self.name = name
-        self.price = price
-        self.assignedTo = assignedTo
-        self.assignedToParticipants = assignedToParticipants
-        self.confidence = confidence
-        self.originalDetectedName = originalDetectedName
-        self.originalDetectedPrice = originalDetectedPrice
-    }
-}
-
-// MARK: - Summary Screen Models
-struct UISummary {
-    let restaurant: String
-    let date: String
-    let total: Double
-    let paidBy: String
-    let participants: [UISummaryParticipant]
-    let breakdown: [UIBreakdown]
-}
-
-struct UISummaryParticipant: Identifiable {
-    let id: Int
-    let name: String
-    let color: Color
-    let owes: Double
-    let gets: Double
-}
-
-struct UIBreakdown: Identifiable {
-    let id: Int
-    let name: String
-    let color: Color
-    let items: [UIBreakdownItem]
-}
-
-struct UIBreakdownItem {
-    let name: String
-    let price: Double
-}
+// NOTE: UIItem, UISummary, UISummaryParticipant, UIBreakdown definitions moved to Models/DataModels.swift
+// (Updated to use String-based Firebase UIDs for consistency)
+// This file retains only OCR-specific models not yet migrated

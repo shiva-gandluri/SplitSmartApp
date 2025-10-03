@@ -203,7 +203,7 @@ struct UIAssignScreen: View {
                                     name: receiptItem.name,
                                     price: receiptItem.price,
                                     assignedTo: nil,
-                                    assignedToParticipants: Set<Int>(),
+                                    assignedToParticipants: Set<String>(),
                                     confidence: receiptItem.confidence,
                                     originalDetectedName: receiptItem.originalDetectedName,
                                     originalDetectedPrice: receiptItem.originalDetectedPrice
@@ -269,30 +269,38 @@ struct UIAssignScreen: View {
                         let regexTotalsMatch = abs(regexTotal - session.confirmedTotal) <= 0.01
                         
                         Button(action: {
-                            // Set regex items as the active assignment with all participants assigned
-                            session.assignedItems = session.regexDetectedItems.enumerated().map { index, receiptItem in
-                                UIItem(
-                                    id: index + 1,
-                                    name: receiptItem.name,
-                                    price: receiptItem.price,
-                                    assignedTo: nil,
-                                    assignedToParticipants: Set(session.participants.map { $0.id }), // Assign to all participants
-                                    confidence: receiptItem.confidence,
-                                    originalDetectedName: receiptItem.originalDetectedName,
-                                    originalDetectedPrice: receiptItem.originalDetectedPrice
-                                )
+                            // Regex items are already loaded in assignedItems (see lines 199-212)
+                            // Just ensure they're set if somehow empty, but preserve any existing assignments
+                            if session.assignedItems.isEmpty {
+                                session.assignedItems = session.regexDetectedItems.enumerated().map { index, receiptItem in
+                                    UIItem(
+                                        id: index + 1,
+                                        name: receiptItem.name,
+                                        price: receiptItem.price,
+                                        assignedTo: nil,
+                                        assignedToParticipants: Set<String>(), // Start with no assignments - let user assign manually
+                                        confidence: receiptItem.confidence,
+                                        originalDetectedName: receiptItem.originalDetectedName,
+                                        originalDetectedPrice: receiptItem.originalDetectedPrice
+                                    )
+                                }
                             }
-                            splitSharedItems()
-                            onContinue()
+
+                            // Auto-save session
+                            print("💾 AssignScreen: Auto-saving after accepting regex results")
+                            session.autoSaveSession()
+
+                            // Don't navigate yet - let user assign items manually below
+                            // They'll use "Continue to Summary" button when ready
                         }) {
                             HStack {
-                                Text("Continue with Regex Results")
-                                Image(systemName: "arrow.right")
+                                Text("Use These Items")
+                                Image(systemName: "checkmark.circle")
                             }
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(regexTotalsMatch ? Color.blue : Color.gray)
+                            .background(regexTotalsMatch ? Color.green : Color.gray)
                             .cornerRadius(12)
                         }
                         .disabled(!regexTotalsMatch)

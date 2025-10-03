@@ -18,6 +18,7 @@ import SwiftUI
 
 struct UIProfileScreen: View {
     @EnvironmentObject var authViewModel: AuthViewModel
+    @EnvironmentObject var billManager: BillManager
     
     var body: some View {
         ScrollView {
@@ -182,8 +183,66 @@ struct UIProfileScreen: View {
                         .foregroundColor(.secondary)
                 }
                 .padding(.top)
+
+                // Delete Account Button
+                Button(action: {
+                    showDeleteAccountConfirmation = true
+                }) {
+                    HStack {
+                        Image(systemName: "trash")
+                            .font(.system(size: 16))
+                        Text("Delete Account")
+                            .font(.system(size: 16, weight: .medium))
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.red)
+                    .cornerRadius(12)
+                }
+                .padding(.horizontal)
+                .padding(.top, 8)
             }
             .padding(.top)
+        }
+        .confirmationDialog(
+            "Delete Account",
+            isPresented: $showDeleteAccountConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Account", role: .destructive) {
+                handleDeleteAccount()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Are you sure you want to delete your account? This action cannot be undone and all your data will be permanently deleted.")
+        }
+        .alert("Cannot Delete Account", isPresented: $showDeletionError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(deletionErrorMessage)
+        }
+    }
+
+    // MARK: - Delete Account Logic
+
+    @State private var showDeleteAccountConfirmation = false
+    @State private var showDeletionError = false
+    @State private var deletionErrorMessage = ""
+
+    private func handleDeleteAccount() {
+        Task {
+            do {
+                try await authViewModel.deleteAccount(billManager: billManager)
+                // Account deleted successfully - user will be automatically logged out
+                print("✅ Account deleted successfully")
+            } catch {
+                // Show error to user
+                await MainActor.run {
+                    deletionErrorMessage = error.localizedDescription
+                    showDeletionError = true
+                }
+            }
         }
     }
 }

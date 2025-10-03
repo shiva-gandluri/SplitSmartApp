@@ -754,87 +754,9 @@ struct UIAssignScreen: View {
                     }
                 }
                 
-                // Regex Totals Section
-                if !session.regexDetectedItems.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Regex Totals")
-                            .font(.body)
-                            .fontWeight(.medium)
-                            .padding(.horizontal)
-                        
-                        VStack(spacing: 8) {
-                            HStack {
-                                Text("Identified Total")
-                                    .font(.body)
-                                Spacer()
-                                Text(String(format: "$%.2f", session.confirmedTotal))
-                                    .font(.body)
-                                    .fontWeight(.bold)
-                            }
-                            
-                            HStack {
-                                Text("Calculated Total")
-                                    .font(.body)
-                                Spacer()
-                                let regexTotal = session.regexDetectedItems.reduce(0) { $0.currencyAdd($1.price) }
-                                Text(String(format: "$%.2f", regexTotal))
-                                    .font(.body)
-                                    .fontWeight(.bold)
-                                    .foregroundColor(abs(regexTotal - session.confirmedTotal) > 0.01 ? .red : .primary)
-                            }
-                        }
-                        .padding()
-                        .background(Color.gray.opacity(0.1))
-                        .cornerRadius(12)
-                        .padding(.horizontal)
-                    }
-                    
-                    VStack(spacing: 8) {
-                        let regexTotal = session.regexDetectedItems.reduce(0) { $0.currencyAdd($1.price) }
-                        let regexTotalsMatch = abs(regexTotal - session.confirmedTotal) <= 0.01
-                        
-                        Button(action: {
-                            // Set regex items as the active assignment with all participants assigned
-                            session.assignedItems = session.regexDetectedItems.enumerated().map { index, receiptItem in
-                                UIItem(
-                                    id: index + 1,
-                                    name: receiptItem.name,
-                                    price: receiptItem.price,
-                                    assignedTo: nil,
-                                    assignedToParticipants: Set(session.participants.map { $0.id }), // Assign to all participants
-                                    confidence: receiptItem.confidence,
-                                    originalDetectedName: receiptItem.originalDetectedName,
-                                    originalDetectedPrice: receiptItem.originalDetectedPrice
-                                )
-                            }
-                            splitSharedItems()
-                            onContinue()
-                        }) {
-                            HStack {
-                                Text("Continue with Regex Results")
-                                Image(systemName: "arrow.right")
-                            }
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(regexTotalsMatch ? Color.blue : Color.gray)
-                            .cornerRadius(12)
-                        }
-                        .disabled(!regexTotalsMatch)
-                        .padding(.horizontal)
-                        
-                        if !regexTotalsMatch {
-                            HStack {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundColor(.red)
-                                Text("Totals do not match.")
-                                    .font(.caption)
-                                    .foregroundColor(.red)
-                            }
-                            .padding(.horizontal)
-                        }
-                    }
-                }
+                // Regex Totals Section - Removed "Use These Items" button since items auto-load
+                // Items appear above and user can immediately start assigning participants
+                // User scrolls down to "Continue to Summary" when ready
                 
                 // LLM Approach Section
                 VStack(alignment: .leading, spacing: 12) {

@@ -994,14 +994,66 @@ class AuthViewModel: ObservableObject {
             self.isSignedIn = false
             self.errorMessage = ""
             self.isLoading = false
-            
+
             // Reset initialization state to allow re-checking auth state
             self.isInitialized = false
-            
+
             print("✅ Successfully signed out")
         } catch {
             print("❌ Sign out error: \(error.localizedDescription)")
             self.errorMessage = error.localizedDescription
         }
+    }
+
+    // MARK: - Account Deletion
+
+    /// Validates and deletes user account with financial obligation checks
+    /// - Parameter billManager: BillManager instance with user's balance data
+    /// - Throws: AccountDeletionError if validation fails, or other errors during deletion
+    func deleteAccount(billManager: BillManager) async throws {
+        print("🔵 Starting account deletion process...")
+
+        // Step 1: Validate deletion is allowed (throws if blocked)
+        try AccountDeletionService.validateDeletion(for: billManager)
+        print("✅ Validation passed - proceeding with deletion")
+
+        // Step 2: Get current user
+        guard let currentUser = Auth.auth().currentUser else {
+            print("❌ No authenticated user found")
+            throw AccountDeletionError.generalError("No authenticated user found")
+        }
+
+        // Step 3: Delete user data from Firestore first
+        let db = Firestore.firestore()
+        let userId = currentUser.uid
+
+        print("🗑️ Deleting user data from Firestore...")
+
+        // Delete from users collection
+        try await db.collection("users").document(userId).delete()
+        print("✅ Deleted from users collection")
+
+        // Delete from participants collection
+        try await db.collection("participants").document(userId).delete()
+        print("✅ Deleted from participants collection")
+
+        // Step 4: Delete Firebase Auth account
+        print("🗑️ Deleting Firebase Auth account...")
+        try await currentUser.delete()
+        print("✅ Firebase Auth account deleted")
+
+        // Step 5: Sign out from Google
+        GIDSignIn.sharedInstance.signOut()
+
+        // Step 6: Clear local state
+        await MainActor.run {
+            self.user = nil
+            self.isSignedIn = false
+            self.errorMessage = ""
+            self.isLoading = false
+            self.isInitialized = false
+        }
+
+        print("✅ Account deletion completed successfully")
     }
 }
