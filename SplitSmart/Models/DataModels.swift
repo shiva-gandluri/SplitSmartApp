@@ -1064,6 +1064,9 @@ class BillManager: ObservableObject {
     /// Active Firestore listener registration (removed on logout or user switch)
     private var billsListener: ListenerRegistration?
 
+    /// Active Firestore listener for bill activities (removed on logout or user switch)
+    private var billActivitiesListener: ListenerRegistration?
+
     init() {}
 
     /**
@@ -1092,6 +1095,8 @@ class BillManager: ObservableObject {
             print("🔄 Switching bill manager users from \(currentUser) to \(userId)")
             billsListener?.remove()
             billsListener = nil
+            billActivitiesListener?.remove()
+            billActivitiesListener = nil
             self.userBills = []
             self.userBalance = UserBalance()
             self.billActivities = []
@@ -1100,11 +1105,7 @@ class BillManager: ObservableObject {
 
         self.currentUserId = userId
         loadUserBills()
-
-        // Load bill activities
-        Task {
-            await loadBillActivities()
-        }
+        loadBillActivitiesRealtime()
     }
 
     /**
@@ -1128,9 +1129,12 @@ class BillManager: ObservableObject {
         print("🧹 Clearing BillManager data on logout")
         billsListener?.remove()
         billsListener = nil
+        billActivitiesListener?.remove()
+        billActivitiesListener = nil
         self.currentUserId = nil
         self.userBills = []
         self.userBalance = UserBalance()
+        self.billActivities = []
         self.errorMessage = nil
         self.isLoading = false
     }
@@ -1497,57 +1501,70 @@ class BillManager: ObservableObject {
         }
     }
     
-    /// Loads bill activities from Firestore
-    private func loadBillActivities() async {
+    /// Sets up real-time Firestore listener for bill activities
+    /// This ensures history persists across app restarts and updates in real-time
+    private func loadBillActivitiesRealtime() {
         guard let userId = currentUserId else { return }
-        
-        do {
-            let snapshot = try await db.collection("users").document(userId)
-                .collection("billActivities")
-                .order(by: "timestamp", descending: true)
-                .getDocuments()
-            
-            let activities = snapshot.documents.compactMap { document -> BillActivity? in
-                let data = document.data()
-                guard 
-                    let id = data["id"] as? String,
-                    let billId = data["billId"] as? String,
-                    let billName = data["billName"] as? String,
-                    let activityTypeRaw = data["activityType"] as? String,
-                    let activityType = BillActivity.ActivityType(rawValue: activityTypeRaw),
-                    let actorName = data["actorName"] as? String,
-                    let actorEmail = data["actorEmail"] as? String,
-                    let participantEmails = data["participantEmails"] as? [String],
-                    let timestamp = data["timestamp"] as? Date,
-                    let amount = data["amount"] as? Double,
-                    let currency = data["currency"] as? String
-                else {
-                    print("⚠️ Failed to parse bill activity document: \(document.documentID)")
-                    return nil
+
+        print("📡 Setting up real-time listener for bill activities")
+
+        billActivitiesListener = db.collection("users").document(userId)
+            .collection("billActivities")
+            .order(by: "timestamp", descending: true)
+            .addSnapshotListener { [weak self] snapshot, error in
+                guard let self = self else { return }
+
+                if let error = error {
+                    print("❌ Bill activities listener error: \(error.localizedDescription)")
+                    DispatchQueue.main.async {
+                        self.errorMessage = "Failed to load history: \(error.localizedDescription)"
+                    }
+                    return
                 }
-                
-                return BillActivity(
-                    id: id,
-                    billId: billId,
-                    billName: billName,
-                    activityType: activityType,
-                    actorName: actorName,
-                    actorEmail: actorEmail,
-                    participantEmails: participantEmails,
-                    timestamp: timestamp,
-                    amount: amount,
-                    currency: currency
-                )
+
+                guard let documents = snapshot?.documents else {
+                    print("⚠️ No bill activities found")
+                    return
+                }
+
+                let activities = documents.compactMap { document -> BillActivity? in
+                    let data = document.data()
+                    guard
+                        let id = data["id"] as? String,
+                        let billId = data["billId"] as? String,
+                        let billName = data["billName"] as? String,
+                        let activityTypeRaw = data["activityType"] as? String,
+                        let activityType = BillActivity.ActivityType(rawValue: activityTypeRaw),
+                        let actorName = data["actorName"] as? String,
+                        let actorEmail = data["actorEmail"] as? String,
+                        let participantEmails = data["participantEmails"] as? [String],
+                        let timestamp = (data["timestamp"] as? Timestamp)?.dateValue(),
+                        let amount = data["amount"] as? Double,
+                        let currency = data["currency"] as? String
+                    else {
+                        print("⚠️ Failed to parse bill activity document: \(document.documentID)")
+                        return nil
+                    }
+
+                    return BillActivity(
+                        id: id,
+                        billId: billId,
+                        billName: billName,
+                        activityType: activityType,
+                        actorName: actorName,
+                        actorEmail: actorEmail,
+                        participantEmails: participantEmails,
+                        timestamp: timestamp,
+                        amount: amount,
+                        currency: currency
+                    )
+                }
+
+                DispatchQueue.main.async {
+                    self.billActivities = activities
+                    print("✅ Real-time update: \(activities.count) bill activities")
+                }
             }
-            
-            await MainActor.run {
-                self.billActivities = activities
-            }
-            
-            print("✅ Loaded \(activities.count) bill activities")
-        } catch {
-            print("❌ Failed to load bill activities: \(error.localizedDescription)")
-        }
     }
 }
 

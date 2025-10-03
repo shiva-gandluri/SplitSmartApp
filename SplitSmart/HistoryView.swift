@@ -7,6 +7,12 @@ struct HistoryView: View {
     @ObservedObject var billManager: BillManager
     @EnvironmentObject var authViewModel: AuthViewModel
     @State private var selectedFilter: ActivityFilter = .all
+    @State private var selectedBill: Bill?
+    @State private var showingBillDetail = false
+    @State private var billNotFoundError = false
+    @State private var billToDelete: Bill?
+    @State private var showingDeleteConfirmation = false
+    @State private var isDeleting = false
     
     enum ActivityFilter: String, CaseIterable {
         case all = "All"
@@ -108,12 +114,18 @@ struct HistoryView: View {
                             Section(header: DateSectionHeader(date: date)) {
                                 ForEach(groupedActivities[date] ?? []) { activity in
                                     BillActivityRow(activity: activity) {
-                                        // Navigate to bill detail if bill still exists
-                                        if let bill = billManager.userBills.first(where: { $0.id == activity.billId }) {
-                                            // TODO: Navigate to bill detail
-                                        }
+                                        handleBillTap(activity: activity)
                                     }
                                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                        if canUserDeleteBill(activity: activity) {
+                                            Button(role: .destructive) {
+                                                handleDeleteBill(activity: activity)
+                                            } label: {
+                                                Label("Delete", systemImage: "trash")
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -140,6 +152,40 @@ struct HistoryView: View {
                 }
             }
             .navigationBarHidden(true)
+            .sheet(isPresented: $showingBillDetail) {
+                if let bill = selectedBill {
+                    NavigationView {
+                        BillDetailScreen(
+                            bill: bill,
+                            billManager: billManager,
+                            authViewModel: authViewModel
+                        )
+                    }
+                }
+            }
+            .alert("Bill Not Found", isPresented: $billNotFoundError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("This bill may have been deleted or you no longer have access to it.")
+            }
+            .alert("Delete Bill", isPresented: $showingDeleteConfirmation) {
+                Button("Cancel", role: .cancel) {
+                    billToDelete = nil
+                }
+                Button("Delete", role: .destructive) {
+                    if let bill = billToDelete {
+                        Task {
+                            await deleteBill(bill)
+                        }
+                    }
+                }
+            } message: {
+                if let bill = billToDelete {
+                    Text("Are you sure you want to delete '\(bill.billName)'? This action cannot be undone.")
+                } else {
+                    Text("Are you sure you want to delete this bill?")
+                }
+            }
             .onAppear {
                 setupHistoryTracking()
             }
@@ -182,6 +228,47 @@ struct HistoryView: View {
     private func setupHistoryTracking() {
         guard let userId = authViewModel.user?.uid else { return }
         billManager.setCurrentUser(userId)
+    }
+
+    private func handleBillTap(activity: BillActivity) {
+        // Find the bill in the current user's bills
+        if let bill = billManager.userBills.first(where: { $0.id == activity.billId }) {
+            selectedBill = bill
+            showingBillDetail = true
+        } else {
+            // Bill not found - may have been deleted or user lost access
+            billNotFoundError = true
+        }
+    }
+
+    private func canUserDeleteBill(activity: BillActivity) -> Bool {
+        // Only bill creator can delete
+        guard let bill = billManager.userBills.first(where: { $0.id == activity.billId }),
+              let currentUserId = authViewModel.user?.uid else {
+            return false
+        }
+        return bill.paidBy == currentUserId || bill.createdBy == currentUserId
+    }
+
+    private func handleDeleteBill(activity: BillActivity) {
+        if let bill = billManager.userBills.first(where: { $0.id == activity.billId }) {
+            billToDelete = bill
+            showingDeleteConfirmation = true
+        }
+    }
+
+    private func deleteBill(_ bill: Bill) async {
+        isDeleting = true
+        defer { isDeleting = false }
+
+        do {
+            try await billManager.deleteBill(billId: bill.id)
+            billToDelete = nil
+            print("✅ Bill deleted successfully from history")
+        } catch {
+            print("❌ Failed to delete bill: \(error.localizedDescription)")
+            // Show error to user (could add error state here)
+        }
     }
 }
 
