@@ -54,7 +54,11 @@ struct BillDetailScreen: View {
     }
     
     var body: some View {
-        ScrollView {
+        let _ = print("🎬 BillDetailScreen.body - RENDERING for bill: \(bill.id.prefix(8))")
+        let _ = print("🎬 BillDetailScreen.body - isDeleted: \(bill.isDeleted)")
+        let _ = print("🎬 BillDetailScreen.body - isCreator: \(isCreator)")
+
+        return ScrollView {
             VStack(spacing: 24) {
                 // Debug logging for deletion state
                 Color.clear.onAppear {
@@ -402,6 +406,8 @@ struct BillDetailScreen: View {
             
             // Delete Button
             Button(action: {
+                print("🔴 BillDetailScreen - DELETE BUTTON CLICKED (from BillDetailScreen.swift)")
+                print("🔴 BillDetailScreen - Bill ID: \(bill.id.prefix(8)), isDeleted: \(bill.isDeleted)")
                 showingDeleteConfirmation = true
             }) {
                 HStack {

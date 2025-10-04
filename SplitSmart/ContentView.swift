@@ -1018,38 +1018,61 @@ struct SimpleBillDetailView: View {
     @ObservedObject var authViewModel: AuthViewModel
     @ObservedObject var billManager: BillManager
     @Environment(\.dismiss) private var dismiss
-    
-    private var isCreator: Bool {
-        authViewModel.user?.uid == bill.createdBy
+    @State private var currentBill: Bill?
+
+    private var displayBill: Bill {
+        currentBill ?? bill
     }
-    
+
+    private var isCreator: Bool {
+        authViewModel.user?.uid == displayBill.createdBy
+    }
+
     var body: some View {
+        let _ = print("📱 SimpleBillDetailView - RENDERING for bill: \(displayBill.id.prefix(8)), isDeleted: \(displayBill.isDeleted)")
+
         ScrollView {
             VStack(spacing: 20) {
+                // Debug tracking and refetch bill
+                Color.clear.frame(height: 0).onAppear {
+                    print("🎯 SimpleBillDetailView - Appeared for bill: \(displayBill.id)")
+                    print("🎯 SimpleBillDetailView - Initial isDeleted: \(bill.isDeleted)")
+                    Task {
+                        if let freshBill = await billManager.getBillById(bill.id) {
+                            print("🔄 SimpleBillDetailView - Refetched bill, isDeleted: \(freshBill.isDeleted)")
+                            await MainActor.run {
+                                currentBill = freshBill
+                            }
+                        }
+                    }
+                    print("🎯 SimpleBillDetailView - isCreator: \(isCreator)")
+                    print("🎯 SimpleBillDetailView - Should show Delete button: \(isCreator && !displayBill.isDeleted)")
+                }
+
                 // Header
                 VStack(spacing: 8) {
-                    Text(bill.displayName)
+                    Text(displayBill.displayName)
                         .font(.title2)
                         .fontWeight(.bold)
-                    
-                    Text("$\(bill.totalAmount, specifier: "%.2f")")
+
+                    Text("$\(displayBill.totalAmount, specifier: "%.2f")")
                         .font(.title)
                         .fontWeight(.bold)
                         .foregroundColor(.blue)
-                    
-                    Text("Created on \(bill.date.dateValue().formatted(date: .abbreviated, time: .shortened))")
+
+                    Text("Created on \(displayBill.date.dateValue().formatted(date: .abbreviated, time: .shortened))")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
                 .padding()
-                
+
                 // Items
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Items (\(bill.items.count))")
+                    Text("Items (\(displayBill.items.count))")
                         .font(.headline)
                         .fontWeight(.semibold)
-                    
-                    ForEach(bill.items) { item in
+
+                    ForEach(displayBill.items) { item in
                         HStack {
                             Text(item.name)
                                 .fontWeight(.medium)
@@ -1063,13 +1086,13 @@ struct SimpleBillDetailView: View {
                 .padding()
                 .background(Color(.systemGray6))
                 .cornerRadius(12)
-                
+
                 // Action buttons for creators
-                if isCreator && !bill.isDeleted {
-                    BillActionButtons(bill: bill, authViewModel: authViewModel, billManager: billManager)
+                if isCreator && !displayBill.isDeleted {
+                    BillActionButtons(bill: displayBill, authViewModel: authViewModel, billManager: billManager)
                 }
-                
-                if bill.isDeleted {
+
+                if displayBill.isDeleted {
                     Text("This bill has been deleted")
                         .font(.headline)
                         .foregroundColor(.red)
@@ -1104,6 +1127,9 @@ struct BillActionButtons: View {
             .cornerRadius(12)
             
             Button("Delete Bill") {
+                print("🚨 BillActionButtons - DELETE BUTTON CLICKED for bill: \(bill.id.prefix(8))")
+                print("🚨 BillActionButtons - Bill isDeleted: \(bill.isDeleted)")
+                print("🚨 BillActionButtons - This is from SimpleBillDetailView in ContentView.swift")
                 showingDeleteAlert = true
             }
             .foregroundColor(.red)

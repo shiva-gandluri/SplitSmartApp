@@ -12,7 +12,6 @@ struct HistoryView: View {
     @State private var showingDeleteConfirmation = false
     @State private var isDeleting = false
     @State private var selectedBill: Bill?
-    @State private var showingBillDetail = false
     @State private var isLoadingBill = false
 
     enum ActivityFilter: String, CaseIterable {
@@ -64,14 +63,20 @@ struct HistoryView: View {
             errorSection
         }
         .navigationBarHidden(true)
-        .sheet(isPresented: $showingBillDetail) {
-            if let bill = selectedBill {
-                NavigationView {
-                    BillDetailScreen(
-                        bill: bill,
-                        billManager: billManager,
-                        authViewModel: authViewModel
-                    )
+        .sheet(item: $selectedBill) { bill in
+            NavigationView {
+                BillDetailScreen(
+                    bill: bill,
+                    billManager: billManager,
+                    authViewModel: authViewModel
+                )
+            }
+            .onAppear {
+                print("🎭 SHEET PRESENTED - Bill ID: \(bill.id)")
+                print("🎭 SHEET - Bill.isDeleted: \(bill.isDeleted)")
+                print("🎭 SHEET - Bill name: \(bill.billName ?? "unnamed")")
+                if let deletedBy = bill.deletedBy {
+                    print("🎭 SHEET - Deleted by: \(bill.deletedByDisplayName ?? deletedBy)")
                 }
             }
         }
@@ -186,6 +191,8 @@ struct HistoryView: View {
         // Always fetch fresh bill data to ensure correct isDeleted status
         // This prevents showing Delete button on already-deleted bills
         BillActivityRow(activity: activity) {
+            print("👆 HistoryView - Activity row tapped for bill: \(activity.billId)")
+            print("👆 HistoryView - Activity type: \(activity.activityType)")
             Task {
                 await fetchAndShowBill(billId: activity.billId)
             }
@@ -207,9 +214,10 @@ struct HistoryView: View {
                 print("   Deletion metadata - deletedBy: \(deletedBy), deletedByDisplayName: \(bill.deletedByDisplayName ?? "nil"), deletedAt: \(bill.deletedAt?.dateValue().description ?? "nil")")
             }
             await MainActor.run {
+                print("📱 HistoryView - Setting selectedBill to present sheet")
                 selectedBill = bill
-                showingBillDetail = true
                 isLoadingBill = false
+                print("📱 HistoryView - State updated: selectedBill set to bill \(bill.id.prefix(8))")
             }
         } else {
             print("❌ HistoryView - Failed to fetch bill: \(billId)")
@@ -544,7 +552,8 @@ struct BillDetailScreen: View {
                 participantsSection
                 itemsSection
 
-                if isCreator {
+                // Action Buttons (only for creators of active bills)
+                if isCreator && !bill.isDeleted {
                     actionButtons
                 }
             }
