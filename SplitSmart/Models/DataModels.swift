@@ -377,7 +377,10 @@ struct Bill: Codable, Identifiable {
     
     // Deletion status
     var isDeleted: Bool
-    
+    var deletedBy: String? // userID who deleted the bill
+    var deletedByDisplayName: String? // Display name snapshot
+    var deletedAt: Timestamp? // When bill was deleted
+
     init(id: String = UUID().uuidString,
          createdBy: String,
          createdByDisplayName: String,
@@ -395,7 +398,10 @@ struct Bill: Codable, Identifiable {
          participantIds: [String]? = nil,
          calculatedTotals: [String: Double]? = nil,
          roundingAdjustments: [String: Double] = [:],
-         isDeleted: Bool = false) {
+         isDeleted: Bool = false,
+         deletedBy: String? = nil,
+         deletedByDisplayName: String? = nil,
+         deletedAt: Timestamp? = nil) {
         self.id = id
         self.createdBy = createdBy
         self.createdByDisplayName = createdByDisplayName
@@ -416,6 +422,9 @@ struct Bill: Codable, Identifiable {
         self.calculatedTotals = calculatedTotals ?? [:]
         self.roundingAdjustments = roundingAdjustments
         self.isDeleted = isDeleted
+        self.deletedBy = deletedBy
+        self.deletedByDisplayName = deletedByDisplayName
+        self.deletedAt = deletedAt
     }
     
     // Legacy initializer for backward compatibility
@@ -455,6 +464,9 @@ struct Bill: Codable, Identifiable {
         self.calculatedTotals = calculatedTotals
         self.roundingAdjustments = roundingAdjustments
         self.isDeleted = isDeleted
+        self.deletedBy = nil
+        self.deletedByDisplayName = nil
+        self.deletedAt = nil
     }
     
     /// Returns the display name for the bill (custom name or default based on items)
@@ -1241,7 +1253,56 @@ class BillManager: ObservableObject {
                 }
             }
     }
-    
+
+    /**
+     Fetches a single bill by ID from Firestore, including deleted bills.
+
+     This method is used for viewing bill details from History tab, where
+     we need to access deleted bills for record-keeping and dispute resolution.
+
+     - Parameter billId: The unique identifier of the bill to fetch
+     - Returns: The Bill object if found and user has access, nil otherwise
+
+     ## Access Control
+     - User must be in the bill's participantIds array
+     - Deleted bills are accessible (unlike userBills listener which filters them out)
+
+     ## Use Cases
+     - Viewing deleted bill details from History tab
+     - Navigating to bill from notifications
+     - Deep linking to specific bills
+     */
+    func getBillById(_ billId: String) async -> Bill? {
+        guard let userId = currentUserId else {
+            print("❌ Cannot fetch bill: No current user")
+            return nil
+        }
+
+        do {
+            let billDoc = try await db.collection("bills").document(billId).getDocument()
+
+            guard billDoc.exists else {
+                print("❌ Bill not found: \(billId)")
+                return nil
+            }
+
+            let bill = try billDoc.data(as: Bill.self)
+
+            // Verify user has access (must be participant)
+            guard bill.participantIds.contains(userId) else {
+                print("❌ Access denied: User \(userId) not in bill \(billId) participants")
+                return nil
+            }
+
+            print("✅ Fetched bill: \(billId) - isDeleted: \(bill.isDeleted)")
+            return bill
+
+        } catch {
+            print("❌ Failed to fetch bill \(billId): \(error.localizedDescription)")
+            return nil
+        }
+    }
+
     /**
      Calculates user's aggregated balance from all active bills.
 

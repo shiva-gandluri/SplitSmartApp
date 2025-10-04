@@ -11,7 +11,10 @@ struct HistoryView: View {
     @State private var billToDelete: Bill?
     @State private var showingDeleteConfirmation = false
     @State private var isDeleting = false
-    
+    @State private var selectedBill: Bill?
+    @State private var showingBillDetail = false
+    @State private var isLoadingBill = false
+
     enum ActivityFilter: String, CaseIterable {
         case all = "All"
         case created = "Created"
@@ -61,6 +64,17 @@ struct HistoryView: View {
             errorSection
         }
         .navigationBarHidden(true)
+        .sheet(isPresented: $showingBillDetail) {
+            if let bill = selectedBill {
+                NavigationView {
+                    BillDetailScreen(
+                        bill: bill,
+                        billManager: billManager,
+                        authViewModel: authViewModel
+                    )
+                }
+            }
+        }
         .alert("Bill Not Found", isPresented: $billNotFoundError, actions: {
             Button("OK", role: .cancel) {}
         }, message: {
@@ -171,6 +185,7 @@ struct HistoryView: View {
     private func activityRow(for activity: BillActivity) -> some View {
         Group {
             if let bill = billManager.userBills.first(where: { $0.id == activity.billId }) {
+                // Bill is in active bills list (not deleted)
                 NavigationLink(destination: BillDetailScreen(
                     bill: bill,
                     billManager: billManager,
@@ -182,8 +197,11 @@ struct HistoryView: View {
                     deleteButton(for: activity)
                 }
             } else {
+                // Bill might be deleted - fetch from Firestore
                 BillActivityRow(activity: activity) {
-                    billNotFoundError = true
+                    Task {
+                        await fetchAndShowBill(billId: activity.billId)
+                    }
                 }
                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                     deleteButton(for: activity)
@@ -191,6 +209,24 @@ struct HistoryView: View {
             }
         }
         .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+    }
+
+    /// Fetches bill by ID (including deleted bills) and shows detail screen
+    private func fetchAndShowBill(billId: String) async {
+        isLoadingBill = true
+
+        if let bill = await billManager.getBillById(billId) {
+            await MainActor.run {
+                selectedBill = bill
+                showingBillDetail = true
+                isLoadingBill = false
+            }
+        } else {
+            await MainActor.run {
+                billNotFoundError = true
+                isLoadingBill = false
+            }
+        }
     }
 
     @ViewBuilder

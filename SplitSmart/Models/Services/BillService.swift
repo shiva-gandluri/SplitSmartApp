@@ -503,37 +503,104 @@ final class BillService: ObservableObject {
                 return nil
             }
             
-            // Soft delete by setting isDeleted flag and incrementing version
+            // Fetch deleter info for metadata
+            guard let currentUserDoc = try? transaction.getDocument(self.db.collection("users").document(currentUserId)),
+                  let userData = currentUserDoc.data(),
+                  let deleterName = userData["displayName"] as? String else {
+                errorPointer?.pointee = NSError(domain: "BillService", code: 5, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch deleter info"])
+                return nil
+            }
+
+            // Soft delete by setting isDeleted flag, deletion metadata, and incrementing version
             var updatedBill = billData
             updatedBill.isDeleted = true
+            updatedBill.deletedBy = currentUserId
+            updatedBill.deletedByDisplayName = deleterName
+            updatedBill.deletedAt = Timestamp()
             updatedBill.version += 1
             updatedBill.operationId = UUID().uuidString
-            
+
             try? transaction.setData(from: updatedBill, forDocument: billRef)
             return updatedBill // Return updated bill for notification
         })
-        
+
         // Send push notifications to other participants after successful deletion (Epic 2: US-SYNC-006)
         // We need to get the updated bill data to send notifications
         do {
+            print("🔍 Fetching deleted bill for activity creation...")
             let billSnapshot = try await db.collection("bills").document(billId).getDocument()
-            if let deletedBill = try? billSnapshot.data(as: Bill.self),
-               let currentUserDoc = try? await db.collection("users").document(currentUserId).getDocument(),
-               let userData = currentUserDoc.data() {
-                
-                let deleterName = userData["displayName"] as? String ?? "Unknown"
-                
-                await pushNotificationService.notifyBillDeleted(
-                    bill: deletedBill,
-                    deleterName: deleterName,
-                    excludeUserId: currentUserId
-                )
+
+            guard let deletedBill = try? billSnapshot.data(as: Bill.self) else {
+                print("❌ CRITICAL: Failed to decode deleted bill for activity creation")
+                throw NSError(domain: "BillService", code: 6, userInfo: [NSLocalizedDescriptionKey: "Failed to decode deleted bill"])
             }
+
+            guard let currentUserDoc = try? await db.collection("users").document(currentUserId).getDocument(),
+                  let userData = currentUserDoc.data() else {
+                print("❌ CRITICAL: Failed to fetch current user data for activity creation")
+                throw NSError(domain: "BillService", code: 7, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch user data"])
+            }
+
+            let deleterName = deletedBill.deletedByDisplayName ?? userData["displayName"] as? String ?? "Unknown"
+            let deleterEmail = userData["email"] as? String ?? "unknown@example.com"
+            print("✅ Fetched bill and user data. Deleter: \(deleterName)")
+
+            // Create deletion activity for all participants
+            let activityId = UUID().uuidString
+            let activity = BillActivity(
+                id: activityId,
+                billId: billId,
+                billName: deletedBill.billName ?? "Unnamed Bill",
+                activityType: .deleted,
+                actorName: deleterName,
+                actorEmail: deleterEmail,
+                participantEmails: deletedBill.participants.map { $0.email },
+                timestamp: Date(),
+                amount: deletedBill.totalAmount,
+                currency: deletedBill.currency ?? "USD"
+            )
+
+            // Save deletion activity for all participants
+            let batch = db.batch()
+            print("📝 Creating deletion activity for \(deletedBill.participantIds.count) participants")
+            for (index, participantId) in deletedBill.participantIds.enumerated() {
+                let activityRef = db.collection("users")
+                    .document(participantId)
+                    .collection("billActivities")
+                    .document(activityId)
+
+                do {
+                    try batch.setData(from: activity, forDocument: activityRef)
+                    print("  ✓ [\(index + 1)/\(deletedBill.participantIds.count)] Added deletion activity for participant: \(participantId)")
+                } catch {
+                    print("  ❌ Failed to encode activity for participant \(participantId): \(error.localizedDescription)")
+                }
+            }
+
+            try await batch.commit()
+            print("✅ Deletion activity successfully saved to Firestore for all participants")
+
+            await pushNotificationService.notifyBillDeleted(
+                bill: deletedBill,
+                deleterName: deleterName,
+                excludeUserId: currentUserId
+            )
         } catch {
-            print("⚠️ Failed to send deletion notification: \(error.localizedDescription)")
+            print("❌ CRITICAL ERROR in deletion activity creation: \(error.localizedDescription)")
+            print("   Error details: \(error)")
+            // Re-throw to ensure caller knows deletion activity failed
+            throw error
         }
     }
-    
+
+    /**
+     Convenience overload for deleteBill that accepts BillManager.
+     Delegates to the main deleteBill implementation.
+     */
+    func deleteBill(billId: String, currentUserId: String, billManager: BillManager) async throws {
+        try await deleteBill(billId: billId, currentUserId: currentUserId)
+    }
+
     // MARK: - Private Helper Methods
 
     /**

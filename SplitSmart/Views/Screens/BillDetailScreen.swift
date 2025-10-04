@@ -50,26 +50,31 @@ struct BillDetailScreen: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
+                // Deleted Bill Banner
+                if bill.isDeleted {
+                    deletedBillBanner
+                }
+
                 // Header Section
                 headerSection
-                
+
                 // Bill Overview
                 billOverviewSection
-                
+
                 // Participants & Debt Section
                 participantsSection
-                
+
                 // Items Breakdown
                 itemsSection
-                
-                // Action Buttons (only for creators)
-                if isCreator {
+
+                // Action Buttons (only for creators of active bills)
+                if isCreator && !bill.isDeleted {
                     actionButtons
                 }
             }
             .padding(.vertical)
         }
-        .navigationTitle("Bill Details")
+        .navigationTitle(bill.isDeleted ? "Deleted Bill" : "Bill Details")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingEditView) {
             BillEditView(
@@ -102,7 +107,41 @@ struct BillDetailScreen: View {
     }
     
     // MARK: - View Components
-    
+
+    private var deletedBillBanner: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                Image(systemName: "trash.slash.fill")
+                    .font(.title2)
+                    .foregroundColor(.white)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("This bill has been deleted")
+                        .font(.headline)
+                        .foregroundColor(.white)
+
+                    if let deletedByName = bill.deletedByDisplayName,
+                       let deletedAt = bill.deletedAt {
+                        Text("Deleted by \(deletedByName) on \(deletedAt.dateValue().formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.9))
+                    }
+                }
+
+                Spacer()
+            }
+            .padding()
+            .background(Color.red)
+            .cornerRadius(12)
+
+            Text("This is a read-only view for your records. You cannot edit or restore this bill.")
+                .font(.footnote)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.horizontal)
+    }
+
     private var headerSection: some View {
         VStack(spacing: 12) {
             HStack {
