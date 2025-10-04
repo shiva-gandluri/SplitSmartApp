@@ -925,10 +925,20 @@ class BillService: ObservableObject {
         
         // Perform hard delete with atomic transaction
         let batch = db.batch()
-        
-        // Mark bill as deleted (for audit trail) and set isDeleted flag
+
+        // Fetch deleter info for metadata
+        let currentUserDoc = try await db.collection("users").document(currentUserId).getDocument()
+        guard let userData = currentUserDoc.data(),
+              let deleterName = userData["displayName"] as? String else {
+            throw BillDeleteError.invalidUserData
+        }
+
+        // Mark bill as deleted (for audit trail) and set isDeleted flag with metadata
         var deletedBill = originalBill
         deletedBill.isDeleted = true
+        deletedBill.deletedBy = currentUserId
+        deletedBill.deletedByDisplayName = deleterName
+        deletedBill.deletedAt = Timestamp()
         print("🗑️ Setting bill as deleted: \(billId)")
         try batch.setData(from: deletedBill, forDocument: billRef)
         
@@ -941,7 +951,44 @@ class BillService: ObservableObject {
         
         // Commit the batch
         try await batch.commit()
-        
+
+        // Create deletion activity for all participants
+        print("📝 Creating deletion activity for \(deletedBill.participantIds.count) participants")
+        let activityId = UUID().uuidString
+        let deleterEmail = userData["email"] as? String ?? "unknown@example.com"
+
+        let activity = BillActivity(
+            id: activityId,
+            billId: billId,
+            billName: deletedBill.billName ?? "Unnamed Bill",
+            activityType: .deleted,
+            actorName: deleterName,
+            actorEmail: deleterEmail,
+            participantEmails: deletedBill.participants.map { $0.email },
+            timestamp: Date(),
+            amount: deletedBill.totalAmount,
+            currency: deletedBill.currency ?? "USD"
+        )
+
+        // Save deletion activity for all participants
+        let activityBatch = db.batch()
+        for (index, participantId) in deletedBill.participantIds.enumerated() {
+            let activityRef = db.collection("users")
+                .document(participantId)
+                .collection("billActivities")
+                .document(activityId)
+
+            do {
+                try activityBatch.setData(from: activity, forDocument: activityRef)
+                print("  ✓ [\(index + 1)/\(deletedBill.participantIds.count)] Added deletion activity for participant: \(participantId)")
+            } catch {
+                print("  ❌ Failed to encode activity for participant \(participantId): \(error.localizedDescription)")
+            }
+        }
+
+        try await activityBatch.commit()
+        print("✅ Deletion activity successfully saved to Firestore for all participants")
+
         // Send notifications to all participants about the deletion
         Task {
             await PushNotificationService.shared.sendBillDeleteNotificationToParticipants(
@@ -949,7 +996,7 @@ class BillService: ObservableObject {
                 deletedBy: currentUserId
             )
         }
-        
+
         print("✅ Bill deleted successfully with ID: \(billId)")
     }
     
@@ -1719,14 +1766,17 @@ enum BillUpdateError: LocalizedError {
 enum BillDeleteError: LocalizedError {
     case billNotFound
     case notAuthorized
+    case invalidUserData
     case firestoreError(String)
-    
+
     var errorDescription: String? {
         switch self {
         case .billNotFound:
             return "Bill not found"
         case .notAuthorized:
             return "You don't have permission to delete this bill"
+        case .invalidUserData:
+            return "Failed to fetch user information"
         case .firestoreError(let message):
             return "Database error: \(message)"
         }
