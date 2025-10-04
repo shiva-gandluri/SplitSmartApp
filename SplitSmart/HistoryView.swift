@@ -199,14 +199,20 @@ struct HistoryView: View {
     /// Fetches bill by ID (including deleted bills) and shows detail screen
     private func fetchAndShowBill(billId: String) async {
         isLoadingBill = true
+        print("🔍 HistoryView - Fetching bill: \(billId)")
 
         if let bill = await billManager.getBillById(billId) {
+            print("✅ HistoryView - Fetched bill: \(billId), isDeleted: \(bill.isDeleted)")
+            if let deletedBy = bill.deletedBy {
+                print("   Deletion metadata - deletedBy: \(deletedBy), deletedByDisplayName: \(bill.deletedByDisplayName ?? "nil"), deletedAt: \(bill.deletedAt?.dateValue().description ?? "nil")")
+            }
             await MainActor.run {
                 selectedBill = bill
                 showingBillDetail = true
                 isLoadingBill = false
             }
         } else {
+            print("❌ HistoryView - Failed to fetch bill: \(billId)")
             await MainActor.run {
                 billNotFoundError = true
                 isLoadingBill = false

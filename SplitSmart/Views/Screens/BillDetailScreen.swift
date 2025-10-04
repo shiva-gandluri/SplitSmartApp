@@ -50,6 +50,17 @@ struct BillDetailScreen: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
+                // Debug logging for deletion state
+                Color.clear.onAppear {
+                    print("🔍 BillDetailScreen - Bill ID: \(bill.id)")
+                    print("🔍 BillDetailScreen - isDeleted: \(bill.isDeleted)")
+                    print("🔍 BillDetailScreen - isCreator: \(isCreator)")
+                    print("🔍 BillDetailScreen - Should show Delete button: \(isCreator && !bill.isDeleted)")
+                    if let deletedBy = bill.deletedBy, let deletedAt = bill.deletedAt {
+                        print("🔍 BillDetailScreen - Deleted by: \(bill.deletedByDisplayName ?? deletedBy) at \(deletedAt.dateValue())")
+                    }
+                }
+
                 // Deleted Bill Banner
                 if bill.isDeleted {
                     deletedBillBanner
