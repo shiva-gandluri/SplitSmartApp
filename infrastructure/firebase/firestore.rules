@@ -24,7 +24,11 @@ service cloud.firestore {
     
     // Users collection - private user data
     match /users/{userId} {
-      allow read, write: if isAuthenticated() && isOwner(userId) && isValidUserData();
+      // Read: User can read their own data, any authenticated user can read for lookups
+      allow read: if isAuthenticated();
+
+      // Write: Only owner can write, must have valid user data
+      allow write: if isAuthenticated() && isOwner(userId) && isValidUserData();
 
       // Bill Activities subcollection - user's bill activity history
       match /billActivities/{activityId} {
@@ -67,11 +71,11 @@ service cloud.firestore {
                        request.resource.data.id == resource.data.id;
       
       // Delete access: Only bill creator (soft delete by setting isDeleted = true)
-      allow update: if isAuthenticated() && 
+      allow update: if isAuthenticated() &&
                        request.auth.uid == resource.data.createdBy &&
                        request.resource.data.isDeleted == true &&
-                       // Ensure other fields remain unchanged during deletion
-                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isDeleted', 'lastModified']);
+                       // Allow deletion metadata fields to be updated
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isDeleted', 'deletedBy', 'deletedByDisplayName', 'deletedAt', 'lastModified', 'version', 'operationId']);
     }
     
     // Groups collection (future feature)
