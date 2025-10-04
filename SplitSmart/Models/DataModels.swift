@@ -1452,7 +1452,7 @@ class BillManager: ObservableObject {
     // MARK: - Bill Activity Management
     
     /// Adds a new bill activity record to track bill events
-    func addBillActivity(billId: String, billName: String, activityType: BillActivity.ActivityType, actorName: String, actorEmail: String, participantEmails: [String], amount: Double, currency: String) {
+    func addBillActivity(billId: String, billName: String, activityType: BillActivity.ActivityType, actorName: String, actorEmail: String, participantEmails: [String], participantIds: [String], amount: Double, currency: String) {
         let activity = BillActivity(
             billId: billId,
             billName: billName,
@@ -1463,39 +1463,50 @@ class BillManager: ObservableObject {
             amount: amount,
             currency: currency
         )
-        
+
         DispatchQueue.main.async {
             self.billActivities.append(activity)
             // Sort by timestamp (newest first)
             self.billActivities.sort { $0.timestamp > $1.timestamp }
         }
-        
-        // Store in Firestore for persistence
+
+        // Store in Firestore for persistence across all participants
         Task {
-            await saveBillActivityToFirestore(activity)
+            await saveBillActivityToFirestore(activity, participantIds: participantIds)
         }
     }
     
-    /// Saves bill activity to Firestore
-    private func saveBillActivityToFirestore(_ activity: BillActivity) async {
-        guard let userId = currentUserId else { return }
-        
+    /// Saves bill activity to Firestore for ALL participants
+    private func saveBillActivityToFirestore(_ activity: BillActivity, participantIds: [String]) async {
+        let batch = db.batch()
+
+        print("📝 Creating \(activity.activityType.rawValue) activity for \(participantIds.count) participants")
+
+        for (index, participantId) in participantIds.enumerated() {
+            let activityRef = db.collection("users")
+                .document(participantId)
+                .collection("billActivities")
+                .document(activity.id)
+
+            batch.setData([
+                "id": activity.id,
+                "billId": activity.billId,
+                "billName": activity.billName,
+                "activityType": activity.activityType.rawValue,
+                "actorName": activity.actorName,
+                "actorEmail": activity.actorEmail,
+                "participantEmails": activity.participantEmails,
+                "timestamp": activity.timestamp,
+                "amount": activity.amount,
+                "currency": activity.currency
+            ], forDocument: activityRef)
+
+            print("  ✓ [\(index + 1)/\(participantIds.count)] Added \(activity.activityType.rawValue) activity for participant: \(participantId)")
+        }
+
         do {
-            try await db.collection("users").document(userId)
-                .collection("billActivities").document(activity.id)
-                .setData([
-                    "id": activity.id,
-                    "billId": activity.billId,
-                    "billName": activity.billName,
-                    "activityType": activity.activityType.rawValue,
-                    "actorName": activity.actorName,
-                    "actorEmail": activity.actorEmail,
-                    "participantEmails": activity.participantEmails,
-                    "timestamp": activity.timestamp,
-                    "amount": activity.amount,
-                    "currency": activity.currency
-                ])
-            print("✅ Bill activity saved to Firestore: \(activity.activityType.rawValue)")
+            try await batch.commit()
+            print("✅ Bill activity saved to Firestore for all \(participantIds.count) participants")
         } catch {
             print("❌ Failed to save bill activity to Firestore: \(error.localizedDescription)")
         }

@@ -376,54 +376,25 @@ struct BillDetailScreen: View {
     private func deleteBill() async {
         isDeleting = true
         deleteError = nil
-        
+
         do {
             // Use BillService to delete the bill
             let billService = BillService()
             try await billService.deleteBill(
                 billId: bill.id,
-                currentUserId: authViewModel.currentUser?.uid ?? "",
-                billManager: billManager
+                currentUserId: authViewModel.currentUser?.uid ?? ""
             )
-            
+
             print("✅ Bill deleted successfully")
-            
+
             // Navigate back after successful deletion
             dismiss()
-            
+
         } catch {
             print("❌ Bill deletion failed: \(error.localizedDescription)")
             deleteError = error.localizedDescription
         }
-        
+
         isDeleting = false
-    }
-}
-
-// MARK: - Supporting Classes
-
-class BillEditSession: ObservableObject {
-    @Published var billName: String = ""
-    @Published var items: [BillItem] = []
-    @Published var participants: [BillParticipant] = []
-    @Published var paidByParticipantId: String = ""
-    
-    private var originalBill: Bill?
-    
-    func loadBill(_ bill: Bill) {
-        originalBill = bill
-        billName = bill.billName ?? ""
-        items = bill.items
-        participants = bill.participants
-        paidByParticipantId = bill.paidBy
-    }
-    
-    var hasChanges: Bool {
-        guard let original = originalBill else { return false }
-        
-        return billName != (original.billName ?? "") ||
-               items != original.items ||
-               participants != original.participants ||
-               paidByParticipantId != original.paidBy
     }
 }

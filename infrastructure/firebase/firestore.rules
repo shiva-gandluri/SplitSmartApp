@@ -25,6 +25,18 @@ service cloud.firestore {
     // Users collection - private user data
     match /users/{userId} {
       allow read, write: if isAuthenticated() && isOwner(userId) && isValidUserData();
+
+      // Bill Activities subcollection - user's bill activity history
+      match /billActivities/{activityId} {
+        // Read: User can read their own bill activities
+        allow read: if isAuthenticated() && isOwner(userId);
+
+        // Write: Bill creators can write activities for all bill participants
+        // The actor (bill creator) can write to any participant's billActivities subcollection
+        // when creating/editing/deleting bills
+        allow write: if isAuthenticated() &&
+                        request.auth.token.email in request.resource.data.participantEmails;
+      }
     }
     
     // Participants collection - public user lookup (read-only for participants)
@@ -36,9 +48,9 @@ service cloud.firestore {
     // Bills collection - collaborative bill data
     match /bills/{billId} {
       // Read access: Any authenticated participant in the bill
-      allow read: if isAuthenticated() && 
-                     isValidBillParticipant(resource.data) &&
-                     resource.data.isDeleted == false;
+      // Note: App code filters deleted bills in queries; security only controls WHO can access
+      allow read: if isAuthenticated() &&
+                     isValidBillParticipant(resource.data);
       
       // Create access: Any authenticated user (becomes bill creator)
       allow create: if isAuthenticated() && 

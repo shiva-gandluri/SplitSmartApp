@@ -2149,7 +2149,7 @@ struct UISummaryScreen: View {
             createdBill = bill
             print("✅ Bill creation successful! ID: \(bill.id)")
 
-            // Phase 3: Add bill activity to history tracking
+            // Phase 3: Add bill activity to history tracking for ALL participants
             if let currentUser = authViewModel.user {
                 let participantEmails = bill.participants.map { $0.email }
                 billManager.addBillActivity(
@@ -2159,10 +2159,11 @@ struct UISummaryScreen: View {
                     actorName: currentUser.displayName ?? "Unknown User",
                     actorEmail: currentUser.email ?? "",
                     participantEmails: participantEmails,
+                    participantIds: bill.participantIds,
                     amount: bill.totalAmount,
                     currency: bill.currency
                 )
-                print("✅ Bill activity added to history")
+                print("✅ Bill activity added to history for all participants")
             }
 
             // Call the completion handler
