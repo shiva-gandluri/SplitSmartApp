@@ -32,7 +32,13 @@ struct BillDetailScreen: View {
     
     // Computed properties
     private var isCreator: Bool {
-        authViewModel.currentUser?.uid == bill.createdBy
+        let result = authViewModel.currentUser?.uid == bill.createdBy
+        print("🔍 BillDetailScreen - Computing isCreator for bill \(bill.id.prefix(8)): \(result)")
+        print("🔍 BillDetailScreen - bill.isDeleted: \(bill.isDeleted)")
+        if let deletedBy = bill.deletedBy {
+            print("🔍 BillDetailScreen - Deleted by: \(bill.deletedByDisplayName ?? deletedBy)")
+        }
+        return result
     }
     
     private var billTotal: Double {
