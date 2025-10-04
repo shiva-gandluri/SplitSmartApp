@@ -183,30 +183,15 @@ struct HistoryView: View {
     }
 
     private func activityRow(for activity: BillActivity) -> some View {
-        Group {
-            if let bill = billManager.userBills.first(where: { $0.id == activity.billId }) {
-                // Bill is in active bills list (not deleted)
-                NavigationLink(destination: BillDetailScreen(
-                    bill: bill,
-                    billManager: billManager,
-                    authViewModel: authViewModel
-                )) {
-                    BillActivityRow(activity: activity) {}
-                }
-                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                    deleteButton(for: activity)
-                }
-            } else {
-                // Bill might be deleted - fetch from Firestore
-                BillActivityRow(activity: activity) {
-                    Task {
-                        await fetchAndShowBill(billId: activity.billId)
-                    }
-                }
-                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                    deleteButton(for: activity)
-                }
+        // Always fetch fresh bill data to ensure correct isDeleted status
+        // This prevents showing Delete button on already-deleted bills
+        BillActivityRow(activity: activity) {
+            Task {
+                await fetchAndShowBill(billId: activity.billId)
             }
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            deleteButton(for: activity)
         }
         .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
     }
