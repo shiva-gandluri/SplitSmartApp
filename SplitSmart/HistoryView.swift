@@ -7,7 +7,7 @@ struct HistoryView: View {
     @ObservedObject var billManager: BillManager
     @EnvironmentObject var authViewModel: AuthViewModel
     @State private var selectedFilter: ActivityFilter = .all
-    @State private var billNotFoundError = false
+    @State private var showingBillNotFoundAlert = false
     @State private var billToDelete: Bill?
     @State private var showingDeleteConfirmation = false
     @State private var isDeleting = false
@@ -72,15 +72,11 @@ struct HistoryView: View {
                 )
             }
             .onAppear {
-                print("🎭 SHEET PRESENTED - Bill ID: \(bill.id)")
-                print("🎭 SHEET - Bill.isDeleted: \(bill.isDeleted)")
-                print("🎭 SHEET - Bill name: \(bill.billName ?? "unnamed")")
                 if let deletedBy = bill.deletedBy {
-                    print("🎭 SHEET - Deleted by: \(bill.deletedByDisplayName ?? deletedBy)")
                 }
             }
         }
-        .alert("Bill Not Found", isPresented: $billNotFoundError, actions: {
+        .alert("Bill Not Found", isPresented: $showingBillNotFoundAlert, actions: {
             Button("OK", role: .cancel) {}
         }, message: {
             Text("This bill may have been deleted or you no longer have access to it.")
@@ -191,8 +187,6 @@ struct HistoryView: View {
         // Always fetch fresh bill data to ensure correct isDeleted status
         // This prevents showing Delete button on already-deleted bills
         BillActivityRow(activity: activity) {
-            print("👆 HistoryView - Activity row tapped for bill: \(activity.billId)")
-            print("👆 HistoryView - Activity type: \(activity.activityType)")
             Task {
                 await fetchAndShowBill(billId: activity.billId)
             }
@@ -206,23 +200,17 @@ struct HistoryView: View {
     /// Fetches bill by ID (including deleted bills) and shows detail screen
     private func fetchAndShowBill(billId: String) async {
         isLoadingBill = true
-        print("🔍 HistoryView - Fetching bill: \(billId)")
 
         if let bill = await billManager.getBillById(billId) {
-            print("✅ HistoryView - Fetched bill: \(billId), isDeleted: \(bill.isDeleted)")
             if let deletedBy = bill.deletedBy {
-                print("   Deletion metadata - deletedBy: \(deletedBy), deletedByDisplayName: \(bill.deletedByDisplayName ?? "nil"), deletedAt: \(bill.deletedAt?.dateValue().description ?? "nil")")
             }
             await MainActor.run {
-                print("📱 HistoryView - Setting selectedBill to present sheet")
                 selectedBill = bill
                 isLoadingBill = false
-                print("📱 HistoryView - State updated: selectedBill set to bill \(bill.id.prefix(8))")
             }
         } else {
-            print("❌ HistoryView - Failed to fetch bill: \(billId)")
             await MainActor.run {
-                billNotFoundError = true
+                showingBillNotFoundAlert = true
                 isLoadingBill = false
             }
         }
@@ -354,9 +342,7 @@ struct HistoryView: View {
                 billManager: billManager
             )
             billToDelete = nil
-            print("✅ Bill deleted successfully from history")
         } catch {
-            print("❌ Failed to delete bill: \(error.localizedDescription)")
             // Show error to user (could add error state here)
         }
     }
@@ -515,324 +501,8 @@ struct EmptyHistoryView: View {
     }
 }
 
-// MARK: - Bill Detail Screen (from Views/Screens - not in Xcode target)
-
-struct BillDetailScreen: View {
-    let bill: Bill
-    @ObservedObject var billManager: BillManager
-    @ObservedObject var authViewModel: AuthViewModel
-    @Environment(\.dismiss) private var dismiss
-
-    @State private var showingEditView = false
-    @State private var showingDeleteConfirmation = false
-    @State private var isDeleting = false
-    @State private var deleteError: String?
-
-    private var isCreator: Bool {
-        authViewModel.user?.uid == bill.createdBy
-    }
-
-    private var billTotal: Double {
-        bill.items.reduce(0) { $0 + $1.price }
-    }
-
-    private var creator: BillParticipant? {
-        bill.participants.first { $0.id == bill.createdBy }
-    }
-
-    private var payer: BillParticipant? {
-        bill.participants.first { $0.id == bill.paidBy }
-    }
-
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                headerSection
-                billOverviewSection
-                participantsSection
-                itemsSection
-
-                // Action Buttons (only for creators of active bills)
-                if isCreator && !bill.isDeleted {
-                    actionButtons
-                }
-            }
-            .padding(.vertical)
-        }
-        .navigationTitle("Bill Details")
-        .navigationBarTitleDisplayMode(.inline)
-        .alert("Delete Bill", isPresented: $showingDeleteConfirmation) {
-            Button("Cancel", role: .cancel) { }
-            Button("Delete", role: .destructive) {
-                Task { await deleteBill() }
-            }
-        } message: {
-            Text("Are you sure you want to delete this bill? This action cannot be undone.")
-        }
-        .alert("Delete Error", isPresented: .constant(deleteError != nil)) {
-            Button("OK") { deleteError = nil }
-        } message: {
-            Text(deleteError ?? "")
-        }
-    }
-
-    private var headerSection: some View {
-        VStack(spacing: 12) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(bill.billName ?? "Bill #\(bill.id.prefix(8))")
-                        .font(.title2)
-                        .fontWeight(.bold)
-
-                    Text("Created on \(bill.date.dateValue().formatted(date: .abbreviated, time: .shortened))")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-
-                    if bill.isDeleted {
-                        HStack {
-                            Image(systemName: "trash.slash")
-                                .foregroundColor(.red)
-                            Text("DELETED")
-                                .font(.caption)
-                                .fontWeight(.bold)
-                                .foregroundColor(.red)
-                        }
-                    }
-                }
-                Spacer()
-            }
-            .padding(.horizontal)
-        }
-    }
-
-    private var billOverviewSection: some View {
-        VStack(spacing: 16) {
-            HStack {
-                Text("Total Amount:")
-                    .font(.headline)
-                Spacer()
-                Text("$\(billTotal, specifier: "%.2f")")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .foregroundColor(.blue)
-            }
-
-            if let creator = creator {
-                HStack {
-                    Text("Created by:")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(Color.blue)
-                            .frame(width: 24, height: 24)
-                            .overlay(
-                                Image(systemName: "person.fill")
-                                    .font(.caption)
-                                    .foregroundColor(.white)
-                            )
-                        Text(creator.displayName)
-                            .fontWeight(.medium)
-                    }
-                    Spacer()
-                }
-            }
-
-            if let payer = payer {
-                HStack {
-                    Text("Paid by:")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(Color.green)
-                            .frame(width: 24, height: 24)
-                            .overlay(
-                                Image(systemName: "creditcard.fill")
-                                    .font(.caption)
-                                    .foregroundColor(.white)
-                            )
-                        Text(payer.displayName)
-                            .fontWeight(.medium)
-                    }
-                    Spacer()
-                }
-            }
-        }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.blue.opacity(0.2), lineWidth: 1)
-        )
-        .padding(.horizontal)
-    }
-
-    private var participantsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Who Owes What")
-                .font(.headline)
-                .fontWeight(.semibold)
-                .padding(.horizontal)
-
-            let owedAmounts = BillCalculator.calculateOwedAmounts(bill: bill)
-
-            if owedAmounts.isEmpty || owedAmounts.allSatisfy({ $0.value <= 0.01 }) {
-                VStack(spacing: 8) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
-                        .font(.title2)
-                    Text("All settled up!")
-                        .fontWeight(.medium)
-                        .foregroundColor(.green)
-                }
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color.green.opacity(0.1))
-                .cornerRadius(12)
-                .padding(.horizontal)
-            } else {
-                ForEach(owedAmounts.sorted(by: { $0.key < $1.key }), id: \.key) { participantId, amount in
-                    if let debtor = bill.participants.first(where: { $0.id == participantId }),
-                       let payer = payer,
-                       amount > 0.01 {
-
-                        HStack {
-                            HStack(spacing: 8) {
-                                Circle()
-                                    .fill(Color.red)
-                                    .frame(width: 32, height: 32)
-                                    .overlay(
-                                        Image(systemName: "person.fill")
-                                            .font(.caption)
-                                            .foregroundColor(.white)
-                                    )
-                                Text(debtor.displayName)
-                                    .fontWeight(.medium)
-                            }
-
-                            Image(systemName: "arrow.right")
-                                .foregroundColor(.gray)
-                                .padding(.horizontal, 8)
-
-                            HStack(spacing: 8) {
-                                Circle()
-                                    .fill(Color.green)
-                                    .frame(width: 32, height: 32)
-                                    .overlay(
-                                        Image(systemName: "person.fill")
-                                            .font(.caption)
-                                            .foregroundColor(.white)
-                                    )
-                                Text(payer.displayName)
-                                    .fontWeight(.medium)
-                            }
-
-                            Spacer()
-
-                            Text("$\(amount, specifier: "%.2f")")
-                                .fontWeight(.bold)
-                                .foregroundColor(.red)
-                        }
-                        .padding()
-                        .background(Color(.systemBackground))
-                        .cornerRadius(12)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.red.opacity(0.2), lineWidth: 1)
-                        )
-                        .padding(.horizontal)
-                    }
-                }
-            }
-        }
-    }
-
-    private var itemsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Items (\(bill.items.count))")
-                .font(.headline)
-                .fontWeight(.semibold)
-                .padding(.horizontal)
-
-            LazyVStack(spacing: 8) {
-                ForEach(bill.items) { item in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(item.name)
-                                .fontWeight(.medium)
-
-                            Text("Split among \(item.participantIDs.count) people")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-
-                        Spacer()
-
-                        Text("$\(item.price, specifier: "%.2f")")
-                            .fontWeight(.bold)
-                    }
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(8)
-                }
-            }
-            .padding(.horizontal)
-        }
-    }
-
-    private var actionButtons: some View {
-        VStack(spacing: 12) {
-            Button(action: {
-                showingDeleteConfirmation = true
-            }) {
-                HStack {
-                    if isDeleting {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                            .scaleEffect(0.8)
-                    } else {
-                        Image(systemName: "trash")
-                    }
-                    Text(isDeleting ? "Deleting..." : "Delete Bill")
-                        .fontWeight(.semibold)
-                }
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(isDeleting ? Color.gray : Color.red)
-                .cornerRadius(12)
-            }
-            .disabled(isDeleting)
-        }
-        .padding(.horizontal)
-    }
-
-    @MainActor
-    private func deleteBill() async {
-        isDeleting = true
-        deleteError = nil
-
-        do {
-            let billService = BillService()
-            try await billService.deleteBill(
-                billId: bill.id,
-                currentUserId: authViewModel.user?.uid ?? "",
-                billManager: billManager
-            )
-            print("✅ Bill deleted successfully")
-            dismiss()
-        } catch {
-            print("❌ Bill deletion failed: \(error.localizedDescription)")
-            deleteError = error.localizedDescription
-        }
-
-        isDeleting = false
-    }
-}
+// MARK: - Bill Detail Screen
+// Using canonical implementation from Views/Screens/BillDetailScreen.swift
 
 #Preview {
     HistoryView(billManager: BillManager())

@@ -220,7 +220,6 @@ struct UIAssignScreen: View {
                                     session.updateItemAssignments(updatedItem)
 
                                     // Auto-save session after assignment change
-                                    print("💾 AssignScreen: Auto-saving session after assignment changed")
                                     session.autoSaveSession()
                                 }
                             )
@@ -287,7 +286,6 @@ struct UIAssignScreen: View {
                             }
 
                             // Auto-save session
-                            print("💾 AssignScreen: Auto-saving after accepting regex results")
                             session.autoSaveSession()
 
                             // Don't navigate yet - let user assign items manually below
@@ -351,7 +349,6 @@ struct UIAssignScreen: View {
                                     session.updateItemAssignments(updatedItem)
 
                                     // Auto-save session after assignment change
-                                    print("💾 AssignScreen: Auto-saving session after assignment changed")
                                     session.autoSaveSession()
                                 }
                             )
@@ -470,10 +467,6 @@ struct UIAssignScreen: View {
             // Check if this is edit mode (assignments already exist) or new bill mode
             if !session.assignedItems.isEmpty && !session.regexDetectedItems.isEmpty && !session.llmDetectedItems.isEmpty {
                 // Edit mode: Items are already populated, don't reprocess
-                print("✅ UIAssignScreen: Edit mode detected, skipping processing (items already assigned)")
-                print("   - assignedItems: \(session.assignedItems.count)")
-                print("   - regexDetectedItems: \(session.regexDetectedItems.count)")
-                print("   - llmDetectedItems: \(session.llmDetectedItems.count)")
             } else {
                 // New bill mode: Trigger dual processing when screen appears to ensure fresh results
                 // Clear any existing results first to prevent showing stale data
@@ -485,10 +478,6 @@ struct UIAssignScreen: View {
                     
                     // Only process if we have the necessary data from the current session
                     if session.confirmedTotal > 0 && !session.rawReceiptText.isEmpty && session.expectedItemCount > 0 {
-                        print("🔄 UIAssignScreen: Triggering dual processing for new bill")
-                        print("   - confirmedTotal: \(session.confirmedTotal)")
-                        print("   - expectedItemCount: \(session.expectedItemCount)")
-                        print("   - rawReceiptText length: \(session.rawReceiptText.count)")
                         
                         await session.processWithBothApproaches(
                             confirmedTax: session.confirmedTax,
@@ -497,10 +486,6 @@ struct UIAssignScreen: View {
                             expectedItemCount: session.expectedItemCount
                         )
                     } else {
-                        print("❌ UIAssignScreen: Not processing - missing required data")
-                        print("   - confirmedTotal: \(session.confirmedTotal)")
-                        print("   - expectedItemCount: \(session.expectedItemCount)")
-                        print("   - rawReceiptText isEmpty: \(session.rawReceiptText.isEmpty)")
                     }
                 }
             }
@@ -601,7 +586,6 @@ struct UIAssignScreen: View {
     }
     
     private func handleContactsSelected(_ contacts: [CNContact]) {
-        print("📱 Selected \(contacts.count) contacts from picker")
         
         Task {
             var rejectedContacts: [String] = []
@@ -621,9 +605,7 @@ struct UIAssignScreen: View {
                 )
                 
                 if result.participant != nil {
-                    print("✅ Added validated participant: \(contactName)")
                 } else {
-                    print("⚠️ Participant \(contactName) rejected: \(result.error ?? "Unknown error")")
                     rejectedContacts.append(contactName)
                 }
             }
@@ -658,13 +640,11 @@ struct UIAssignScreen: View {
 
             await MainActor.run {
                 if result.participant != nil {
-                    print("✅ Added validated network contact as participant: \(contact.displayName)")
                     newParticipantName = ""
                     successMessage = "Contact saved and added to current bill!"
                     showSuccessAlert = true
 
                     // Auto-save session after participant change
-                    print("💾 AssignScreen: Auto-saving session after participant added")
                     session.autoSaveSession()
                 } else if let error = result.error {
                     validationError = error
@@ -691,11 +671,9 @@ struct UIAssignScreen: View {
 
             await MainActor.run {
                 if result.participant != nil {
-                    print("✅ Added validated existing contact as participant: \(contact.displayName)")
                     newParticipantName = ""
 
                     // Auto-save session after participant change
-                    print("💾 AssignScreen: Auto-saving session after participant added")
                     session.autoSaveSession()
                 } else if let error = result.error {
                     validationError = error
@@ -733,16 +711,12 @@ struct UIAssignScreen: View {
                         email = emailValidation.sanitized
                         
                         // Check if this email is already in user's transaction contacts
-                        print("🔍 Checking transaction contacts (count: \(contactsManager.transactionContacts.count)) for email: \(emailValidation.sanitized ?? "")")
                         if let existingContact = contactsManager.transactionContacts.first(where: { 
                             $0.email.lowercased() == emailValidation.sanitized?.lowercased() 
                         }) {
                             // Use the saved display name from transaction contacts
                             participantName = existingContact.displayName
-                            print("📋 Found existing contact: \(existingContact.displayName) for email: \(emailValidation.sanitized ?? "")")
                         } else {
-                            print("❌ No existing contact found for email: \(emailValidation.sanitized ?? "")")
-                            print("📋 Available contacts: \(contactsManager.transactionContacts.map { "\($0.displayName) (\($0.email))" })")
                             // Extract name from email (part before @) as fallback
                             participantName = String(trimmedName.split(separator: "@").first ?? Substring(trimmedName))
                             
@@ -795,15 +769,12 @@ struct UIAssignScreen: View {
                 
                 await MainActor.run {
                     if result.participant != nil {
-                        print("✅ Added validated participant manually: \(trimmedName)")
                         newParticipantName = ""
                         showAddParticipantOptions = false
 
                         // Auto-save session after participant change
-                        print("💾 AssignScreen: Auto-saving session after participant added")
                         session.autoSaveSession()
                     } else if result.needsContact {
-                        print("📝 Showing contact modal for email: \(email ?? "nil")")
                         // Show new contact modal for unregistered email
                         pendingContactEmail = email ?? ""
                         pendingContactName = participantName

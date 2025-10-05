@@ -13,29 +13,24 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         
         // TEMPORARILY DISABLED: Firebase App Check until proper setup is complete
         // The iOS app needs to be registered in Firebase Console first
-        print("⚠️ Firebase App Check temporarily disabled - complete manual setup first")
         
         // Configure Firebase as early as possible
         FirebaseApp.configure()
-        print("✅ Firebase configured successfully")
         
         // Configure Firestore settings with modern API
         let db = Firestore.firestore()
         let settings = FirestoreSettings()
         settings.cacheSettings = PersistentCacheSettings(sizeBytes: NSNumber(value: FirestoreCacheSizeUnlimited))
         db.settings = settings
-        print("✅ Firestore configured with offline persistence")
         
         // Configure Google Sign-In with client ID from GoogleService-Info.plist
         guard let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
               let plist = NSDictionary(contentsOfFile: path),
               let clientID = plist["CLIENT_ID"] as? String else {
-            print("❌ Failed to get CLIENT_ID from GoogleService-Info.plist")
             return false
         }
         
         GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
-        print("✅ Google Sign-In configured with client ID: \(clientID)")
         
         // Configure Firebase Cloud Messaging
         setupPushNotifications(application: application)
@@ -45,17 +40,14 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey : Any] = [:]) -> Bool {
         // Handle Google Sign-In URL scheme
-        print("🔗 Handling URL: \(url.absoluteString)")
         return GIDSignIn.sharedInstance.handle(url)
     }
     
     // MARK: - Push Notification Setup
 
     private func setupPushNotifications(application: UIApplication) {
-        print("🔔 Setting up enhanced push notifications with comprehensive error handling...")
 
         // Initialize FCM Token Manager early
-        print("✅ Setting up FCM Token Manager...")
 
         // TODO: Uncomment after adding FirebaseMessaging dependency
         // Set FCM messaging delegate
@@ -78,17 +70,16 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
             // Handle authorization errors
             if let error = error {
-                print("❌ Failed to request notification authorization: \(error.localizedDescription)")
 
                 // Log specific error types for debugging
                 if let authError = error as? UNError {
                     switch authError.code {
                     case .notificationsNotAllowed:
-                        print("⚠️ User has disabled notifications system-wide")
+                        break
                     case .attachmentInvalidURL, .attachmentUnrecognizedType:
-                        print("⚠️ Attachment-related error: \(authError.localizedDescription)")
+                        break
                     default:
-                        print("⚠️ Unknown authorization error: \(authError.localizedDescription)")
+                        break
                     }
                 }
                 return
@@ -96,7 +87,6 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
             // Handle authorization result
             if granted {
-                print("✅ Notification authorization granted with all permissions")
 
                 // Register for remote notifications on main thread
                 DispatchQueue.main.async {
@@ -105,11 +95,9 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
                 // Initialize FCM token fetching after successful authorization
                 Task {
-                    print("🔔 FCM token initialization will be handled by the service layer")
                 }
 
             } else {
-                print("⚠️ Notification authorization denied by user")
 
                 // Check current notification settings for detailed feedback
                 UNUserNotificationCenter.current().getNotificationSettings { settings in
@@ -154,26 +142,18 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                 UIApplication.shared.registerForRemoteNotifications()
             }
         case .denied:
-            print("⚠️ Push notifications are disabled - user needs to enable in Settings")
+            break
         case .notDetermined:
-            print("🔄 Push notification authorization not yet determined")
+            break
         case .ephemeral:
-            print("📱 App Clip temporary notification access")
+            break
         @unknown default:
-            print("⚠️ Unknown notification authorization status")
+            break
         }
     }
 
     /// Log detailed notification settings for debugging
     private func logNotificationSettings(_ settings: UNNotificationSettings) {
-        print("📱 Notification Settings Status:")
-        print("   Authorization: \(authorizationStatusDescription(settings.authorizationStatus))")
-        print("   Alert: \(notificationSettingDescription(settings.alertSetting))")
-        print("   Badge: \(notificationSettingDescription(settings.badgeSetting))")
-        print("   Sound: \(notificationSettingDescription(settings.soundSetting))")
-        print("   Lock Screen: \(notificationSettingDescription(settings.lockScreenSetting))")
-        print("   Notification Center: \(notificationSettingDescription(settings.notificationCenterSetting))")
-        print("   Critical Alerts: \(notificationSettingDescription(settings.criticalAlertSetting))")
     }
 
     /// Helper function to describe UNAuthorizationStatus
@@ -212,8 +192,6 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         let tokenString = deviceToken.map { String(format: "%02.2hhx", $0) }.joined()
-        print("✅ Successfully registered for remote notifications")
-        print("📱 Device Token (APN): \(tokenString)")
 
         // Store APN device token for debugging
         UserDefaults.standard.set(tokenString, forKey: "apn_device_token")
@@ -224,26 +202,21 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         // Messaging.messaging().apnsToken = deviceToken
 
         // Note: Push notification system validation will be handled separately
-        print("📱 Device token registered - push notifications ready")
     }
 
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
-        print("❌ Failed to register for remote notifications: \(error.localizedDescription)")
 
         // Log specific error details for debugging
         if let nsError = error as NSError? {
-            print("   Error Domain: \(nsError.domain)")
-            print("   Error Code: \(nsError.code)")
-            print("   Error Info: \(nsError.userInfo)")
 
             // Common registration failure reasons
             switch nsError.code {
             case 3000...3999:
-                print("💡 Suggestion: Check network connectivity and try again")
+                break
             case 1000...1999:
-                print("💡 Suggestion: Verify app signing and provisioning profile")
+                break
             default:
-                print("💡 Suggestion: Check device settings and app permissions")
+                break
             }
         }
 
@@ -254,7 +227,6 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
     /// Validates the complete push notification system
     private func validatePushNotificationSystem() async {
-        print("🔍 Validating push notification system...")
 
         // Basic validation - check if notification center is available
         UNUserNotificationCenter.current().getNotificationSettings { settings in
@@ -264,26 +236,21 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                                           settings.soundSetting == .enabled
 
                 if isConfiguredCorrectly {
-                    print("✅ User Notification Settings: Properly configured")
                 } else {
-                    print("⚠️ User Notification Settings: Suboptimal configuration")
                     self.logNotificationSettings(settings)
                 }
             }
         }
 
-        print("🔍 Push notification basic validation complete")
     }
     
     // MARK: - MessagingDelegate (TODO: Uncomment after adding FirebaseMessaging)
     /*
     func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
         guard let fcmToken = fcmToken else {
-            print("❌ FCM token is nil")
             return
         }
         
-        print("✅ FCM Registration Token received: \(fcmToken)")
         
         // Store token in Firestore when user is authenticated
         Task {
@@ -299,15 +266,9 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         let content = request.content
         let userInfo = content.userInfo
 
-        print("📩 Received notification while app is in foreground:")
-        print("   Title: \(content.title)")
-        print("   Body: \(content.body)")
-        print("   Badge: \(content.badge?.intValue ?? 0)")
-        print("   Category: \(content.categoryIdentifier.isEmpty ? "None" : content.categoryIdentifier)")
 
         // Log custom data for debugging
         if !userInfo.isEmpty {
-            print("   Custom Data: \(userInfo)")
         }
 
         // Enhanced presentation options based on content type
@@ -340,30 +301,23 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         let userInfo = notification.request.content.userInfo
         let actionIdentifier = response.actionIdentifier
 
-        print("👆 User interacted with notification:")
-        print("   Action: \(actionIdentifier)")
-        print("   Title: \(notification.request.content.title)")
 
         // Handle different action types
         switch actionIdentifier {
         case UNNotificationDefaultActionIdentifier:
-            print("🔍 User tapped notification - opening app")
             handleNotificationTap(userInfo: userInfo)
 
         case UNNotificationDismissActionIdentifier:
-            print("❌ User dismissed notification")
             handleNotificationDismiss(userInfo: userInfo)
 
         case "VIEW_BILL_ACTION":
-            print("👁️ User chose to view bill")
             handleViewBillAction(userInfo: userInfo)
 
         case "MARK_PAID_ACTION":
-            print("💰 User chose to mark bill as paid")
             handleMarkPaidAction(userInfo: userInfo)
 
         default:
-            print("🔧 Unknown action: \(actionIdentifier)")
+            break
         }
 
         completionHandler()
@@ -373,7 +327,6 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     private func handleNotificationTap(userInfo: [AnyHashable: Any]) {
         // Extract bill ID for navigation
         if let billId = userInfo["billId"] as? String {
-            print("🔍 Navigate to bill: \(billId)")
 
             // Store the bill ID for navigation after app launch
             UserDefaults.standard.set(billId, forKey: "pending_bill_navigation")
@@ -393,7 +346,6 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     private func handleNotificationDismiss(userInfo: [AnyHashable: Any]) {
         // Log dismissal for analytics
         if let billId = userInfo["billId"] as? String {
-            print("📊 Bill notification dismissed: \(billId)")
 
             // Could track engagement metrics here
             UserDefaults.standard.set(Date(), forKey: "last_notification_dismissed")
@@ -409,11 +361,9 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     /// Handle mark paid action
     private func handleMarkPaidAction(userInfo: [AnyHashable: Any]) {
         guard let billId = userInfo["billId"] as? String else {
-            print("❌ No bill ID in mark paid action")
             return
         }
 
-        print("💰 Processing mark paid request for bill: \(billId)")
 
         // Store the action for processing when app becomes active
         UserDefaults.standard.set(billId, forKey: "pending_mark_paid_bill")
@@ -449,23 +399,19 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
     /// Initialize push notification services
     private func initializePushNotificationServices() {
-        print("🔧 Initializing push notification services...")
 
         // Note: FCMTokenManager and PushNotificationService should be initialized
         // automatically via their shared instances when first accessed
         // This method serves as a placeholder for any additional initialization
 
-        print("✅ Push notification services initialization queued")
     }
 
     // MARK: - MessagingDelegate (TODO: Uncomment after adding FirebaseMessaging)
 
     /*
     func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
-        print("🎯 FCM registration token received")
 
         guard let fcmToken = fcmToken else {
-            print("❌ FCM token is nil")
             return
         }
 
@@ -473,15 +419,12 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         UserDefaults.standard.set(fcmToken, forKey: "fcm_registration_token")
         UserDefaults.standard.set(Date(), forKey: "fcm_token_received_date")
 
-        print("🔑 FCM Token: \(String(fcmToken.prefix(20)))...")
 
         // Update FCM token via FCMTokenManager
         Task {
             do {
                 try await FCMTokenManager.shared.updateCurrentUserToken(fcmToken)
-                print("✅ FCM token successfully updated in Firestore")
             } catch {
-                print("❌ Failed to update FCM token in Firestore: \(error.localizedDescription)")
             }
         }
     }
@@ -516,14 +459,12 @@ struct SplitSmartApp: App {
 
                             // Process pending deep link after successful login
                             if let pendingDeepLink = deepLinkCoordinator.pendingDeepLink {
-                                print("🔗 Processing pending deep link after login: \(pendingDeepLink.absoluteString)")
                                 deepLinkCoordinator.handle(pendingDeepLink)
                                 deepLinkCoordinator.clearPendingDeepLink()
                             }
                         }
                         .onOpenURL { url in
                             // Handle deep links from notifications and external sources
-                            print("🔗 Received deep link: \(url.absoluteString)")
                             deepLinkCoordinator.handle(url)
                         }
                 } else {
@@ -532,7 +473,6 @@ struct SplitSmartApp: App {
                         .environmentObject(deepLinkCoordinator)
                         .onOpenURL { url in
                             // Store deep link for processing after login
-                            print("🔗 User not authenticated - storing deep link: \(url.absoluteString)")
                             deepLinkCoordinator.pendingDeepLink = url
                         }
                 }

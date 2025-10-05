@@ -115,7 +115,6 @@ struct UIProfileScreen: View {
                     Button(action: {
                         Task {
                             let isRegistered = await authViewModel.isUserOnboarded(email: "test@example.com")
-                            print("🔍 Test user registered: \(isRegistered)")
                         }
                     }) {
                         HStack {
@@ -136,7 +135,6 @@ struct UIProfileScreen: View {
                             // Check if the current signed-in user can be found
                             if let currentEmail = authViewModel.user?.email {
                                 let isRegistered = await authViewModel.isUserOnboarded(email: currentEmail)
-                                print("🔍 Current user (\(currentEmail)) registered: \(isRegistered)")
                             }
                         }
                     }) {
@@ -235,7 +233,6 @@ struct UIProfileScreen: View {
             do {
                 try await authViewModel.deleteAccount(billManager: billManager)
                 // Account deleted successfully - user will be automatically logged out
-                print("✅ Account deleted successfully")
             } catch {
                 // Show error to user
                 await MainActor.run {

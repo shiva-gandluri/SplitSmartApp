@@ -50,7 +50,6 @@ class AuthViewModel: ObservableObject {
         guard let db = Firestore.firestore() as Firestore? else {
             AppLog.firebaseError("Firestore not available")
             #if DEBUG
-            print("❌ Firestore not available")
             #endif
             return
         }
@@ -75,13 +74,11 @@ class AuthViewModel: ObservableObject {
             try await userRef.setData(userData, merge: true)
             AppLog.authSuccess("Test user created", userEmail: email)
             #if DEBUG
-            print("✅ Test user created: \(email)")
             #endif
             
         } catch {
             AppLog.authError("Failed to create test user", error: error)
             #if DEBUG
-            print("❌ Failed to create test user: \(error.localizedDescription)")
             #endif
         }
     }
@@ -99,7 +96,6 @@ class AuthViewModel: ObservableObject {
         guard queryCount < maxQueriesPerMinute else {
             AppLog.authWarning("Rate limit exceeded. Please wait before making more requests.")
             #if DEBUG
-            print("⚠️ Rate limit exceeded. Please wait before making more requests.")
             #endif
             return false
         }
@@ -109,7 +105,6 @@ class AuthViewModel: ObservableObject {
             let waitTime = minTimeBetweenQueries - now.timeIntervalSince(lastQueryTime)
             AppLog.authWarning("Rate limiting: waiting \(waitTime) seconds before proceeding")
             #if DEBUG
-            print("⚠️ Rate limiting: waiting \(waitTime) seconds before proceeding")
             #endif
             // Wait for the required time and then proceed
             try? await Task.sleep(nanoseconds: UInt64(waitTime * 1_000_000_000))
@@ -218,7 +213,6 @@ class AuthViewModel: ObservableObject {
         guard await checkRateLimit() else {
             AppLog.authError("Rate limit exceeded for user validation")
             #if DEBUG
-            print("❌ Rate limit exceeded for user validation")
             #endif
             return false
         }
@@ -226,7 +220,6 @@ class AuthViewModel: ObservableObject {
         guard let db = Firestore.firestore() as Firestore? else {
             AppLog.firebaseError("Firestore not available")
             #if DEBUG
-            print("❌ Firestore not available")
             #endif
             return false
         }
@@ -234,14 +227,12 @@ class AuthViewModel: ObservableObject {
         do {
             AppLog.debug("Checking user onboarding status...", category: .authentication)
             #if DEBUG
-            print("🔍 Checking user onboarding status...")
             #endif
             
             // Validate and check by email first
             if let email = email {
                 let emailValidation = AuthViewModel.validateEmail(email)
                 if emailValidation.isValid, let sanitizedEmail = emailValidation.sanitized {
-                    print("📧 Email to check: \(sanitizedEmail)")
                     
                     // First check the new participants collection
                     let participantsRef = db.collection("participants")
@@ -251,7 +242,6 @@ class AuthViewModel: ObservableObject {
                     if !participantSnapshot.isEmpty {
                         AppLog.authSuccess("User found in participants collection", userEmail: sanitizedEmail)
                         #if DEBUG
-                        print("✅ User found in participants collection: \(sanitizedEmail)")
                         #endif
                         return true
                     }
@@ -264,7 +254,6 @@ class AuthViewModel: ObservableObject {
                     if !userSnapshot.isEmpty {
                         AppLog.authSuccess("User found in users collection", userEmail: sanitizedEmail)
                         #if DEBUG
-                        print("✅ User found in users collection: \(sanitizedEmail)")
                         #endif
                         
                         // Auto-migrate: Create participant record for existing user
@@ -275,7 +264,6 @@ class AuthViewModel: ObservableObject {
                         return true
                     }
                 } else {
-                    print("⚠️ Invalid email format provided: \(emailValidation.error ?? "Unknown error")")
                     return false
                 }
             }
@@ -284,7 +272,6 @@ class AuthViewModel: ObservableObject {
             if let phoneNumber = phoneNumber {
                 let phoneValidation = AuthViewModel.validatePhoneNumber(phoneNumber)
                 if phoneValidation.isValid, let sanitizedPhone = phoneValidation.sanitized {
-                    print("📱 Phone to check: \(sanitizedPhone)")
                     
                     // First check the new participants collection
                     let participantsRef = db.collection("participants")
@@ -294,7 +281,6 @@ class AuthViewModel: ObservableObject {
                     if !participantSnapshot.isEmpty {
                         AppLog.authSuccess("User found with phone in participants")
                         #if DEBUG
-                        print("✅ User found with phone in participants: \(sanitizedPhone)")
                         #endif
                         return true
                     }
@@ -307,7 +293,6 @@ class AuthViewModel: ObservableObject {
                     if !userSnapshot.isEmpty {
                         AppLog.authSuccess("User found with phone in users collection")
                         #if DEBUG
-                        print("✅ User found with phone in users collection: \(sanitizedPhone)")
                         #endif
                         
                         // Auto-migrate: Create participant record for existing user
@@ -318,18 +303,15 @@ class AuthViewModel: ObservableObject {
                         return true
                     }
                 } else {
-                    print("⚠️ Invalid phone format provided: \(phoneValidation.error ?? "Unknown error")")
                     return false
                 }
             }
             
-            print("❌ User not found in either participants or users collection")
             return false
             
         } catch {
             AppLog.authError("Error checking user onboarding status", error: error)
             #if DEBUG
-            print("❌ Error checking user onboarding status: \(error.localizedDescription)")
             #endif
             return false
         }
@@ -341,7 +323,6 @@ class AuthViewModel: ObservableObject {
         guard await checkRateLimit() else {
             AppLog.authError("Rate limit exceeded for Firebase UID lookup")
             #if DEBUG
-            print("❌ Rate limit exceeded for Firebase UID lookup")
             #endif
             return nil
         }
@@ -349,7 +330,6 @@ class AuthViewModel: ObservableObject {
         guard let db = Firestore.firestore() as Firestore? else {
             AppLog.firebaseError("Firestore not available")
             #if DEBUG
-            print("❌ Firestore not available")
             #endif
             return nil
         }
@@ -357,33 +337,25 @@ class AuthViewModel: ObservableObject {
         do {
             AppLog.debug("Getting Firebase UID for user...", category: .authentication)
             #if DEBUG
-            print("🔍 Getting Firebase UID for user...")
             #endif
 
             // Validate and check by email first
             if let email = email {
                 let emailValidation = AuthViewModel.validateEmail(email)
                 if emailValidation.isValid, let sanitizedEmail = emailValidation.sanitized {
-                    print("📧 LOOKUP DEBUG: Email to lookup UID: \(sanitizedEmail)")
 
                     // First check the participants collection
                     let participantsRef = db.collection("participants")
                     let participantEmailQuery = participantsRef.whereField("email", isEqualTo: sanitizedEmail)
                     let participantSnapshot = try await participantEmailQuery.getDocuments(source: .default)
 
-                    print("📧 LOOKUP DEBUG: Found \(participantSnapshot.documents.count) participants with email \(sanitizedEmail)")
 
                     if let participantDoc = participantSnapshot.documents.first {
                         let firebaseUID = participantDoc.documentID
                         let data = participantDoc.data()
-                        print("📧 LOOKUP DEBUG: Participants collection result:")
-                        print("📧   - Document ID (Firebase UID): \(firebaseUID)")
-                        print("📧   - Email in document: \(data["email"] as? String ?? "nil")")
-                        print("📧   - Name in document: \(data["name"] as? String ?? "nil")")
 
                         AppLog.authSuccess("Firebase UID found in participants collection", userEmail: sanitizedEmail)
                         #if DEBUG
-                        print("✅ Firebase UID found in participants: \(firebaseUID)")
                         #endif
                         return firebaseUID
                     }
@@ -393,26 +365,18 @@ class AuthViewModel: ObservableObject {
                     let userEmailQuery = usersRef.whereField("email", isEqualTo: sanitizedEmail)
                     let userSnapshot = try await userEmailQuery.getDocuments(source: .default)
 
-                    print("📧 LOOKUP DEBUG: Found \(userSnapshot.documents.count) users with email \(sanitizedEmail)")
 
                     if let userDoc = userSnapshot.documents.first {
                         let firebaseUID = userDoc.documentID
                         let data = userDoc.data()
-                        print("📧 LOOKUP DEBUG: Users collection result:")
-                        print("📧   - Document ID (Firebase UID): \(firebaseUID)")
-                        print("📧   - Email in document: \(data["email"] as? String ?? "nil")")
-                        print("📧   - Name in document: \(data["name"] as? String ?? "nil")")
 
                         AppLog.authSuccess("Firebase UID found in users collection", userEmail: sanitizedEmail)
                         #if DEBUG
-                        print("✅ Firebase UID found in users: \(firebaseUID)")
                         #endif
                         return firebaseUID
                     }
 
-                    print("❌ LOOKUP DEBUG: No user found with email \(sanitizedEmail) in either collection")
                 } else {
-                    print("⚠️ Invalid email format provided: \(emailValidation.error ?? "Unknown error")")
                     return nil
                 }
             }
@@ -421,7 +385,6 @@ class AuthViewModel: ObservableObject {
             if let phoneNumber = phoneNumber {
                 let phoneValidation = AuthViewModel.validatePhoneNumber(phoneNumber)
                 if phoneValidation.isValid, let sanitizedPhone = phoneValidation.sanitized {
-                    print("📱 Phone to lookup UID: \(sanitizedPhone)")
 
                     // First check the participants collection
                     let participantsRef = db.collection("participants")
@@ -432,7 +395,6 @@ class AuthViewModel: ObservableObject {
                         let firebaseUID = participantDoc.documentID
                         AppLog.authSuccess("Firebase UID found with phone in participants")
                         #if DEBUG
-                        print("✅ Firebase UID found with phone in participants: \(firebaseUID)")
                         #endif
                         return firebaseUID
                     }
@@ -446,23 +408,19 @@ class AuthViewModel: ObservableObject {
                         let firebaseUID = userDoc.documentID
                         AppLog.authSuccess("Firebase UID found with phone in users collection")
                         #if DEBUG
-                        print("✅ Firebase UID found with phone in users: \(firebaseUID)")
                         #endif
                         return firebaseUID
                     }
                 } else {
-                    print("⚠️ Invalid phone format provided: \(phoneValidation.error ?? "Unknown error")")
                     return nil
                 }
             }
 
-            print("❌ Firebase UID not found for provided credentials")
             return nil
 
         } catch {
             AppLog.authError("Error getting Firebase UID", error: error)
             #if DEBUG
-            print("❌ Error getting Firebase UID: \(error.localizedDescription)")
             #endif
             return nil
         }
@@ -474,14 +432,12 @@ class AuthViewModel: ObservableObject {
             let userData = userDoc.data() ?? [:]
             let userId = userDoc.documentID
             
-            print("🔄 Auto-migrating user \(userId) to participants collection...")
             
             let participantRef = db.collection("participants").document(userId)
             
             // Check if participant record already exists
             let existingParticipant = try await participantRef.getDocument(source: .default)
             if existingParticipant.exists {
-                print("ℹ️ Participant record already exists for \(userId)")
                 return
             }
             
@@ -517,10 +473,8 @@ class AuthViewModel: ObservableObject {
             }
             
             try await participantRef.setData(participantData, merge: true)
-            print("✅ Successfully migrated user \(userId) to participants collection")
             
         } catch {
-            print("⚠️ Failed to auto-migrate user to participants: \(error.localizedDescription)")
             // Don't fail the validation - just log the error
         }
     }
@@ -539,7 +493,6 @@ class AuthViewModel: ObservableObject {
         guard !isInitialized else { return }
         isInitialized = true
         
-        print("🔵 Checking authentication state...")
         
         // Wait for Firebase to be fully ready
         var retries = 0
@@ -549,18 +502,15 @@ class AuthViewModel: ObservableObject {
         }
         
         if FirebaseApp.app() == nil {
-            print("❌ Firebase still not ready after retries")
             await MainActor.run {
                 self.isInitializing = false
             }
             return
         }
         
-        print("✅ Firebase is ready, checking current user...")
         
         // Check if we have a current user
         if let user = Auth.auth().currentUser {
-            print("✅ Found existing user: \(user.email ?? "Unknown")")
             await MainActor.run {
                 self.user = user
                 self.isSignedIn = true
@@ -572,7 +522,6 @@ class AuthViewModel: ObservableObject {
                 await self?.ensureParticipantRecordExists(for: user)
             }
         } else {
-            print("ℹ️ No existing user found")
             await MainActor.run {
                 self.isInitializing = false
             }
@@ -580,11 +529,9 @@ class AuthViewModel: ObservableObject {
     }
     
     func signInWithGoogle() async {
-        print("🔵 Starting Google Sign-In process...")
         
         // Ensure we're not already loading
         guard !isLoading else {
-            print("❌ Already in loading state, ignoring tap")
             return
         }
         
@@ -604,21 +551,16 @@ class AuthViewModel: ObservableObject {
                 self.errorMessage = "Unable to get root view controller"
                 self.isLoading = false
             }
-            print("❌ Root view controller not found")
             return
         }
         
-        print("✅ Root view controller found")
-        print("🔵 Starting Google Sign-In flow...")
         
         do {
             // Use the Google Sign-In that's already configured in AppDelegate
             let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: rootViewController)
-            print("✅ Google Sign-In completed successfully")
             
             // Check if we're still in loading state (user might have cancelled)
             guard isLoading else {
-                print("ℹ️ Sign-in cancelled or already completed")
                 return
             }
             
@@ -627,20 +569,16 @@ class AuthViewModel: ObservableObject {
                     self.errorMessage = "Failed to get ID token from Google"
                     self.isLoading = false
                 }
-                print("❌ Failed to get ID token")
                 return
             }
             
-            print("✅ ID token obtained")
             
             let credential = GoogleAuthProvider.credential(
                 withIDToken: idToken,
                 accessToken: result.user.accessToken.tokenString
             )
             
-            print("🔵 Signing in to Firebase...")
             let authResult = try await Auth.auth().signIn(with: credential)
-            print("✅ Firebase authentication successful")
             
             // Create user record in background (non-blocking)
             Task.detached(priority: .userInitiated) { [weak self] in
@@ -651,13 +589,10 @@ class AuthViewModel: ObservableObject {
                     // MIGRATION: Auto-migrate existing users on login
                     await self?.performAutoMigrationIfNeeded(authResult: authResult)
                     
-                    print("✅ User and participant record creation completed")
                 } catch {
                     AppLog.authError("Background record creation failed", error: error)
                     #if DEBUG
-                    print("❌ Background record creation failed: \(error.localizedDescription)")
                     #endif
-                    print("ℹ️ App will continue - records will be created on retry")
                 }
             }
             
@@ -666,7 +601,6 @@ class AuthViewModel: ObservableObject {
                 self.user = authResult.user
                 self.isSignedIn = true
                 self.isLoading = false
-                print("✅ User signed in: \(authResult.user.email ?? "Unknown email")")
             }
             
             // Update FCM token for push notifications (async, don't block UI)
@@ -677,7 +611,6 @@ class AuthViewModel: ObservableObject {
         } catch {
             AppLog.authError("Sign-in error", error: error)
             #if DEBUG
-            print("❌ Sign-in error: \(error.localizedDescription)")
             #endif
             await MainActor.run {
                 // Handle specific error types
@@ -685,7 +618,6 @@ class AuthViewModel: ObservableObject {
                     switch nsError.code {
                     case -5: // User cancelled
                         self.errorMessage = ""
-                        print("ℹ️ User cancelled sign-in")
                     default:
                         self.errorMessage = error.localizedDescription
                     }
@@ -698,12 +630,9 @@ class AuthViewModel: ObservableObject {
     }
     
     private func createUserRecord(authResult: AuthDataResult) async throws {
-        print("🔵 Attempting to create user record in Firestore...")
-        print("👤 User info: UID=\(authResult.user.uid), Email=\(authResult.user.email ?? "nil"), DisplayName=\(authResult.user.displayName ?? "nil")")
         
         let db = Firestore.firestore()
         let userRef = db.collection("users").document(authResult.user.uid)
-        print("📂 Document reference created: users/\(authResult.user.uid)")
         
         // Set a timeout for Firestore operations to prevent hanging
         let timeoutTask = Task {
@@ -717,7 +646,6 @@ class AuthViewModel: ObservableObject {
                 let document = try await userRef.getDocument(source: .default)
                 
                 if !document.exists {
-                    print("🔵 Creating new user record in Firestore...")
                     
                     var userData: [String: Any] = [
                         "uid": authResult.user.uid,
@@ -731,16 +659,12 @@ class AuthViewModel: ObservableObject {
                     // Add phone number if available from Google OAuth
                     if let phoneNumber = authResult.user.phoneNumber {
                         userData["phoneNumber"] = phoneNumber
-                        print("📱 Adding phone number: \(phoneNumber)")
                     }
                     
                     let cleanedUserData = userData.compactMapValues { $0 }
-                    print("💾 About to save user data: \(cleanedUserData)")
                     
                     try await userRef.setData(cleanedUserData, merge: true)
-                    print("✅ User record created in Firestore successfully!")
                 } else {
-                    print("ℹ️ User record already exists, updating last sign-in time")
                     try await userRef.updateData([
                         "lastSignInAt": FieldValue.serverTimestamp()
                     ])
@@ -750,7 +674,6 @@ class AuthViewModel: ObservableObject {
                 if error.domain == FirestoreErrorDomain {
                     switch error.code {
                     case FirestoreErrorCode.unavailable.rawValue:
-                        print("⚠️ Firestore unavailable (offline), using setData with merge")
                         var userData: [String: Any] = [
                             "uid": authResult.user.uid,
                             "email": authResult.user.email ?? "",
@@ -768,22 +691,18 @@ class AuthViewModel: ObservableObject {
                         let cleanedUserData = userData.compactMapValues { $0 }
                         
                         try await userRef.setData(cleanedUserData, merge: true)
-                        print("✅ User record handled offline with merge")
                     
                     case FirestoreErrorCode.permissionDenied.rawValue:
-                        print("⚠️ Firestore permission denied - API may not be enabled")
                         // Don't throw error, just log it
                         return
                     
                     default:
                         AppLog.firebaseError("Firestore error", error: error)
                         #if DEBUG
-                        print("❌ Firestore error: \(error.localizedDescription)")
                         #endif
                         throw error
                     }
                 } else {
-                    print("❌ General error: \(error.localizedDescription)")
                     throw error
                 }
             }
@@ -806,14 +725,12 @@ class AuthViewModel: ObservableObject {
                 group.cancelAll()
             }
         } catch {
-            print("⚠️ Firestore operation failed or timed out: \(error.localizedDescription)")
             // Don't rethrow - we want authentication to succeed even if Firestore fails
         }
     }
     
     // SECURE: Create participant record with validated minimal public data only
     private func createParticipantRecord(authResult: AuthDataResult) async throws {
-        print("🔵 Creating secure participant record...")
         
         let db = Firestore.firestore()
         let participantRef = db.collection("participants").document(authResult.user.uid)
@@ -822,7 +739,6 @@ class AuthViewModel: ObservableObject {
         let document = try await participantRef.getDocument(source: .default)
         
         if !document.exists {
-            print("🔵 Creating new participant record...")
             
             // Validate display name
             let nameValidation = AuthViewModel.validateDisplayName(authResult.user.displayName)
@@ -841,9 +757,7 @@ class AuthViewModel: ObservableObject {
                 let emailValidation = AuthViewModel.validateEmail(email)
                 if emailValidation.isValid, let sanitizedEmail = emailValidation.sanitized {
                     participantData["email"] = sanitizedEmail
-                    print("✅ Validated email added to participant record")
                 } else {
-                    print("⚠️ Invalid email from auth provider: \(emailValidation.error ?? "Unknown error")")
                 }
             }
             
@@ -852,16 +766,12 @@ class AuthViewModel: ObservableObject {
                 let phoneValidation = AuthViewModel.validatePhoneNumber(phoneNumber)
                 if phoneValidation.isValid, let sanitizedPhone = phoneValidation.sanitized {
                     participantData["phoneNumber"] = sanitizedPhone
-                    print("✅ Validated phone number added to participant record")
                 } else {
-                    print("⚠️ Invalid phone number from auth provider: \(phoneValidation.error ?? "Unknown error")")
                 }
             }
             
             try await participantRef.setData(participantData, merge: true)
-            print("✅ Secure participant record created with validated data")
         } else {
-            print("ℹ️ Participant record already exists, updating activity")
             try await participantRef.updateData([
                 "lastActiveAt": FieldValue.serverTimestamp(),
                 "isActive": true
@@ -880,7 +790,6 @@ class AuthViewModel: ObservableObject {
             let participantDoc = try await participantRef.getDocument(source: .default)
             
             if !participantDoc.exists {
-                print("🔄 Performing auto-migration for current user...")
                 
                 // Get current user's data from users collection (allowed since it's their own data)
                 let userRef = db.collection("users").document(userId)
@@ -888,16 +797,12 @@ class AuthViewModel: ObservableObject {
                 
                 if userDoc.exists {
                     await autoMigrateUserToParticipant(userDoc: userDoc, db: db)
-                    print("✅ Auto-migration completed for current user")
                 } else {
-                    print("ℹ️ No user document found to migrate")
                 }
             } else {
-                print("ℹ️ Participant record already exists - no migration needed")
             }
             
         } catch {
-            print("⚠️ Auto-migration failed: \(error.localizedDescription)")
             // Don't fail login - just log the error
         }
     }
@@ -910,7 +815,6 @@ class AuthViewModel: ObservableObject {
             
             AppLog.debug("Checking if participant record exists for current user...", category: .authentication)
             #if DEBUG
-            print("🔍 Checking if participant record exists for current user...")
             #endif
             
             // Check if participant record already exists
@@ -918,27 +822,21 @@ class AuthViewModel: ObservableObject {
             let participantDoc = try await participantRef.getDocument(source: .default)
             
             if !participantDoc.exists {
-                print("🔄 Creating participant record for existing user...")
                 
                 // Get current user's data from users collection (allowed since it's their own data)
                 let userRef = db.collection("users").document(userId)
                 let userDoc = try await userRef.getDocument(source: .default)
                 
                 if userDoc.exists {
-                    print("📊 Found user document, migrating to participants...")
                     await autoMigrateUserToParticipant(userDoc: userDoc, db: db)
-                    print("✅ Migration completed for existing user")
                 } else {
-                    print("📝 No user document found, creating participant from auth data...")
                     // Create participant record from auth user data directly
                     await createParticipantFromAuth(user: user, db: db)
                 }
             } else {
-                print("ℹ️ Participant record already exists - no migration needed")
             }
             
         } catch {
-            print("⚠️ Failed to ensure participant record exists: \(error.localizedDescription)")
             // Don't fail - just log the error
         }
     }
@@ -965,7 +863,6 @@ class AuthViewModel: ObservableObject {
                 let emailValidation = AuthViewModel.validateEmail(email)
                 if emailValidation.isValid, let sanitizedEmail = emailValidation.sanitized {
                     participantData["email"] = sanitizedEmail
-                    print("✅ Validated email added to participant record")
                 }
             }
             
@@ -974,15 +871,12 @@ class AuthViewModel: ObservableObject {
                 let phoneValidation = AuthViewModel.validatePhoneNumber(phoneNumber)
                 if phoneValidation.isValid, let sanitizedPhone = phoneValidation.sanitized {
                     participantData["phoneNumber"] = sanitizedPhone
-                    print("✅ Validated phone number added to participant record")
                 }
             }
             
             try await participantRef.setData(participantData, merge: true)
-            print("✅ Participant record created from auth data")
             
         } catch {
-            print("⚠️ Failed to create participant from auth: \(error.localizedDescription)")
         }
     }
     
@@ -998,9 +892,7 @@ class AuthViewModel: ObservableObject {
             // Reset initialization state to allow re-checking auth state
             self.isInitialized = false
 
-            print("✅ Successfully signed out")
         } catch {
-            print("❌ Sign out error: \(error.localizedDescription)")
             self.errorMessage = error.localizedDescription
         }
     }
@@ -1011,15 +903,12 @@ class AuthViewModel: ObservableObject {
     /// - Parameter billManager: BillManager instance with user's balance data
     /// - Throws: AccountDeletionError if validation fails, or other errors during deletion
     func deleteAccount(billManager: BillManager) async throws {
-        print("🔵 Starting account deletion process...")
 
         // Step 1: Validate deletion is allowed (throws if blocked)
         try AccountDeletionService.validateDeletion(for: billManager)
-        print("✅ Validation passed - proceeding with deletion")
 
         // Step 2: Get current user
         guard let currentUser = Auth.auth().currentUser else {
-            print("❌ No authenticated user found")
             throw AccountDeletionError.generalError("No authenticated user found")
         }
 
@@ -1027,20 +916,15 @@ class AuthViewModel: ObservableObject {
         let db = Firestore.firestore()
         let userId = currentUser.uid
 
-        print("🗑️ Deleting user data from Firestore...")
 
         // Delete from users collection
         try await db.collection("users").document(userId).delete()
-        print("✅ Deleted from users collection")
 
         // Delete from participants collection
         try await db.collection("participants").document(userId).delete()
-        print("✅ Deleted from participants collection")
 
         // Step 4: Delete Firebase Auth account
-        print("🗑️ Deleting Firebase Auth account...")
         try await currentUser.delete()
-        print("✅ Firebase Auth account deleted")
 
         // Step 5: Sign out from Google
         GIDSignIn.sharedInstance.signOut()
@@ -1054,6 +938,5 @@ class AuthViewModel: ObservableObject {
             self.isInitialized = false
         }
 
-        print("✅ Account deletion completed successfully")
     }
 }

@@ -88,10 +88,8 @@ class DeepLinkCoordinator: ObservableObject {
      - Network error → Shows retry option
      */
     func handle(_ url: URL) {
-        print("📲 Deep link received: \(url.absoluteString)")
 
         guard url.scheme == "splitsmart" else {
-            print("❌ Invalid URL scheme: \(url.scheme ?? "none")")
             errorMessage = "Invalid link format"
             return
         }
@@ -99,23 +97,19 @@ class DeepLinkCoordinator: ObservableObject {
         let host = url.host ?? ""
         let pathComponents = url.pathComponents.filter { $0 != "/" }
 
-        print("🔍 Parsing URL - host: \(host), path: \(pathComponents)")
 
         switch host {
         case "bill":
             guard let billId = pathComponents.first else {
-                print("❌ Missing bill ID in URL")
                 errorMessage = "Invalid bill link - missing ID"
                 return
             }
             handleBillDeepLink(billId: billId)
 
         case "home":
-            print("🏠 Navigating to home")
             activeDestination = .home
 
         default:
-            print("❌ Unknown deep link destination: \(host)")
             errorMessage = "Unknown link destination"
         }
     }
@@ -161,7 +155,6 @@ class DeepLinkCoordinator: ObservableObject {
      - Network error → "Network error. Please try again."
      */
     private func handleBillDeepLink(billId: String) {
-        print("📋 Fetching bill: \(billId)")
         isLoading = true
 
         Task { @MainActor in
@@ -169,14 +162,12 @@ class DeepLinkCoordinator: ObservableObject {
                 let billDoc = try await db.collection("bills").document(billId).getDocument()
 
                 guard billDoc.exists else {
-                    print("❌ Bill not found: \(billId)")
                     isLoading = false
                     errorMessage = "Bill not found or has been deleted"
                     return
                 }
 
                 guard let bill = try? billDoc.data(as: Bill.self) else {
-                    print("❌ Failed to decode bill: \(billId)")
                     isLoading = false
                     errorMessage = "Failed to load bill data"
                     return
@@ -184,12 +175,10 @@ class DeepLinkCoordinator: ObservableObject {
 
                 // TODO: Add permission check when authentication is available
                 // For now, navigate directly
-                print("✅ Bill loaded: \(bill.billName)")
                 isLoading = false
                 activeDestination = .billDetail(bill)
 
             } catch {
-                print("❌ Error fetching bill: \(error.localizedDescription)")
                 isLoading = false
                 errorMessage = "Network error. Please try again."
             }

@@ -512,104 +512,123 @@ struct UIScanScreen: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-                Text("Scan Receipt")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal)
-                
-                if showingOCRResults, let result = ocrResult {
-                    // Show confirmation screen for Tax/Tip/Total/ItemCount before processing
-                    OCRConfirmationView(
-                        result: result,
-                        image: capturedImage,
-                        onConfirm: { confirmedData in
-                            // Process with confirmed values and continue to assign page
-                            Task {
-                                await processWithConfirmedData(result: result, confirmedData: confirmedData)
-                            }
-                        },
-                        onRetry: handleRetryOCR
-                    )
-                } else if showingImagePreview, let image = capturedImage {
-                    ImagePreview(
-                        image: image,
-                        onRetake: handleRetakePhoto,
-                        onConfirm: handleImageConfirmed
-                    )
-                } else if ocrService.isProcessing {
-                    OCRProcessingView(
-                        progress: ocrService.progress,
-                        status: scanningStatus
-                    )
-                } else {
-                    VStack(spacing: 16) {
-                        ScanInputSection(
-                            scanningStatus: scanningStatus,
-                            onScan: handleScanReceipt,
-                            onUpload: handlePhotoLibrary
-                        )
-                        
-                        // Temporary debug button for testing comprehensive detection
-                        Button(action: {
-                            scanningStatus = "Testing comprehensive item detection..."
-                            Task {
-                                let result = await ocrService.testParsing()
-                                await MainActor.run {
-                                    self.ocrResult = result
-                                    self.showingOCRResults = true
-                                    self.scanningStatus = ""
-                                }
-                            }
-                        }) {
-                            HStack {
-                                Image(systemName: "doc.text.magnifyingglass")
-                                Text("TEST: Comprehensive Detection")
-                            }
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.green)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 6)
-                            .background(Color.green.opacity(0.1))
-                            .cornerRadius(6)
-                        }
-                        .padding(.horizontal)
-                    }
-                }
+                headerTitle
+                contentView
             }
             .padding(.top)
         }
-        .sheet(isPresented: $showingCamera) {
-            CameraCapture(
-                isPresented: $showingCamera,
-                capturedImage: $capturedImage,
-                sourceType: .camera
-            )
-            .onDisappear {
-                if capturedImage != nil {
-                    handleImageCaptured()
-                }
-            }
-        }
-        .sheet(isPresented: $showingPhotoLibrary) {
-            CameraCapture(
-                isPresented: $showingPhotoLibrary,
-                capturedImage: $capturedImage,
-                sourceType: .photoLibrary
-            )
-            .onDisappear {
-                if capturedImage != nil {
-                    handleImageCaptured()
-                }
-            }
-        }
+        .cameraSheet(
+            isPresented: $showingCamera,
+            capturedImage: $capturedImage,
+            onImageCaptured: handleImageCaptured
+        )
+        .photoLibrarySheet(
+            isPresented: $showingPhotoLibrary,
+            capturedImage: $capturedImage,
+            onImageCaptured: handleImageCaptured
+        )
         .permissionAlert(
             isPresented: $permissionManager.showPermissionAlert,
             message: permissionManager.permissionMessage
         )
-        .onAppear {
-            permissionManager.checkCameraPermission()
-            permissionManager.checkPhotoLibraryPermission()
+        .onAppear(perform: checkPermissions)
+    }
+
+    // MARK: - View Components
+
+    private var headerTitle: some View {
+        Text("Scan Receipt")
+            .font(.title2)
+            .fontWeight(.bold)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal)
+    }
+
+    private var contentView: some View {
+        Group {
+            if showingOCRResults, let result = ocrResult {
+                ocrConfirmationView(result: result)
+            } else if showingImagePreview, let image = capturedImage {
+                imagePreviewView(image: image)
+            } else if ocrService.isProcessing {
+                processingView
+            } else {
+                scanInputView
+            }
+        }
+    }
+
+    private func ocrConfirmationView(result: OCRResult) -> some View {
+        OCRConfirmationView(
+            result: result,
+            image: capturedImage,
+            onConfirm: { confirmedData in
+                Task {
+                    await processWithConfirmedData(result: result, confirmedData: confirmedData)
+                }
+            },
+            onRetry: handleRetryOCR
+        )
+    }
+
+    private func imagePreviewView(image: UIImage) -> some View {
+        ImagePreview(
+            image: image,
+            onRetake: handleRetakePhoto,
+            onConfirm: handleImageConfirmed
+        )
+    }
+
+    private var processingView: some View {
+        OCRProcessingView(
+            progress: ocrService.progress,
+            status: scanningStatus
+        )
+    }
+
+    private var scanInputView: some View {
+        VStack(spacing: 16) {
+            ScanInputSection(
+                scanningStatus: scanningStatus,
+                onScan: handleScanReceipt,
+                onUpload: handlePhotoLibrary
+            )
+            debugTestButton
+        }
+    }
+
+    private var debugTestButton: some View {
+        Button(action: performDebugTest) {
+            HStack {
+                Image(systemName: "doc.text.magnifyingglass")
+                Text("TEST: Comprehensive Detection")
+            }
+            .font(.system(size: 12, weight: .medium))
+            .foregroundColor(.green)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
+            .background(Color.green.opacity(0.1))
+            .cornerRadius(6)
+        }
+        .padding(.horizontal)
+    }
+
+    // MARK: - Helper Methods
+
+    private func checkPermissions() {
+        permissionManager.checkCameraPermission()
+        permissionManager.checkPhotoLibraryPermission()
+    }
+
+    private func performDebugTest() {
+        scanningStatus = "Testing comprehensive item detection..."
+        Task {
+            let result = await ocrService.testParsing()
+            await MainActor.run {
+                self.ocrResult = result
+                self.showingOCRResults = true
+                self.scanningStatus = ""
+            }
         }
     }
     
@@ -717,7 +736,6 @@ struct UIScanScreen: View {
             )
 
             // Auto-save session after OCR completion
-            print("💾 ScanView: Auto-saving session after OCR completion")
             session.autoSaveSession()
 
             onContinue()
@@ -1039,7 +1057,7 @@ struct OCRProcessingView: View {
 
 // MARK: - OCR Results View
 struct OCRResultsView: View {
-    @State var items: [ReceiptItem]
+    @State private var items: [ReceiptItem]
     let rawText: String
     let confidence: Float
     let identifiedTotal: Double?
@@ -1078,11 +1096,8 @@ struct OCRResultsView: View {
         .onAppear {
             // Debug info
             if items.isEmpty {
-                print("🐛 DEBUG: items.isEmpty = true, showing empty state")
             } else {
-                print("🐛 DEBUG: items.count = \(items.count), showing item list")
                 for (index, item) in items.enumerated() {
-                    print("🐛 DEBUG: Item \(index): '\(item.name)' - $\(item.price)")
                 }
             }
         }
@@ -1173,12 +1188,8 @@ struct OCRItemListView: View {
     
     var totalAmount: Double {
         let total = items.reduce(0) { $0.currencyAdd($1.price) }
-        print("💰 TOTAL CALCULATION DEBUG:")
-        print("   Number of items: \(items.count)")
         for (index, item) in items.enumerated() {
-            print("   Item \(index + 1): '\(item.name)' - $\(item.price)")
         }
-        print("   Calculated total: $\(total)")
         return total
     }
     
@@ -1990,5 +2001,77 @@ struct CalculationSummaryView: View {
         .padding()
         .background(Color.blue.opacity(0.05))
         .cornerRadius(12)
+    }
+}
+
+// MARK: - View Modifiers
+
+private struct CameraSheetModifier: ViewModifier {
+    @Binding var isPresented: Bool
+    @Binding var capturedImage: UIImage?
+    let onImageCaptured: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(isPresented: $isPresented) {
+                CameraCapture(
+                    isPresented: $isPresented,
+                    capturedImage: $capturedImage,
+                    sourceType: .camera
+                )
+                .onDisappear {
+                    if capturedImage != nil {
+                        onImageCaptured()
+                    }
+                }
+            }
+    }
+}
+
+private struct PhotoLibrarySheetModifier: ViewModifier {
+    @Binding var isPresented: Bool
+    @Binding var capturedImage: UIImage?
+    let onImageCaptured: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(isPresented: $isPresented) {
+                CameraCapture(
+                    isPresented: $isPresented,
+                    capturedImage: $capturedImage,
+                    sourceType: .photoLibrary
+                )
+                .onDisappear {
+                    if capturedImage != nil {
+                        onImageCaptured()
+                    }
+                }
+            }
+    }
+}
+
+extension View {
+    func cameraSheet(
+        isPresented: Binding<Bool>,
+        capturedImage: Binding<UIImage?>,
+        onImageCaptured: @escaping () -> Void
+    ) -> some View {
+        modifier(CameraSheetModifier(
+            isPresented: isPresented,
+            capturedImage: capturedImage,
+            onImageCaptured: onImageCaptured
+        ))
+    }
+
+    func photoLibrarySheet(
+        isPresented: Binding<Bool>,
+        capturedImage: Binding<UIImage?>,
+        onImageCaptured: @escaping () -> Void
+    ) -> some View {
+        modifier(PhotoLibrarySheetModifier(
+            isPresented: isPresented,
+            capturedImage: capturedImage,
+            onImageCaptured: onImageCaptured
+        ))
     }
 }

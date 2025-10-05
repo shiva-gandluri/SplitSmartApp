@@ -15,7 +15,6 @@ final class SessionRecoveryManager: ObservableObject {
 
     /// Checks for saved session on app launch or navigation to home
     func checkForSavedSession() {
-        print("🔍 SessionRecoveryManager: Checking for saved session...")
         isCheckingForSession = true
 
         // Check if session exists and is valid
@@ -34,35 +33,22 @@ final class SessionRecoveryManager: ObservableObject {
                 if isIncomplete && hasMeaningfulData {
                     hasSavedSession = true
                     showRecoveryBanner = true
-                    print("✅ SessionRecoveryManager: Found valid incomplete session from \(snapshot.lastSavedAt)")
-                    print("   - Items: \(snapshot.assignedItems.count)")
-                    print("   - Participants: \(snapshot.participants.count)")
-                    print("   - Screen: \(snapshot.currentScreenIndex)")
-                    print("   - State: \(snapshot.sessionState)")
                 } else {
-                    print("⏭️ SessionRecoveryManager: Session found but not valid for recovery")
-                    print("   - State: \(snapshot.sessionState) (must be scanning/assigning/reviewing)")
-                    print("   - Items: \(snapshot.assignedItems.count)")
-                    print("   - Participants: \(snapshot.participants.count)")
 
                     // Clear invalid session automatically
                     do {
                         try SessionPersistenceManager.shared.clearSession()
-                        print("🗑️ SessionRecoveryManager: Auto-cleared invalid session")
                     } catch {
-                        print("⚠️ SessionRecoveryManager: Failed to clear invalid session - \(error.localizedDescription)")
                     }
 
                     hasSavedSession = false
                     showRecoveryBanner = false
                 }
             } else {
-                print("ℹ️ SessionRecoveryManager: Session file exists but failed to load")
                 hasSavedSession = false
                 showRecoveryBanner = false
             }
         } else {
-            print("ℹ️ SessionRecoveryManager: No saved session found")
             hasSavedSession = false
             showRecoveryBanner = false
         }
@@ -74,20 +60,16 @@ final class SessionRecoveryManager: ObservableObject {
 
     /// User chose to restore the saved session
     func acceptRecovery() {
-        print("✅ SessionRecoveryManager: User accepted session recovery")
         showRecoveryBanner = false
         // ContentView will handle actual restoration using savedSessionSnapshot
     }
 
     /// User chose to discard the saved session and start fresh
     func discardRecovery() {
-        print("🗑️ SessionRecoveryManager: User discarded session recovery")
 
         do {
             try SessionPersistenceManager.shared.clearSession()
-            print("✅ SessionRecoveryManager: Cleared saved session")
         } catch {
-            print("❌ SessionRecoveryManager: Failed to clear session - \(error.localizedDescription)")
         }
 
         hasSavedSession = false
@@ -100,7 +82,6 @@ final class SessionRecoveryManager: ObservableObject {
         hasSavedSession = false
         savedSessionSnapshot = nil
         showRecoveryBanner = false
-        print("🔄 SessionRecoveryManager: Reset recovery state")
     }
 
     // MARK: - Debug Helpers

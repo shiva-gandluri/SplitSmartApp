@@ -285,7 +285,6 @@ struct UIItem: Identifiable {
     // Get the exact cost for a specific participant using smart distribution
     func getCostForParticipant(participantId: String) -> Double {
         guard assignedToParticipants.contains(participantId) else {
-            print("   ⚠️ \(name): participant '\(participantId)' not in assignedToParticipants: \(Array(assignedToParticipants))")
             return 0.0
         }
 
@@ -293,7 +292,6 @@ struct UIItem: Identifiable {
         let distribution = Double.smartDistribute(total: price, among: participantIds.count)
 
         if let index = participantIds.firstIndex(of: participantId) {
-            print("   ✅ \(name): participant '\(participantId)' cost = $\(distribution[index])")
             return distribution[index]
         }
 
@@ -603,7 +601,6 @@ class BillService: ObservableObject {
     func createBill(from session: BillSplitSession, authViewModel: AuthViewModel, contactsManager: ContactsManager) async throws -> Bill {
         AppLog.billOperation("Starting Firebase bill creation")
         #if DEBUG
-        print("🔵 Starting Firebase bill creation...")
         #endif
         
         // Validate session readiness
@@ -631,7 +628,6 @@ class BillService: ObservableObject {
         billParticipants.append(currentUserParticipant)
         
         // Current user participant already has Firebase UID as ID
-        print("✅ Current user Firebase UID: \(currentUser.uid)")
         
         // Add other participants from transaction contacts and complete the mapping
         for participant in session.participants where participant.name != "You" {
@@ -650,16 +646,13 @@ class BillService: ObservableObject {
                 billParticipants.append(billParticipant)
                 
                 // Participant ID is already Firebase UID
-                print("🔧 Participant Firebase UID: \(participant.id)")
                 
-                print("🔍 Added participant: \(contact.displayName) with ID: \(participantUserID)")
             }
         }
         
         // Now convert session data to Bill format with proper Firebase UID mapping
         let billItems = session.assignedItems.map { item in
             let mappedParticipantIDs = Array(item.assignedToParticipants)
-            print("🔧 Item participants (Firebase UIDs): \(mappedParticipantIDs)")
             
             return BillItem(
                 name: item.name,
@@ -702,7 +695,6 @@ class BillService: ObservableObject {
         let calculatedDebts = BillCalculator.calculateOwedAmounts(bill: tempBill)
         os_log("Calculated debts for new bill using Firebase UIDs: %{private}@", log: .calculations, type: .info, String(describing: calculatedDebts))
         #if DEBUG
-        print("🔧 Calculated debts for new bill using Firebase UIDs: \(calculatedDebts)")
         #endif
         
         // Create final Bill object with correct calculatedTotals
@@ -728,7 +720,6 @@ class BillService: ObservableObject {
         
         AppLog.billSuccess("Bill created successfully", billId: bill.id)
         #if DEBUG
-        print("✅ Bill created successfully with ID: \(bill.id)")
         #endif
         
         // Send push notifications to participants (async, don't block UI)
@@ -759,7 +750,6 @@ class BillService: ObservableObject {
         try await batch.commit()
         AppLog.billSuccess("Bill batch operation completed successfully")
         #if DEBUG
-        print("✅ Bill batch operation completed successfully")
         #endif
     }
     
@@ -777,7 +767,6 @@ class BillService: ObservableObject {
     ) async throws {
         AppLog.billOperation("Starting Firebase bill update", billId: billId)
         #if DEBUG
-        print("🔵 Starting Firebase bill update for ID: \(billId)")
         #endif
         
         // Validate input
@@ -834,7 +823,6 @@ class BillService: ObservableObject {
         
         // 🔧 CRITICAL FIX: Recalculate debt amounts with new payer
         let recalculatedDebts = BillCalculator.calculateOwedAmounts(bill: tempBill)
-        print("🔧 Recalculated debts for bill update: \(recalculatedDebts)")
         
         // Create final bill with correct calculated totals
         let updatedBill = Bill(
@@ -875,7 +863,6 @@ class BillService: ObservableObject {
         
         AppLog.billSuccess("Bill updated successfully", billId: billId)
         #if DEBUG
-        print("✅ Bill updated successfully with ID: \(billId)")
         #endif
     }
     
@@ -884,12 +871,37 @@ class BillService: ObservableObject {
         let billRef = db.collection("bills").document(bill.id)
         
         try await billRef.setData(from: bill)
-        print("✅ Bill update operation completed successfully")
     }
     
     // MARK: - Delete Bill Functionality
-    
-    /// Deletes a bill and recalculates all affected user balances
+
+    /// Deletes a bill using soft-delete pattern with participant notifications
+    ///
+    /// Performs a Firebase transaction to:
+    /// 1. Mark bill as deleted (soft delete for audit trail)
+    /// 2. Add deletion metadata (who deleted, when)
+    /// 3. Recalculate affected user balances
+    /// 4. Record deletion activity in bill history
+    /// 5. Trigger participant notifications
+    ///
+    /// **Permission Check:**
+    /// Only the bill creator can delete the bill.
+    ///
+    /// **Balance Recalculation:**
+    /// All participant balances are recalculated to reflect the deletion,
+    /// ensuring the system remains in a consistent state.
+    ///
+    /// - Parameters:
+    ///   - billId: Firestore document ID of the bill to delete
+    ///   - currentUserId: Firebase Auth UID of user performing deletion
+    ///   - billManager: BillManager instance to update local state
+    ///
+    /// - Throws:
+    ///   - `BillDeleteError.billNotFound`: Bill doesn't exist in Firestore
+    ///   - `BillDeleteError.notAuthorized`: User is not the bill creator
+    ///   - `BillDeleteError.firestoreError`: Database operation failed
+    ///
+    /// - Important: This is a soft delete - bill remains in database with `isDeleted = true`
     func deleteBill(
         billId: String,
         currentUserId: String,
@@ -897,7 +909,6 @@ class BillService: ObservableObject {
     ) async throws {
         AppLog.billOperation("Starting Firebase bill deletion", billId: billId)
         #if DEBUG
-        print("🔵 Starting Firebase bill deletion for ID: \(billId)")
         #endif
         
         // Get original bill to verify permissions and calculate balance changes
@@ -939,7 +950,6 @@ class BillService: ObservableObject {
         deletedBill.deletedBy = currentUserId
         deletedBill.deletedByDisplayName = deleterName
         deletedBill.deletedAt = Timestamp()
-        print("🗑️ Setting bill as deleted: \(billId)")
         try batch.setData(from: deletedBill, forDocument: billRef)
         
         // Remove bill ID from creator's billIds array
@@ -953,7 +963,6 @@ class BillService: ObservableObject {
         try await batch.commit()
 
         // Create deletion activity for all participants
-        print("📝 Creating deletion activity for \(deletedBill.participantIds.count) participants")
         let activityId = UUID().uuidString
         let deleterEmail = userData["email"] as? String ?? "unknown@example.com"
 
@@ -980,14 +989,11 @@ class BillService: ObservableObject {
 
             do {
                 try activityBatch.setData(from: activity, forDocument: activityRef)
-                print("  ✓ [\(index + 1)/\(deletedBill.participantIds.count)] Added deletion activity for participant: \(participantId)")
             } catch {
-                print("  ❌ Failed to encode activity for participant \(participantId): \(error.localizedDescription)")
             }
         }
 
         try await activityBatch.commit()
-        print("✅ Deletion activity successfully saved to Firestore for all participants")
 
         // Send notifications to all participants about the deletion
         Task {
@@ -997,7 +1003,6 @@ class BillService: ObservableObject {
             )
         }
 
-        print("✅ Bill deleted successfully with ID: \(billId)")
     }
     
     /// Recalculates user balances before bill deletion to maintain accuracy
@@ -1005,7 +1010,6 @@ class BillService: ObservableObject {
         billToDelete: Bill,
         affectedUserIds: [String]
     ) async {
-        print("🔍 Recalculating balances before deletion for \(affectedUserIds.count) users")
         
         // For each affected user, we need to:
         // 1. Get all their other bills (excluding the one being deleted)
@@ -1041,10 +1045,8 @@ class BillService: ObservableObject {
                     "lastBalanceUpdate": FieldValue.serverTimestamp()
                 ])
                 
-                print("✅ Updated balance for user \(userId): $\(String(format: "%.2f", newBalance))")
                 
             } catch {
-                print("❌ Failed to recalculate balance for user \(userId): \(error.localizedDescription)")
                 // Continue with other users even if one fails
             }
         }
@@ -1151,7 +1153,6 @@ class BillManager: ObservableObject {
     func setCurrentUser(_ userId: String) {
         // Clear existing data if switching users
         if let currentUser = self.currentUserId, currentUser != userId {
-            print("🔄 Switching bill manager users from \(currentUser) to \(userId)")
             billsListener?.remove()
             billsListener = nil
             billActivitiesListener?.remove()
@@ -1185,7 +1186,6 @@ class BillManager: ObservableObject {
      ```
      */
     func clearCurrentUser() {
-        print("🧹 Clearing BillManager data on logout")
         billsListener?.remove()
         billsListener = nil
         billActivitiesListener?.remove()
@@ -1209,7 +1209,6 @@ class BillManager: ObservableObject {
      */
     @MainActor
     func refreshBills() async {
-        print("🔄 Force refreshing bills and balances")
         if let userId = currentUserId {
             loadUserBills()
             // Small delay to ensure refresh completes
@@ -1250,7 +1249,6 @@ class BillManager: ObservableObject {
         billsListener?.remove()
         isLoading = true
 
-        print("📡 Setting up real-time bill listener for user: \(userId)")
 
         // Listen for bills where user is involved as participant (excluding deleted bills)
         // SERVER-SIDE FILTERING: Secure filtering of deleted bills on server
@@ -1265,30 +1263,25 @@ class BillManager: ObservableObject {
                     if let error = error {
                         AppLog.billError("Failed to load bills", error: error)
                         #if DEBUG
-                        print("❌ Failed to load bills: \(error.localizedDescription)")
                         #endif
                         self?.errorMessage = "Failed to load bills: \(error.localizedDescription)"
                         return
                     }
                     
                     guard let documents = snapshot?.documents else {
-                        print("📭 No bills found for user")
                         self?.userBills = []
                         self?.calculateUserBalance()
                         return
                     }
                     
-                    print("📊 Found \(documents.count) bill documents for user")
                     let bills = documents.compactMap { doc in
                         do {
                             let bill = try doc.data(as: Bill.self)
-                            print("✅ Loaded bill: \(bill.id) - $\(bill.totalAmount) - isDeleted: \(bill.isDeleted)")
                             // Server-side filtering ensures only active bills are received
                             return bill
                         } catch {
                             AppLog.billError("Failed to decode bill document \(doc.documentID)", error: error)
                             #if DEBUG
-                            print("❌ Failed to decode bill document \(doc.documentID): \(error)")
                             #endif
                             return nil
                         }
@@ -1296,7 +1289,6 @@ class BillManager: ObservableObject {
                     
                     self?.userBills = bills
                     self?.calculateUserBalance()
-                    print("📋 Total bills loaded: \(bills.count)")
                 }
             }
     }
@@ -1321,7 +1313,6 @@ class BillManager: ObservableObject {
      */
     func getBillById(_ billId: String) async -> Bill? {
         guard let userId = currentUserId else {
-            print("❌ Cannot fetch bill: No current user")
             return nil
         }
 
@@ -1329,7 +1320,6 @@ class BillManager: ObservableObject {
             let billDoc = try await db.collection("bills").document(billId).getDocument()
 
             guard billDoc.exists else {
-                print("❌ Bill not found: \(billId)")
                 return nil
             }
 
@@ -1337,15 +1327,12 @@ class BillManager: ObservableObject {
 
             // Verify user has access (must be participant)
             guard bill.participantIds.contains(userId) else {
-                print("❌ Access denied: User \(userId) not in bill \(billId) participants")
                 return nil
             }
 
-            print("✅ Fetched bill: \(billId) - isDeleted: \(bill.isDeleted)")
             return bill
 
         } catch {
-            print("❌ Failed to fetch bill \(billId): \(error.localizedDescription)")
             return nil
         }
     }
@@ -1381,40 +1368,30 @@ class BillManager: ObservableObject {
      */
     private func calculateUserBalance() {
         guard let userId = currentUserId else {
-            print("❌ calculateUserBalance: No current user ID")
             return
         }
 
-        print("⏳ Calculating balance for user: \(userId)")
-        print("⏳ Processing \(userBills.count) bills")
 
         var totalOwed: Double = 0.0
         var totalOwedTo: Double = 0.0
         var activeBills: [String] = []
         
         for bill in userBills {
-            print("⏳ Processing bill \(bill.id): paidBy=\(bill.paidBy), total=\(bill.totalAmount)")
-            print("⏳ Bill calculatedTotals: \(bill.calculatedTotals)")
             
             activeBills.append(bill.id)
             
             // If user is the payer, they are owed money
             if bill.paidBy == userId {
-                    print("⏳ User is the payer for this bill")
                     for (participantID, amount) in bill.calculatedTotals {
                         if participantID != userId && amount > 0.01 {
                             totalOwedTo += amount
-                            print("⏳ Participant \(participantID) owes user $\(amount)")
                         }
                     }
                 } else {
-                    print("⏳ User is NOT the payer for this bill")
                     // If user is a participant who owes money
                     if let amountOwed = bill.calculatedTotals[userId], amountOwed > 0.01 {
                         totalOwed += amountOwed
-                        print("⏳ User owes $\(amountOwed) for this bill")
                     } else {
-                        print("⏳ User not found in calculatedTotals or owes $0")
                     }
                 }
         }
@@ -1425,8 +1402,6 @@ class BillManager: ObservableObject {
             activeBillIds: activeBills
         )
         
-        print("💰 Updated user balance - Owes: $\(totalOwed), Owed: $\(totalOwedTo)")
-        print("💰 Active bills: \(activeBills)")
     }
     
     /**
@@ -1457,11 +1432,9 @@ class BillManager: ObservableObject {
      */
     func getNetBalances() -> [UIPersonDebt] {
         guard let userId = currentUserId else {
-            print("❌ getNetBalances: No current user ID")
             return []
         }
 
-        print("⏳ Calculating net balances for user: \(userId)")
 
         var balances: [String: Double] = [:] // participantID -> net amount (+ they owe you, - you owe them)
         var participantInfo: [String: (name: String, email: String)] = [:]
@@ -1478,13 +1451,9 @@ class BillManager: ObservableObject {
         }
         
         for bill in userBills {
-            print("⏳ Processing bill \(bill.id) for net balance")
-            print("⏳ Bill paidBy: \(bill.paidBy), current user: \(userId)")
-            print("⏳ Bill calculatedTotals: \(bill.calculatedTotals)")
             
             // Process all bills (no status filtering)
             if bill.paidBy == userId {
-                print("⏳ User paid - others owe user")
                 // User paid - others owe them (positive balance)
                 for (participantUID, amount) in bill.calculatedTotals {
                     if participantUID != userId && amount > 0.01 {
@@ -1493,45 +1462,36 @@ class BillManager: ObservableObject {
                             let normalizedID = normalizeParticipantID(otherParticipant.id, displayName: otherParticipant.displayName, email: otherParticipant.email)
                             balances[normalizedID, default: 0.0] += amount
                             participantInfo[normalizedID] = (otherParticipant.displayName, otherParticipant.email)
-                            print("⏳ \(otherParticipant.displayName) owes user +$\(amount) (running total: $\(balances[normalizedID] ?? 0.0))")
                         } else {
-                            print("⏳ ⚠️ Participant with UID \(participantUID) not found in bill.participants")
                         }
                     }
                 }
             } else {
-                print("⏳ User did not pay - checking if user owes")
                 // User didn't pay - check if user owes money (negative balance)
                 // Use Firebase UID instead of session ID "1"
                 if let amountOwed = bill.calculatedTotals[userId], amountOwed > 0.01 {
                     let normalizedID = normalizeParticipantID(bill.paidBy, displayName: bill.paidByDisplayName, email: bill.paidByEmail)
                     balances[normalizedID, default: 0.0] -= amountOwed
                     participantInfo[normalizedID] = (bill.paidByDisplayName, bill.paidByEmail)
-                    print("⏳ User owes \(bill.paidByDisplayName) -$\(amountOwed) (running total: $\(balances[normalizedID] ?? 0.0))")
                 } else {
-                    print("⏳ User not found in calculatedTotals or owes $0")
                 }
             }
         }
         
-        print("⏳ Final net balances: \(balances)")
         
         let result = balances.compactMap { (participantID, netAmount) -> UIPersonDebt? in
             guard abs(netAmount) > 0.01,
                   let info = participantInfo[participantID] else { 
-                print("❌ Skipping participant \(participantID): netAmount=\(netAmount)")
                 return nil 
             }
             
             if netAmount > 0 {
-                print("✅ Creating UIPersonDebt: \(info.name) owes user $\(netAmount)")
                 return UIPersonDebt(
                     name: info.name,
                     total: netAmount,
                     color: .green // They owe you
                 )
             } else {
-                print("✅ Creating UIPersonDebt: User owes \(info.name) $\(abs(netAmount))")
                 return UIPersonDebt(
                     name: info.name,
                     total: abs(netAmount),
@@ -1542,7 +1502,6 @@ class BillManager: ObservableObject {
             debt1.total > debt2.total
         }
         
-        print("⏳ Returning \(result.count) net balances")
         return result
     }
     
@@ -1588,7 +1547,6 @@ class BillManager: ObservableObject {
     private func saveBillActivityToFirestore(_ activity: BillActivity, participantIds: [String]) async {
         let batch = db.batch()
 
-        print("📝 Creating \(activity.activityType.rawValue) activity for \(participantIds.count) participants")
 
         for (index, participantId) in participantIds.enumerated() {
             let activityRef = db.collection("users")
@@ -1609,14 +1567,11 @@ class BillManager: ObservableObject {
                 "currency": activity.currency
             ], forDocument: activityRef)
 
-            print("  ✓ [\(index + 1)/\(participantIds.count)] Added \(activity.activityType.rawValue) activity for participant: \(participantId)")
         }
 
         do {
             try await batch.commit()
-            print("✅ Bill activity saved to Firestore for all \(participantIds.count) participants")
         } catch {
-            print("❌ Failed to save bill activity to Firestore: \(error.localizedDescription)")
         }
     }
     
@@ -1625,7 +1580,6 @@ class BillManager: ObservableObject {
     private func loadBillActivitiesRealtime() {
         guard let userId = currentUserId else { return }
 
-        print("📡 Setting up real-time listener for bill activities")
 
         billActivitiesListener = db.collection("users").document(userId)
             .collection("billActivities")
@@ -1634,7 +1588,6 @@ class BillManager: ObservableObject {
                 guard let self = self else { return }
 
                 if let error = error {
-                    print("❌ Bill activities listener error: \(error.localizedDescription)")
                     DispatchQueue.main.async {
                         self.errorMessage = "Failed to load history: \(error.localizedDescription)"
                     }
@@ -1642,7 +1595,6 @@ class BillManager: ObservableObject {
                 }
 
                 guard let documents = snapshot?.documents else {
-                    print("⚠️ No bill activities found")
                     return
                 }
 
@@ -1661,7 +1613,6 @@ class BillManager: ObservableObject {
                         let amount = data["amount"] as? Double,
                         let currency = data["currency"] as? String
                     else {
-                        print("⚠️ Failed to parse bill activity document: \(document.documentID)")
                         return nil
                     }
 
@@ -1681,7 +1632,6 @@ class BillManager: ObservableObject {
 
                 DispatchQueue.main.async {
                     self.billActivities = activities
-                    print("✅ Real-time update: \(activities.count) bill activities")
                 }
             }
     }
@@ -1795,13 +1745,11 @@ class FCMTokenManager: ObservableObject {
     /// Updates the current user's FCM token in Firestore
     func updateFCMToken(_ token: String) async {
         guard let currentUser = auth.currentUser else {
-            print("❌ updateFCMToken: No authenticated user")
             return
         }
         
         AppLog.notificationSuccess("Updating FCM token for user")
         #if DEBUG
-        print("🔄 Updating FCM token for user: \(currentUser.uid)")
         #endif
         
         do {
@@ -1815,19 +1763,16 @@ class FCMTokenManager: ObservableObject {
             
             AppLog.notificationSuccess("FCM token updated successfully in Firestore")
             #if DEBUG
-            print("✅ FCM token updated successfully in Firestore")
             #endif
         } catch {
             AppLog.notificationError("Failed to update FCM token", error: error)
             #if DEBUG
-            print("❌ Failed to update FCM token: \(error)")
             #endif
         }
     }
     
     /// Gets FCM tokens for participants by their email addresses
     func getFCMTokensForEmails(_ emails: [String]) async -> [String: String] {
-        print("🔍 Looking up FCM tokens for emails: \(emails)")
         
         var tokenMap: [String: String] = [:]
         
@@ -1843,23 +1788,18 @@ class FCMTokenManager: ObservableObject {
                    let fcmToken = document.data()["fcmToken"] as? String,
                    !fcmToken.isEmpty {
                     tokenMap[email] = fcmToken
-                    print("✅ Found FCM token for \(email)")
                 } else {
-                    print("❌ No FCM token found for \(email)")
                 }
             } catch {
-                print("❌ Failed to lookup FCM token for \(email): \(error)")
             }
         }
         
-        print("📊 FCM token lookup complete: \(tokenMap.count)/\(emails.count) tokens found")
         return tokenMap
     }
     
     /// Validates and refreshes FCM token if needed
     func validateAndRefreshToken() async {
         guard auth.currentUser != nil else {
-            print("❌ validateAndRefreshToken: No authenticated user")
             return
         }
         
@@ -1867,13 +1807,10 @@ class FCMTokenManager: ObservableObject {
         /*
         do {
             let token = try await Messaging.messaging().token()
-            print("🔄 Current FCM token: \(token)")
             await updateFCMToken(token)
         } catch {
-            print("❌ Failed to get current FCM token: \(error)")
         }
         */
-        print("⚠️ FCM token validation skipped - add FirebaseMessaging dependency")
     }
 }
 
@@ -1887,7 +1824,6 @@ class PushNotificationService: ObservableObject {
     
     /// Sends push notifications to all participants about a new bill
     func sendBillNotificationToParticipants(bill: Bill) async {
-        print("📨 Sending bill notifications for bill: \(bill.id)")
         
         // Get participant emails (excluding bill creator)
         let participantEmails = bill.participants
@@ -1895,17 +1831,14 @@ class PushNotificationService: ObservableObject {
             .map { $0.email }
         
         guard !participantEmails.isEmpty else {
-            print("ℹ️ No participants to notify (excluding creator)")
             return
         }
         
-        print("📧 Participant emails to notify: \(participantEmails)")
         
         // Get FCM tokens for participants
         let tokenMap = await FCMTokenManager.shared.getFCMTokensForEmails(participantEmails)
         
         guard !tokenMap.isEmpty else {
-            print("❌ No FCM tokens found for any participants")
             return
         }
         
@@ -1946,19 +1879,15 @@ class PushNotificationService: ObservableObject {
         while attempt < maxRetries {
             do {
                 try await sendSingleNotification(fcmToken: fcmToken, data: data)
-                print("✅ Notification sent successfully to \(participantEmail) on attempt \(attempt + 1)")
                 return
             } catch {
                 attempt += 1
-                print("❌ Notification attempt \(attempt) failed for \(participantEmail): \(error)")
                 
                 if attempt < maxRetries {
                     // Exponential backoff: 1s, 2s, 4s
                     let delay = pow(2.0, Double(attempt - 1))
-                    print("⏳ Retrying in \(delay) seconds...")
                     try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                 } else {
-                    print("💸 All retry attempts failed for \(participantEmail). Relying on History tab for notification.")
                 }
             }
         }
@@ -1992,14 +1921,12 @@ class PushNotificationService: ObservableObject {
         ]
         
         try await db.collection("notification_queue").addDocument(data: notificationDoc)
-        print("📤 Notification queued for Cloud Function processing")
     }
     
     // MARK: - Bill Update Notifications
     
     /// Sends push notifications to all participants about a bill update
     func sendBillUpdateNotificationToParticipants(bill: Bill, updatedBy userId: String) async {
-        print("📨 Sending bill update notifications for bill: \(bill.id)")
         
         // Get participant emails (excluding the updater)
         let participantEmails = bill.participants
@@ -2007,17 +1934,14 @@ class PushNotificationService: ObservableObject {
             .map { $0.email }
         
         guard !participantEmails.isEmpty else {
-            print("ℹ️ No participants to notify about update (excluding updater)")
             return
         }
         
-        print("📧 Participant emails to notify about update: \(participantEmails)")
         
         // Get FCM tokens for participants
         let tokenMap = await FCMTokenManager.shared.getFCMTokensForEmails(participantEmails)
         
         guard !tokenMap.isEmpty else {
-            print("❌ No FCM tokens found for any participants")
             return
         }
         
@@ -2055,7 +1979,6 @@ class PushNotificationService: ObservableObject {
     
     /// Sends push notifications to all participants about a bill deletion
     func sendBillDeleteNotificationToParticipants(bill: Bill, deletedBy userId: String) async {
-        print("📨 Sending bill deletion notifications for bill: \(bill.id)")
         
         // Get participant emails (excluding the deleter)
         let participantEmails = bill.participants
@@ -2063,17 +1986,14 @@ class PushNotificationService: ObservableObject {
             .map { $0.email }
         
         guard !participantEmails.isEmpty else {
-            print("ℹ️ No participants to notify about deletion (excluding deleter)")
             return
         }
         
-        print("📧 Participant emails to notify about deletion: \(participantEmails)")
         
         // Get FCM tokens for participants
         let tokenMap = await FCMTokenManager.shared.getFCMTokensForEmails(participantEmails)
         
         guard !tokenMap.isEmpty else {
-            print("❌ No FCM tokens found for any participants")
             return
         }
         
@@ -2113,13 +2033,35 @@ class PushNotificationService: ObservableObject {
 struct BillCalculator {
     
     /// Calculates who owes whom with proper rounding to ensure totals match
+    /// Calculates amounts owed by each participant to the bill payer with penny-perfect precision
+    ///
+    /// This function implements smart cent distribution to ensure the sum of individual debts
+    /// exactly equals the bill total, avoiding floating-point rounding errors.
+    ///
+    /// **Algorithm:**
+    /// 1. For each item, calculate base per-person amount (price ÷ participant count)
+    /// 2. Round base amount to 2 decimal places
+    /// 3. Calculate remainder after rounding (should be small cents)
+    /// 4. Distribute remainder cents to first N participants (where N = remainder in cents)
+    /// 5. Aggregate debts across all items per participant
+    ///
+    /// **Example:**
+    /// ```
+    /// Item: $10.01 split among 3 people
+    /// Base: $10.01 ÷ 3 = $3.336666...
+    /// Rounded: $3.34
+    /// Total after rounding: $3.34 × 3 = $10.02
+    /// Remainder: $10.01 - $10.02 = -$0.01
+    /// Distribution: [$3.33, $3.34, $3.34] → sum = $10.01 ✓
+    /// ```
+    ///
+    /// - Parameter bill: Bill containing items, participants, and payer information
+    /// - Returns: Dictionary mapping participant ID to amount owed (excludes payer)
+    ///
+    /// - Note: Payer is excluded from returned dictionary as they owe themselves $0
+    /// - Important: Returned amounts are always non-negative and sum to bill total
     static func calculateOwedAmounts(bill: Bill) -> [String: Double] {
-        print("⏳ calculateOwedAmounts called for bill \(bill.id)")
-        print("⏳ Bill paidBy: \(bill.paidBy)")
-        print("⏳ Bill participants: \(bill.participants.map { "\($0.displayName) (\($0.id))" })")
-        print("⏳ Bill items and their participants:")
         for item in bill.items {
-            print("⏳   - \(item.name) $\(item.price): \(item.participantIDs)")
         }
         
         var owedAmounts: [String: Double] = [:]
@@ -2129,26 +2071,20 @@ struct BillCalculator {
         for participant in bill.participants {
             if participant.id != paidByUserID {
                 owedAmounts[participant.id] = 0.0
-                print("⏳ Initialized \(participant.displayName) (\(participant.id)) with $0.00")
             } else {
-                print("⏳ Skipping payer \(participant.displayName) (\(participant.id)) - they don't owe themselves")
             }
         }
         
         // Calculate each item's split
         for item in bill.items {
-            print("⏳ Processing item: \(item.name) $\(item.price)")
-            print("⏳ Item participants: \(item.participantIDs)")
             
             let participantCount = item.participantIDs.count
             guard participantCount > 0 else { 
-                print("⏳ ❌ No participants for item \(item.name), skipping")
                 continue 
             }
             
             let baseAmount = item.price / Double(participantCount)
             let roundedBase = (baseAmount * 100).rounded() / 100 // Round to 2 decimal places
-            print("⏳ Base amount per person: $\(baseAmount) → $\(roundedBase)")
             
             // Calculate how much total we have after rounding
             let totalRounded = roundedBase * Double(participantCount)
@@ -2156,10 +2092,8 @@ struct BillCalculator {
             
             // Distribute the remainder (should be small cents)
             let remainderCents = Int((remainder * 100).rounded())
-            print("⏳ Remainder: $\(remainder) = \(remainderCents) cents")
             
             for (index, participantID) in item.participantIDs.enumerated() {
-                print("⏳ Processing participant \(participantID) (index \(index))")
                 
                 if participantID != paidByUserID {
                     var amountOwed = roundedBase
@@ -2167,14 +2101,11 @@ struct BillCalculator {
                     // Add extra cent to first few participants to handle remainder
                     if index < remainderCents {
                         amountOwed += 0.01
-                        print("⏳ Added remainder cent: $\(amountOwed)")
                     }
                     
                     let previousAmount = owedAmounts[participantID] ?? 0.0
                     owedAmounts[participantID] = previousAmount + amountOwed
-                    print("⏳ \(participantID) owes: $\(previousAmount) + $\(amountOwed) = $\(owedAmounts[participantID] ?? 0.0)")
                 } else {
-                    print("⏳ \(participantID) is the payer, skipping")
                 }
             }
         }
@@ -2187,7 +2118,17 @@ struct BillCalculator {
         return owedAmounts
     }
     
-    /// Validates that the calculated totals match the bill total
+    /// Validates bill integrity by ensuring item prices sum to bill total
+    ///
+    /// This validation prevents data corruption from:
+    /// - Manual editing errors
+    /// - Floating-point precision issues
+    /// - Incomplete bill updates
+    ///
+    /// - Parameter bill: Bill to validate
+    /// - Returns: `true` if items total matches bill total within 1 cent tolerance, `false` otherwise
+    ///
+    /// - Note: Allows 1 cent tolerance for rounding differences
     static func validateBillTotals(bill: Bill) -> Bool {
         // Calculate total from individual item amounts
         let itemsTotal = bill.items.reduce(0.0) { $0 + $1.price }
@@ -2197,20 +2138,29 @@ struct BillCalculator {
         // So we need to validate that items total matches the bill total instead
         let difference = abs(itemsTotal - expectedTotal)
         
-        print("🔍 Bill validation:")
-        print("   Expected total (bill.totalAmount): $\(expectedTotal)")
-        print("   Items total (sum of item prices): $\(itemsTotal)")
-        print("   Difference: $\(difference)")
-        print("   Individual debts to payer: \(bill.calculatedTotals)")
         
         // Allow for small rounding differences (within 1 cent)
         let isValid = difference < 0.01
-        print(isValid ? "✅ Bill totals valid" : "❌ Bill totals invalid")
         return isValid
     }
     
     /// Calculates a user's net balance across all bills
-    /// Returns positive if user is owed money, negative if user owes money
+    ///
+    /// Aggregates all bills where the user is either:
+    /// - The payer (owed money by other participants)
+    /// - A participant (owes money to the payer)
+    ///
+    /// **Balance Calculation:**
+    /// - Positive balance: User is owed money (others owe them)
+    /// - Negative balance: User owes money (they owe others)
+    /// - Zero balance: All debts settled
+    ///
+    /// - Parameters:
+    ///   - userId: Firebase Auth UID of the user
+    ///   - bills: All bills to include in balance calculation
+    /// - Returns: Net balance amount (positive = owed, negative = owes)
+    ///
+    /// - Note: Only includes non-deleted bills in calculation
     static func calculateUserNetBalance(userId: String, bills: [Bill]) -> Double {
         var netBalance: Double = 0.0
         
@@ -2246,7 +2196,6 @@ class OCRService: ObservableObject {
     @Published var errorMessage: String?
     
     func processImage(_ image: UIImage) async -> OCRResult {
-        print("🚀 Starting OCR processing...")
         let startTime = Date()
         
         await MainActor.run {
@@ -2256,7 +2205,6 @@ class OCRService: ObservableObject {
         }
         
         guard let cgImage = image.cgImage else {
-            print("❌ Failed to get CGImage from UIImage")
             await MainActor.run {
                 isProcessing = false
                 errorMessage = "Failed to process image"
@@ -2264,30 +2212,22 @@ class OCRService: ObservableObject {
             return OCRResult(rawText: "", parsedItems: [], identifiedTotal: nil, suggestedAmounts: [], confidence: 0.0, processingTime: 0)
         }
         
-        print("✅ CGImage created successfully, size: \(cgImage.width)x\(cgImage.height)")
         
         do {
             // Step 1: Extract text using Vision
-            print("📖 Step 1: Extracting text using Vision framework...")
             await MainActor.run { progress = 0.3 }
             let extractedText = try await extractText(from: cgImage)
             
-            print("📝 Step 1 Complete: Extracted \(extractedText.count) characters")
             if extractedText.isEmpty {
-                print("⚠️ WARNING: No text extracted from image - OCR failed completely")
             } else {
-                print("📝 OCR Text Preview: \(String(extractedText.prefix(100)))...")
             }
             
             // Step 2: Parse the extracted text
-            print("🔍 Step 2: Parsing extracted text...")
             await MainActor.run { progress = 0.7 }
             let (parsedItems, identifiedTotal) = await parseReceiptText(extractedText)
             
-            print("✅ Step 2 Complete: Found \(parsedItems.count) items, identified total: \(identifiedTotal ?? 0)")
             
             // Step 3: Calculate confidence and finish
-            print("📊 Step 3: Calculating confidence...")
             await MainActor.run { progress = 0.9 }
             let confidence = calculateConfidence(text: extractedText, items: parsedItems)
             let processingTime = Date().timeIntervalSince(startTime)
@@ -2303,16 +2243,9 @@ class OCRService: ObservableObject {
                 processingTime: processingTime
             )
             
-            print("🎯 OCR FINAL RESULT:")
-            print("   Raw text length: \(extractedText.count)")
-            print("   Items found: \(parsedItems.count)")
             for (index, item) in parsedItems.enumerated() {
-                print("   Final Item \(index + 1): '\(item.name)' - $\(item.price)")
             }
             let totalValue = parsedItems.reduce(0) { $0.currencyAdd($1.price) }
-            print("   Total value of all items: $\(totalValue)")
-            print("   Confidence: \(confidence)")
-            print("   Processing time: \(processingTime)s")
             
             await MainActor.run {
                 self.lastResult = result
@@ -2323,7 +2256,6 @@ class OCRService: ObservableObject {
             return result
             
         } catch {
-            print("❌ OCR processing failed with error: \(error)")
             await MainActor.run {
                 self.isProcessing = false
                 self.errorMessage = "OCR processing failed: \(error.localizedDescription)"
@@ -2345,8 +2277,6 @@ class OCRService: ObservableObject {
                     return
                 }
                 
-                print("🔍 OCR Processing Results:")
-                print("📊 Number of text observations: \(observations.count)")
                 
                 // Filter low-confidence observations and improve text extraction
                 let recognizedText = observations
@@ -2355,18 +2285,12 @@ class OCRService: ObservableObject {
                         // Get top candidate with better confidence handling
                         let topCandidate = observation.topCandidates(1).first?.string
                         if let text = topCandidate, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            print("📝 Detected text: '\(text)' (confidence: \(observation.confidence))")
                             return text
                         }
                         return nil
                     }
                     .joined(separator: "\n")
                 
-                print("🔍 OCR Raw Text Output:")
-                print("======================")
-                print(recognizedText.isEmpty ? "⚠️ NO TEXT DETECTED" : recognizedText)
-                print("======================")
-                print("📏 Total text length: \(recognizedText.count) characters")
                 
                 continuation.resume(returning: recognizedText)
             }
@@ -2392,9 +2316,6 @@ class OCRService: ObservableObject {
     }
     
     private func parseReceiptText(_ text: String) async -> ([ReceiptItem], Double?) {
-        print("🔍 OCR Raw Text Length: \(text.count) characters")
-        print("📝 OCR Raw Text Preview: \(String(text.prefix(200)))")
-        print("🔍 Using comprehensive item detection with amount matching...")
         
         // Step 1: Extract total, tax, tip first using regex
         let extractedTotal = extractReceiptTotal(text)
@@ -2416,10 +2337,6 @@ class OCRService: ObservableObject {
             tip: tipAmount
         )
         
-        print("💰 Detected total: $\(extractedTotal ?? 0)")
-        print("💰 Detected tax: $\(taxAmount ?? 0)")
-        print("💰 Detected tip: $\(tipAmount ?? 0)")
-        print("🍽️ Total items extracted with Apple Intelligence: \(allItems.count)")
         
         return (allItems, extractedTotal)
     }
@@ -2452,11 +2369,9 @@ class OCRService: ObservableObject {
         
         // Return the highest confidence total
         if let bestTotal = detectedTotals.first {
-            print("✅ Best total match: $\(bestTotal.amount) from '\(bestTotal.line)' (confidence: \(bestTotal.confidence))")
             return bestTotal.amount
         }
         
-        print("⚠️ No total found in receipt")
         return nil
     }
     
@@ -2473,7 +2388,6 @@ class OCRService: ObservableObject {
             if lowercased.contains("tax") && !lowercased.contains("total") {
                 if let amount = extractAmountWithPattern(line: cleanLine, pattern: "tax[:\\s]*\\$?([0-9]+\\.[0-9]{2})") {
                     taxAmount = amount
-                    print("💰 Found tax: $\(amount)")
                 }
             }
             
@@ -2481,7 +2395,6 @@ class OCRService: ObservableObject {
             if lowercased.contains("tip") && !lowercased.contains("total") {
                 if let amount = extractAmountWithPattern(line: cleanLine, pattern: "tip[:\\s]*\\$?([0-9]+\\.[0-9]{2})") {
                     tipAmount = amount
-                    print("💰 Found tip: $\(amount)")
                 }
             }
         }
@@ -2572,7 +2485,6 @@ class OCRService: ObservableObject {
             for keyword in financialKeywords {
                 if lowercased.contains(keyword) {
                     shouldSkip = true
-                    print("🚫 Filtering out financial line: '\(line.trimmingCharacters(in: .whitespacesAndNewlines))'")
                     break
                 }
             }
@@ -2583,8 +2495,6 @@ class OCRService: ObservableObject {
         }
         
         let cleanedText = cleanedLines.joined(separator: "\n")
-        print("📝 Cleaned text for Apple Intelligence (\(cleanedLines.count) lines):")
-        print(cleanedText)
         
         return cleanedText
     }
@@ -2600,13 +2510,11 @@ class OCRService: ObservableObject {
         // Add tax as a separate item if detected
         if let taxAmount = tax, taxAmount > 0 {
             allItems.append(ReceiptItem(name: "Tax", price: taxAmount))
-            print("💰 Added tax item: $\(taxAmount)")
         }
         
         // Add tip as a separate item if detected
         if let tipAmount = tip, tipAmount > 0 {
             allItems.append(ReceiptItem(name: "Tip", price: tipAmount))
-            print("💰 Added tip item: $\(tipAmount)")
         }
         
         return allItems
@@ -2619,18 +2527,13 @@ class OCRService: ObservableObject {
         maxPrice: Double?
     ) async -> [ReceiptItem] {
         
-        print("🧠 Using Apple Intelligence for item parsing...")
-        print("💰 Max price filter: $\(maxPrice ?? 999)")
         
         // First, use Apple Intelligence to detect tax/tip values for filtering
         let (detectedTaxTotal, detectedTipTotal) = await detectTaxTipWithAppleIntelligence(text: cleanedText)
         
-        print("🧾 Apple Intelligence detected:")
         if detectedTaxTotal > 0 {
-            print("   Tax: $\(detectedTaxTotal)")
         }
         if detectedTipTotal > 0 {
-            print("   Tip: $\(detectedTipTotal)")
         }
         
         // Use Natural Language framework for intelligent text analysis
@@ -2650,7 +2553,6 @@ class OCRService: ObservableObject {
         excludeTaxAmount: Double? = nil,
         excludeTipAmount: Double? = nil
     ) async -> [ReceiptItem] {
-        print("🔍 Analyzing receipt text with Natural Language framework...")
         
         var extractedItems: [ReceiptItem] = []
         var placeholderIndex = 1
@@ -2670,11 +2572,9 @@ class OCRService: ObservableObject {
                 placeholderIndex: &placeholderIndex
             ) {
                 extractedItems.append(item)
-                print("🍽️ Extracted: '\(item.name)' - $\(item.price)")
             }
         }
         
-        print("✅ Natural Language analysis complete: \(extractedItems.count) items found")
         return extractedItems
     }
     
@@ -2698,36 +2598,30 @@ class OCRService: ObservableObject {
         
         // Apply price filtering - exclude items >= total (duplicate totals on receipt)
         if let maxPrice = maxPrice, price >= maxPrice {
-            print("🚫 Excluding item with price $\(price) >= total $\(maxPrice)")
             return nil
         }
         
         // Exclude items that match detected tax amounts
         if let taxAmount = excludeTaxAmount, abs(price - taxAmount) < 0.01 {
-            print("🚫 Excluding item with price $\(price) matching tax amount $\(taxAmount)")
             return nil
         }
         
         // Exclude items that match detected tip amounts  
         if let tipAmount = excludeTipAmount, abs(price - tipAmount) < 0.01 {
-            print("🚫 Excluding item with price $\(price) matching tip amount $\(tipAmount)")
             return nil
         }
         
         // Use Apple Intelligence (Natural Language) to extract item name
-        print("🤖 Processing line: '\(line)' with price $\(price)")
         let itemName = await extractItemNameWithAppleIntelligence(line: line, price: price)
         
         let finalItemName: String
         if let name = itemName, !name.isEmpty && name.count >= 3 {
             // Apple Intelligence found a meaningful item name
             finalItemName = name
-            print("🧠 Apple Intelligence detected name: '\(name)' from line: '\(line)'")
         } else {
             // No clear name detected, use placeholder
             finalItemName = "Item \(placeholderIndex)"
             placeholderIndex += 1
-            print("🔤 Using placeholder name: '\(finalItemName)' for line: '\(line)'")
         }
         
         return ReceiptItem(name: finalItemName, price: price)
@@ -2801,7 +2695,6 @@ class OCRService: ObservableObject {
     }
     
     private func analyzeTextWithNaturalLanguage(_ text: String) async -> Bool {
-        print("🔬 Analyzing text: '\(text)'")
         
         // Use NLTagger for semantic analysis
         let tagger = NLTagger(tagSchemes: [.lexicalClass, .nameType])
@@ -2849,13 +2742,6 @@ class OCRService: ObservableObject {
                              wordCount <= 6 &&
                              !isObviousNonProduct(text)
         
-        print("📊 Analysis result for '\(text)':")
-        print("   - Has nouns: \(hasNouns)")
-        print("   - Has proper nouns: \(hasProperNouns)")
-        print("   - Has product keywords: \(hasProductKeywords)")
-        print("   - Word count: \(wordCount)")
-        print("   - Is obvious non-product: \(isObviousNonProduct(text))")
-        print("   - Final decision: \(isLikelyProduct ? "✅ PRODUCT" : "❌ NOT PRODUCT")")
         
         return isLikelyProduct
     }
@@ -2906,15 +2792,11 @@ class OCRService: ObservableObject {
     // MARK: - Apple Intelligence Tax/Tip Detection
     
     private func detectTaxTipWithAppleIntelligence(text: String) async -> (taxTotal: Double, tipTotal: Double) {
-        print("🧾 Detecting tax/tip with hybrid approach...")
         
         // Step 1: Use regex for primary detection (fast, reliable)
         let regexTaxAmounts = extractTaxAmountsWithRegex(text)
         let regexTipAmounts = extractTipAmountsWithRegex(text)
         
-        print("🔍 Regex detected:")
-        print("   Tax amounts: \(regexTaxAmounts)")
-        print("   Tip amounts: \(regexTipAmounts)")
         
         // Step 2: Use Apple Intelligence for validation and edge cases
         let aiResults = await validateTaxTipWithAppleIntelligence(
@@ -2927,9 +2809,6 @@ class OCRService: ObservableObject {
         let totalTax = aiResults.validatedTaxAmounts.reduce(0, +)
         let totalTip = aiResults.validatedTipAmounts.reduce(0, +)
         
-        print("💡 Final results after Apple Intelligence validation:")
-        print("   Total Tax: $\(totalTax)")
-        print("   Total Tip: $\(totalTip)")
         
         return (taxTotal: totalTax, tipTotal: totalTip)
     }
@@ -2974,7 +2853,6 @@ class OCRService: ObservableObject {
                     }
                 }
             } catch {
-                print("⚠️ Failed to create regex for pattern '\(pattern)': \(error.localizedDescription)")
                 // Continue with next pattern instead of crashing
                 continue
             }
@@ -2989,7 +2867,6 @@ class OCRService: ObservableObject {
         regexTipAmounts: [Double]
     ) async -> (validatedTaxAmounts: [Double], validatedTipAmounts: [Double]) {
         
-        print("🤖 Apple Intelligence validating detected amounts...")
         
         // If regex found clear results, validate them with AI
         var validatedTax = regexTaxAmounts
@@ -3001,14 +2878,12 @@ class OCRService: ObservableObject {
         // Add any additional amounts found by AI that weren't caught by regex
         for amount in additionalTaxTip.additionalTax {
             if !regexTaxAmounts.contains(where: { abs($0 - amount) < 0.01 }) {
-                print("🧠 Apple Intelligence found additional tax: $\(amount)")
                 validatedTax.append(amount)
             }
         }
         
         for amount in additionalTaxTip.additionalTip {
             if !regexTipAmounts.contains(where: { abs($0 - amount) < 0.01 }) {
-                print("🧠 Apple Intelligence found additional tip: $\(amount)")
                 validatedTip.append(amount)
             }
         }
@@ -3035,10 +2910,8 @@ class OCRService: ObservableObject {
             
             if isTaxRelated {
                 additionalTax.append(price)
-                print("🔬 NL detected tax-related line: '\(cleanLine)' -> $\(price)")
             } else if isTipRelated {
                 additionalTip.append(price)
-                print("🔬 NL detected tip-related line: '\(cleanLine)' -> $\(price)")
             }
         }
         
@@ -3099,12 +2972,10 @@ class OCRService: ObservableObject {
         // Add tax and tip as separate items if detected
         if let taxAmount = tax, taxAmount > 0 {
             completeItems.append(ReceiptItem(name: "Tax", price: taxAmount))
-            print("💰 Added tax item: $\(taxAmount)")
         }
         
         if let tipAmount = tip, tipAmount > 0 {
             completeItems.append(ReceiptItem(name: "Tip", price: tipAmount))
-            print("💰 Added tip item: $\(tipAmount)")
         }
         
         // Validate against total if available
@@ -3112,15 +2983,9 @@ class OCRService: ObservableObject {
             let itemsTotal = completeItems.reduce(0) { $0.currencyAdd($1.price) }
             let difference = abs(totalAmount - itemsTotal)
             
-            print("📊 Validation check:")
-            print("   Items total: $\(itemsTotal)")
-            print("   Receipt total: $\(totalAmount)")
-            print("   Difference: $\(difference)")
             
             if difference > 1.0 {
-                print("⚠️ Large difference detected - items may be incomplete")
             } else {
-                print("✅ Items total matches receipt within tolerance")
             }
         }
         
@@ -3133,8 +2998,6 @@ class OCRService: ObservableObject {
         let lines = text.components(separatedBy: .newlines)
         var detectedItems: [ReceiptItem] = []
         
-        print("🔍 Processing \(lines.count) lines for item detection...")
-        print("💰 Using max price filter: $\(maxPrice ?? 999)")
         
         // Method 1: Same-line parsing (existing patterns)
         detectedItems.append(contentsOf: parseSameLineItems(lines, maxPrice: maxPrice))
@@ -3145,9 +3008,7 @@ class OCRService: ObservableObject {
         // Method 3: Block parsing (all names, then all prices)
         detectedItems.append(contentsOf: parseBlockItems(lines, maxPrice: maxPrice))
         
-        print("✅ Total detected items: \(detectedItems.count)")
         for item in detectedItems {
-            print("🍽️ Item: '\(item.name)' - $\(item.price)")
         }
         
         return detectedItems
@@ -3457,7 +3318,6 @@ class OCRService: ObservableObject {
         var allItems = itemsWithNames
         
         guard let totalAmount = total else {
-            print("⚠️ No total found, returning items with names only")
             return allItems
         }
         
@@ -3467,17 +3327,9 @@ class OCRService: ObservableObject {
         let tipAmount = tip ?? 0
         let accountedAmount = namedItemsTotal.currencyAdd(taxAmount).currencyAdd(tipAmount)
         
-        print("📊 Accounting check:")
-        print("   Named items total: $\(namedItemsTotal)")
-        print("   Tax: $\(taxAmount)")
-        print("   Tip: $\(tipAmount)")
-        print("   Accounted for: $\(accountedAmount)")
-        print("   Receipt total: $\(totalAmount)")
-        print("   Missing: $\(totalAmount - accountedAmount)")
         
         // If we're already close to the total, don't add more items
         if abs(totalAmount - accountedAmount) <= 0.50 {
-            print("✅ Amounts match within $0.50 tolerance")
             return addTaxAndTipItems(items: allItems, tax: tax, tip: tip)
         }
         
@@ -3493,7 +3345,6 @@ class OCRService: ObservableObject {
             startingIndex: itemsWithNames.count + 1
         )
         
-        print("🔍 Found \(additionalItems.count) additional items to match total")
         
         allItems.append(contentsOf: additionalItems)
         
@@ -3526,7 +3377,6 @@ class OCRService: ObservableObject {
         
         // Remove duplicates and sort
         let uniqueAmounts = Array(Set(amounts)).sorted()
-        print("💰 Available amounts for matching: \(uniqueAmounts)")
         
         return uniqueAmounts
     }
@@ -3587,7 +3437,6 @@ class OCRService: ObservableObject {
                 remainingTarget -= amount
                 itemIndex += 1
                 
-                print("💡 Added placeholder item: Item \(itemIndex - 1) - $\(amount)")
                 
                 // If we're close enough to the target, stop
                 if abs(remainingTarget) <= 1.0 {
@@ -3606,14 +3455,12 @@ class OCRService: ObservableObject {
         if let taxAmount = tax, taxAmount > 0 {
             let taxItem = ReceiptItem(name: "Tax", price: taxAmount)
             allItems.append(taxItem)
-            print("💰 Added tax item: $\(taxAmount)")
         }
         
         // Add tip as a separate item if detected
         if let tipAmount = tip, tipAmount > 0 {
             let tipItem = ReceiptItem(name: "Tip", price: tipAmount)
             allItems.append(tipItem)
-            print("💰 Added tip item: $\(tipAmount)")
         }
         
         return allItems
@@ -3658,7 +3505,6 @@ class OCRService: ObservableObject {
         let uniqueAmounts = Array(Set(amounts)).sorted()
         
         for amount in uniqueAmounts {
-            print("💰 Potential item amount: $\(amount)")
         }
         
         return uniqueAmounts
@@ -3680,7 +3526,6 @@ class OCRService: ObservableObject {
     
     // Debug method to test parsing with known text
     func testParsing() async -> OCRResult {
-        print("🧪 Testing enhanced Apple Intelligence with proper filtering...")
         
         // Test with realistic receipt that has all edge cases
         let sampleText = """
@@ -3721,7 +3566,6 @@ class OCRService: ObservableObject {
     // MARK: - Confirmation Analysis Methods
     
     func analyzeReceiptForConfirmation(text: String) async -> ReceiptAnalysis {
-        print("🔍 Analyzing receipt for confirmation screen...")
         
         // Step 1: Use existing regex patterns to detect tax, tip, and total
         let (detectedTaxOptional, detectedTipOptional) = extractTaxAndTip(text)
@@ -3733,11 +3577,6 @@ class OCRService: ObservableObject {
         // Step 2: Predict item count using the logic discussed
         let predictedItemCount = await predictItemCount(text: text)
         
-        print("📊 Confirmation analysis results:")
-        print("   Tax: $\(detectedTax)")
-        print("   Tip: $\(detectedTip)")  
-        print("   Total: $\(detectedTotal ?? 0)")
-        print("   Predicted items: \(predictedItemCount)")
         
         return ReceiptAnalysis(
             tax: detectedTax,
@@ -3755,7 +3594,6 @@ class OCRService: ObservableObject {
         expectedCount: Int,
         excludedAmounts: Set<Double>
     ) async -> [ReceiptItem] {
-        print("🔍 Extracting individual item prices with tax/tip filtering...")
         return await extractItemsWithAppleIntelligence(
             text: text,
             targetPrice: targetTotal,
@@ -3768,9 +3606,6 @@ class OCRService: ObservableObject {
         targetTotal: Double,
         expectedCount: Int
     ) async -> [(name: String, price: Double)] {
-        print("🤖 Using Apple Intelligence to extract individual item prices...")
-        print("   Target total: $\(targetTotal)")
-        print("   Expected items: \(expectedCount)")
         
         // Use Natural Language processing to find individual item prices in order
         let lines = text.components(separatedBy: CharacterSet.newlines)
@@ -3787,15 +3622,12 @@ class OCRService: ObservableObject {
                         // Extract item name from the line
                         let itemName = extractItemNameFromLine(line, price: price)
                         extractedItems.append((name: itemName, price: price))
-                        print("✅ Extracted item: '\(itemName)' - $\(price) from '\(line)'")
                     }
                 }
             }
         }
         
         // Keep original order - DO NOT sort
-        print("🎯 Final extracted items in order: \(extractedItems.map { "\($0.name): $\($0.price)" })")
-        print("📊 Total value: $\(extractedItems.reduce(0) { $0.currencyAdd($1.price) })")
         
         return extractedItems
     }
@@ -3821,7 +3653,6 @@ class OCRService: ObservableObject {
                     }
                 }
             } catch {
-                print("⚠️ Failed to create regex for price extraction pattern '\(pattern)': \(error.localizedDescription)")
                 // Continue with next pattern instead of crashing
                 continue
             }
@@ -3869,7 +3700,6 @@ class OCRService: ObservableObject {
                     withTemplate: ""
                 )
             } catch {
-                print("⚠️ Failed to create cleanup regex for pattern '\(pattern)': \(error.localizedDescription)")
                 // Skip this cleanup pattern and continue with the next one
                 continue
             }
@@ -3942,15 +3772,11 @@ class OCRService: ObservableObject {
         confirmedTotal: Double,
         expectedItemCount: Int
     ) async -> [ReceiptItem] {
-        print("⏳ Processing with mathematical approach...")
-        print("   Target price: $\(confirmedTotal - confirmedTax - confirmedTip)")
-        print("   Expected items: \(expectedItemCount)")
         
         // Step 1: Calculate the target price for items (Total - Tax - Tip)
         let targetItemsPrice = confirmedTotal - confirmedTax - confirmedTip
         
         guard targetItemsPrice > 0 else {
-            print("❌ Target items price is not positive: $\(targetItemsPrice)")
             return []
         }
         
@@ -3962,9 +3788,6 @@ class OCRService: ObservableObject {
         
         // Filter out tax/tip amounts from consideration
         let filteredAmounts = allAmounts.filter { !excludedAmounts.contains($0) }
-        print("💰 Found \(allAmounts.count) dollar amounts total")
-        print("🚫 Excluding tax/tip amounts: \(excludedAmounts)")
-        print("✅ Using \(filteredAmounts.count) filtered amounts: \(filteredAmounts)")
         
         // Step 3: Find combination of amounts that sum to target price with confidence
         let (combination, confidenceLevels) = findBestPriceCombinationWithConfidence(
@@ -3978,7 +3801,6 @@ class OCRService: ObservableObject {
         
         if combination.isEmpty {
             // No perfect combination found - use LLM to extract individual item prices
-            print("📝 No perfect combination found, using LLM to extract individual item prices")
             
             // Use Apple Intelligence to specifically extract individual item prices and names with filtering
             let llmExtractedItems = await extractIndividualItemPricesWithFiltering(
@@ -3989,7 +3811,6 @@ class OCRService: ObservableObject {
             )
             
             if !llmExtractedItems.isEmpty {
-                print("🎯 Using \(llmExtractedItems.count) LLM-extracted items with names")
                 
                 // Use LLM-extracted items up to expected count (preserve order)
                 let usableItems = Array(llmExtractedItems.prefix(expectedItemCount))
@@ -4002,7 +3823,6 @@ class OCRService: ObservableObject {
                         originalDetectedName: itemData.name,
                         originalDetectedPrice: itemData.price
                     ))
-                    print("✅ Created item from LLM extraction: '\(itemData.name)' - $\(itemData.price)")
                 }
                 
                 // Fill remaining with placeholders
@@ -4012,7 +3832,6 @@ class OCRService: ObservableObject {
                     let remainingTotal = max(0, targetItemsPrice - usedTotal)
                     let avgRemainingPrice = remainingCount > 0 ? remainingTotal / Double(remainingCount) : 0.0
                     
-                    print("📝 Adding \(remainingCount) placeholder items for remaining $\(remainingTotal)")
                     
                     for index in usableItems.count..<expectedItemCount {
                         // Give placeholders a suggested price based on remaining amount
@@ -4026,7 +3845,6 @@ class OCRService: ObservableObject {
                 }
             } else {
                 // LLM extraction also failed - fall back to basic regex extraction
-                print("⚠️ LLM extraction failed, falling back to basic regex extraction")
                 
                 // Filter out amounts that are likely tax/tip/total to avoid duplication
                 let itemAmounts = allAmounts.filter { amount in
@@ -4038,7 +3856,6 @@ class OCRService: ObservableObject {
                 }
                 
                 if !itemAmounts.isEmpty {
-                    print("💰 Using \(itemAmounts.count) filtered regex amounts: \(itemAmounts)")
                     
                     // Use detected amounts up to expected count
                     let usableAmounts = Array(itemAmounts.prefix(expectedItemCount))
@@ -4049,7 +3866,6 @@ class OCRService: ObservableObject {
                             price: amount,
                             confidence: .low  // Low confidence since even LLM couldn't find good items
                         ))
-                        print("✅ Created item from regex fallback: $\(amount)")
                     }
                     
                     // Fill remaining with placeholders
@@ -4059,7 +3875,6 @@ class OCRService: ObservableObject {
                         let remainingTotal = max(0, targetItemsPrice - usedTotal)
                         let avgRemainingPrice = remainingCount > 0 ? remainingTotal / Double(remainingCount) : 0.0
                         
-                        print("📝 Adding \(remainingCount) placeholder items for remaining $\(remainingTotal)")
                         
                         for index in usableAmounts.count..<expectedItemCount {
                             let suggestedPrice = avgRemainingPrice > 0.50 ? avgRemainingPrice : 0.00
@@ -4072,7 +3887,6 @@ class OCRService: ObservableObject {
                     }
                 } else {
                     // Last resort - create all placeholders with suggested pricing
-                    print("📝 No amounts found at all, creating placeholder items with suggested pricing")
                     let avgPrice = targetItemsPrice / Double(expectedItemCount)
                     
                     for index in 0..<expectedItemCount {
@@ -4099,7 +3913,6 @@ class OCRService: ObservableObject {
             let remainingCount = expectedItemCount - combination.count
             if remainingCount > 0 {
                 let remainingTotal = max(0, targetItemsPrice - combination.reduce(0, +))
-                print("📝 Adding \(remainingCount) placeholder items for remaining $\(remainingTotal)")
                 
                 for index in combination.count..<expectedItemCount {
                     items.append(ReceiptItem(
@@ -4119,14 +3932,12 @@ class OCRService: ObservableObject {
             items.append(ReceiptItem(name: "Tip", price: confirmedTip, confidence: .high))
         }
         
-        print("✅ Created \(items.count) items with mathematical approach")
         return items
     }
     
     // MARK: - Item Count Prediction
     
     private func predictItemCount(text: String) async -> Int {
-        print("🔢 Predicting item count from OCR text...")
         
         let lines = text.components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -4138,7 +3949,6 @@ class OCRService: ObservableObject {
         for line in lines {
             // Check if line contains financial keywords that end the items section
             if containsFinancialKeyword(line) {
-                print("📍 Found financial keyword in: '\(line)' - stopping item count")
                 break
             }
             
@@ -4146,7 +3956,6 @@ class OCRService: ObservableObject {
             if let _ = extractPriceFromLine(line) {
                 if !foundFirstPrice {
                     foundFirstPrice = true
-                    print("💲 Found first price in: '\(line)' - starting item count")
                 }
                 
                 if foundFirstPrice {
@@ -4154,15 +3963,12 @@ class OCRService: ObservableObject {
                     let isLikelyItem = await analyzeLineForItemCount(line)
                     if isLikelyItem {
                         itemCount += 1
-                        print("✅ Counted item: '\(line)'")
                     } else {
-                        print("❌ Skipped non-item: '\(line)'")
                     }
                 }
             }
         }
         
-        print("📈 Predicted item count: \(itemCount)")
         return max(itemCount, 1) // At least 1 item
     }
     
@@ -4223,7 +4029,6 @@ class OCRService: ObservableObject {
                     }
                 }
             } catch {
-                print("⚠️ Failed to create regex for dollar amount pattern '\(pattern)': \(error.localizedDescription)")
                 // Continue with next pattern instead of crashing
                 continue
             }
@@ -4232,7 +4037,6 @@ class OCRService: ObservableObject {
         // Remove duplicates and sort
         amounts = Array(Set(amounts)).sorted()
         
-        print("💵 Extracted amounts: \(amounts)")
         return amounts
     }
     
@@ -4243,18 +4047,15 @@ class OCRService: ObservableObject {
         targetSum: Double,
         expectedCount: Int
     ) -> ([Double], [ConfidenceLevel]) {
-        print("🎯 Finding best combination for target: $\(targetSum), count: \(expectedCount)")
         
         // Try exact match first (highest confidence)
         if let exact = findExactCombination(amounts: amounts, targetSum: targetSum, count: expectedCount) {
-            print("✅ Found exact combination: \(exact)")
             let confidences = Array(repeating: ConfidenceLevel.high, count: exact.count)
             return (exact, confidences)
         }
         
         // Try closest match (medium confidence)
         if let closest = findClosestCombination(amounts: amounts, targetSum: targetSum, count: expectedCount) {
-            print("📊 Found closest combination: \(closest)")
             let confidences = Array(repeating: ConfidenceLevel.medium, count: closest.count)
             return (closest, confidences)
         }
@@ -4262,14 +4063,12 @@ class OCRService: ObservableObject {
         // Try flexible count with lower confidence
         for count in (max(1, expectedCount - 2)...(expectedCount + 2)) {
             if let match = findClosestCombination(amounts: amounts, targetSum: targetSum, count: count) {
-                print("🔄 Found alternative combination (count \(count)): \(match)")
                 let confidences = Array(repeating: ConfidenceLevel.low, count: match.count)
                 return (match, confidences)
             }
         }
         
         // No good combination found
-        print("⚠️ No good combination found")
         return ([], [])
     }
     
@@ -4278,32 +4077,27 @@ class OCRService: ObservableObject {
         targetSum: Double,
         expectedCount: Int
     ) -> [Double] {
-        print("🎯 Finding best combination for target: $\(targetSum), count: \(expectedCount)")
         
         // Try different combination strategies
         
         // Strategy 1: Exact match with expected count
         if let exact = findExactCombination(amounts: amounts, targetSum: targetSum, count: expectedCount) {
-            print("✅ Found exact combination: \(exact)")
             return exact
         }
         
         // Strategy 2: Closest match with expected count
         if let closest = findClosestCombination(amounts: amounts, targetSum: targetSum, count: expectedCount) {
-            print("📊 Found closest combination: \(closest)")
             return closest
         }
         
         // Strategy 3: Best match regardless of count (within reasonable range)
         for count in (max(1, expectedCount - 2)...(expectedCount + 2)) {
             if let match = findClosestCombination(amounts: amounts, targetSum: targetSum, count: count) {
-                print("🔄 Found alternative combination (count \(count)): \(match)")
                 return match
             }
         }
         
         // No fallback - return empty array if no good combination found
-        print("⚠️ No good combination found, returning empty array for manual entry")
         return []
     }
     
@@ -4402,12 +4196,10 @@ class OCRService: ObservableObject {
         confirmedTotal: Double,
         expectedItemCount: Int
     ) async -> [ReceiptItem] {
-        print("🤖 Processing with Apple Intelligence approach...")
         
         let targetItemsPrice = confirmedTotal - confirmedTax - confirmedTip
         
         guard targetItemsPrice > 0 else {
-            print("❌ Target items price is not positive: $\(targetItemsPrice)")
             return []
         }
         
@@ -4449,12 +4241,10 @@ class OCRService: ObservableObject {
         targetPrice: Double,
         expectedCount: Int
     ) async -> [ReceiptItem] {
-        print("🧠 Using Apple Intelligence for enhanced item extraction...")
         
         // First extract and exclude tax/tip amounts to avoid including them as item prices
         let (taxAmounts, tipAmounts) = await extractTaxTipAmountsForFiltering(text: text)
         let excludedAmounts = Set(taxAmounts + tipAmounts)
-        print("🚫 Excluding tax/tip amounts from item detection: \(excludedAmounts)")
         
         // NEW APPROACH: Match item names with prices using intelligent pairing
         let detectedItems = await extractItemsUsingNamePricePairing(
@@ -4464,7 +4254,6 @@ class OCRService: ObservableObject {
             excludedAmounts: excludedAmounts
         )
         
-        print("✅ Apple Intelligence extracted \(detectedItems.count) items")
         return detectedItems
     }
     
@@ -4484,21 +4273,17 @@ class OCRService: ObservableObject {
         for (index, line) in lines.enumerated() {
             if extractPriceFromLine(line) != nil {
                 firstDollarLineIndex = index
-                print("💰 Found first dollar amount at line \(index): '\(line)'")
                 break
             }
         }
         
         guard let startIndex = firstDollarLineIndex else {
-            print("❌ No dollar amounts found in receipt")
             return []
         }
         
         // Step 2: Extract item section starting from first dollar amount line
         let itemSection = Array(lines[startIndex...])
-        print("📋 Processing item section (\(itemSection.count) lines) starting from first dollar amount:")
         for (relativeIndex, line) in itemSection.enumerated() {
-            print("   Line \(startIndex + relativeIndex): '\(line)'")
         }
         
         // Step 3: Use Apple Intelligence to parse items WITH dollar amounts included
@@ -4509,7 +4294,6 @@ class OCRService: ObservableObject {
             expectedCount: expectedCount
         )
         
-        print("📊 Apple Intelligence extracted \(itemsWithPrices.count) items with names and prices")
         return itemsWithPrices
     }
     
@@ -4521,7 +4305,6 @@ class OCRService: ObservableObject {
         expectedCount: Int
     ) async -> [ReceiptItem] {
         
-        print("🧠 Using Apple Intelligence to parse items with preserved order...")
         
         var extractedItems: [ReceiptItem] = []
         
@@ -4531,7 +4314,6 @@ class OCRService: ObservableObject {
             
             // Skip financial summary lines
             if shouldSkipLineForIntelligentAnalysis(line) {
-                print("🚫 Skipping financial line: '\(line)'")
                 continue
             }
             
@@ -4540,13 +4322,11 @@ class OCRService: ObservableObject {
             
             // Skip excluded tax/tip amounts  
             if excludedAmounts.contains(price) {
-                print("🚫 Skipping excluded amount $\(price): '\(line)'")
                 continue
             }
             
             // Skip prices that are too high (likely totals)
             if price > targetPrice {
-                print("🚫 Skipping price too high $\(price): '\(line)'")
                 continue
             }
             
@@ -4566,7 +4346,6 @@ class OCRService: ObservableObject {
             )
             
             extractedItems.append(receiptItem)
-            print("✅ Extracted item \(extractedItems.count): '\(itemName)' - $\(price)")
             
             // Stop when we reach expected count
             if extractedItems.count >= expectedCount {
@@ -4584,9 +4363,7 @@ class OCRService: ObservableObject {
         price: Double
     ) async -> String {
         
-        print("🔍 Extracting name from current line: '\(currentLine)' (price: $\(price))")
         if let prev = previousLine {
-            print("🔍 Previous line available: '\(prev)'")
         }
         
         // Try to extract name from current line first
@@ -4599,7 +4376,6 @@ class OCRService: ObservableObject {
         // If current line doesn't have a good name, try previous line
         if let previousLine = previousLine,
            await isLikelyItemDescription(previousLine) {
-            print("🔄 Using previous line for item name: '\(previousLine)'")
             return previousLine
         }
         
@@ -4610,7 +4386,6 @@ class OCRService: ObservableObject {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         
         if !fallbackName.isEmpty && fallbackName.count > 2 {
-            print("🔄 Using fallback name: '\(fallbackName)'")
             return fallbackName
         }
         
@@ -4683,7 +4458,6 @@ class OCRService: ObservableObject {
         
         // Skip if this price is a known tax/tip amount
         if excludedAmounts.contains(price) {
-            print("🚫 Skipping price $\(price) as it's a tax/tip amount")
             return false
         }
         
@@ -4697,7 +4471,6 @@ class OCRService: ObservableObject {
         
         // Skip if this price is a known tax/tip amount
         if excludedAmounts.contains(price) {
-            print("🚫 Skipping item creation for price $\(price) as it's a tax/tip amount")
             return nil
         }
         
@@ -4718,15 +4491,12 @@ class OCRService: ObservableObject {
         let taxAmounts = extractTaxAmountsWithRegex(text)
         let tipAmounts = extractTipAmountsWithRegex(text)
         
-        print("📊 Found tax amounts for filtering: \(taxAmounts)")
-        print("📊 Found tip amounts for filtering: \(tipAmounts)")
         
         return (taxAmounts, tipAmounts)
     }
     
     // Enhanced item name extraction using Apple Intelligence
     private func extractItemNameWithEnhancedAppleIntelligence(line: String, price: Double) -> String? {
-        print("🔍 Enhanced Apple Intelligence analyzing line: '\(line)' with price: $\(price)")
         
         var cleanedLine = line
         
@@ -4749,7 +4519,6 @@ class OCRService: ObservableObject {
         cleanedLine = cleanedLine.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
         cleanedLine = cleanedLine.trimmingCharacters(in: .whitespacesAndNewlines)
         
-        print("🔍 After price removal: '\(cleanedLine)'")
         
         // If we have any meaningful text left, return it
         if !cleanedLine.isEmpty {
@@ -4764,7 +4533,6 @@ class OCRService: ObservableObject {
             
             if hasValidContent {
                 let finalName = cleanedLine
-                print("✅ Extracted item name: '\(finalName)' from line: '\(line)'")
                 return finalName
             }
         }
@@ -4774,17 +4542,14 @@ class OCRService: ObservableObject {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         
         if !fallbackName.isEmpty && fallbackName.count >= 2 {
-            print("🔄 Using fallback extraction: '\(fallbackName)' from line: '\(line)'")
             return fallbackName
         }
         
         // Last resort: return the original line if it has any non-numeric content
         if line.rangeOfCharacter(from: CharacterSet.letters) != nil {
-            print("🆘 Last resort: using original line '\(line)'")
             return line.trimmingCharacters(in: .whitespacesAndNewlines)
         }
         
-        print("❌ No meaningful item name found in line: '\(line)'")
         return nil
     }
     
@@ -4925,17 +4690,12 @@ class BillSplitSession: ObservableObject {
     let colors: [Color] = [.blue, .green, .purple, .pink, .yellow, .red, .orange, .cyan, .teal, .mint]
     
     func startNewSession() {
-        print("🆕 Starting new bill split session")
         resetSession()
         isSessionActive = true
         sessionState = .scanning
     }
     
     func resetSession() {
-        print("🔄 Resetting bill split session")
-        print("   - Previous regexDetectedItems count: \(regexDetectedItems.count)")
-        print("   - Previous llmDetectedItems count: \(llmDetectedItems.count)")
-        print("   - Previous confirmedTotal: \(confirmedTotal)")
         
         scannedItems.removeAll()
         rawReceiptText = ""
@@ -4951,7 +4711,6 @@ class BillSplitSession: ObservableObject {
         confirmedTotal = 0.0
         expectedItemCount = 0
         
-        print("✅ Session reset complete - all state cleared")
         
         // Clear all participants - "You" will be added when session starts with auth context
         participants.removeAll()
@@ -4966,8 +4725,6 @@ class BillSplitSession: ObservableObject {
     }
     
     func updateOCRResults(_ items: [ReceiptItem], rawText: String, confidence: Float, identifiedTotal: Double?, suggestedAmounts: [Double] = [], image: UIImage? = nil, confirmedTax: Double = 0, confirmedTip: Double = 0, confirmedTotal: Double = 0, expectedItemCount: Int = 0) {
-        print("📄 Updating OCR results: \(items.count) items, confidence: \(confidence), identifiedTotal: \(identifiedTotal ?? 0)")
-        print("💡 Suggested amounts for quick entry: \(suggestedAmounts)")
         
         scannedItems = items
         rawReceiptText = rawText
@@ -4987,7 +4744,6 @@ class BillSplitSession: ObservableObject {
         let filteredCount = items.count - validItems.count
 
         if filteredCount > 0 {
-            print("⚠️ EDGE-001: Filtered out \(filteredCount) items with price ≤ $0.00")
         }
 
         assignedItems = validItems.enumerated().map { index, receiptItem in
@@ -5003,7 +4759,6 @@ class BillSplitSession: ObservableObject {
             )
         }
 
-        print("✅ Converted \(validItems.count) ReceiptItems to UIItems for assignment")
         
         // Go directly to assignment screen
         sessionState = .assigning
@@ -5016,12 +4771,9 @@ class BillSplitSession: ObservableObject {
     func initializeWithCurrentUser(authViewModel: AuthViewModel) async {
         let currentUser = await MainActor.run { authViewModel.user }
         guard let currentUser = currentUser else {
-            print("❌ No current user to initialize session")
             return
         }
 
-        print("🔍 INIT DEBUG: Current user email: \(currentUser.email ?? "nil")")
-        print("🔍 INIT DEBUG: Current user UID: \(currentUser.uid)")
 
         let tempParticipant = UIParticipant(
             id: currentUser.uid,
@@ -5034,17 +4786,13 @@ class BillSplitSession: ObservableObject {
             color: tempParticipant.assignedColor
         )
 
-        print("🔍 INIT DEBUG: Creating 'You' participant with UID: \(currentUser.uid)")
 
         await MainActor.run {
             participants = [currentUserParticipant]
             paidByParticipantID = currentUser.uid  // Default to current user as payer
         }
 
-        print("✅ Session initialized with current user: \(currentUser.uid)")
-        print("👥 After initialization - participants count: \(participants.count)")
         for participant in participants {
-            print("👥 Initialized participant: \(participant.name) (\(participant.id)) - color: \(participant.color)")
         }
     }
     
@@ -5060,22 +4808,16 @@ class BillSplitSession: ObservableObject {
 
         // Check if trying to add yourself by name
         if trimmedName.lowercased() == "you" {
-            print("⚠️ Cannot add yourself - already in bill")
             return (nil, "You are already in this bill", false)
         }
 
         // Check if email matches current user's email
         if let email = email, let currentUser = currentUser {
-            print("🔍 EMAIL DEBUG: Checking email: \(email)")
-            print("🔍 EMAIL DEBUG: Current user email: \(currentUser.email ?? "nil")")
             let emailValidation = AuthViewModel.validateEmail(email)
             if emailValidation.isValid, let validEmail = emailValidation.sanitized {
-                print("🔍 EMAIL DEBUG: Sanitized email: \(validEmail)")
                 if validEmail.lowercased() == currentUser.email?.lowercased() {
-                    print("⚠️ Cannot add your own email - you're already in this bill as 'You'")
                     return (nil, "You're already in this bill as 'You'", false)
                 } else {
-                    print("✅ EMAIL DEBUG: Different emails - \(validEmail.lowercased()) != \(currentUser.email?.lowercased() ?? "nil")")
                 }
             }
         }
@@ -5084,7 +4826,6 @@ class BillSplitSession: ObservableObject {
         
         // Check for duplicates by name (case-insensitive)
         if participants.contains(where: { $0.name.lowercased() == trimmedName.lowercased() }) {
-            print("⚠️ Participant \(trimmedName) already exists by name")
             return (nil, "Participant already exists", false)
         }
         
@@ -5094,54 +4835,36 @@ class BillSplitSession: ObservableObject {
 
         if let providedUID = firebaseUID {
             validatedFirebaseUID = providedUID
-            print("✅ Using provided Firebase UID: \(providedUID)")
         } else {
-            print("🔍 Starting validation for user: \(trimmedName), email: \(email ?? "nil"), phone: \(phoneNumber ?? "nil")")
 
             let isOnboarded = await authViewModel.isUserOnboarded(email: email, phoneNumber: phoneNumber)
 
             if !isOnboarded {
-                print("❌ User \(trimmedName) is not onboarded to SplitSmart")
                 return (nil, "User not found. Only registered SplitSmart users can be added to bills", false)
             }
 
-            print("✅ User \(trimmedName) is onboarded, retrieving Firebase UID...")
 
             // Get Firebase UID from email/phone lookup
             guard let uid = await authViewModel.getFirebaseUID(email: email, phoneNumber: phoneNumber) else {
-                print("❌ Failed to retrieve Firebase UID for email: \(email ?? "nil"), phone: \(phoneNumber ?? "nil")")
-                print("❌ This indicates a data inconsistency - user passed onboarding check but UID lookup failed")
                 let errorMessage = "Could not retrieve user ID. This user may have incomplete registration data. Please contact support."
                 return (nil, errorMessage, false)
             }
             validatedFirebaseUID = uid
-            print("✅ Retrieved Firebase UID: \(uid) for email: \(email ?? "nil"), phone: \(phoneNumber ?? "nil")")
         }
 
-        print("🔍 VALIDATION DEBUG: Final validatedFirebaseUID: \(validatedFirebaseUID)")
-        print("🔍 VALIDATION DEBUG: Current user UID: \(currentUser?.uid ?? "nil")")
-        print("🔍 VALIDATION DEBUG: Are they equal? \(validatedFirebaseUID == currentUser?.uid)")
 
         // Check if this Firebase UID is already in participants
         if let currentUser = currentUser {
-            print("🔍 UID DEBUG: Current user UID: \(currentUser.uid)")
-            print("🔍 UID DEBUG: Validated Firebase UID to add: \(validatedFirebaseUID)")
-            print("🔍 UID DEBUG: Existing participants:")
             for participant in participants {
-                print("🔍 UID DEBUG:   - \(participant.name) (\(participant.id))")
             }
 
             if participants.contains(where: { $0.id == validatedFirebaseUID }) {
-                print("⚠️ UID DEBUG: Firebase UID \(validatedFirebaseUID) already exists in participants")
                 if validatedFirebaseUID == currentUser.uid {
-                    print("⚠️ UID DEBUG: This is the current user - blocking duplicate")
                     return (nil, "You're already in this bill as 'You'", false)
                 } else {
-                    print("⚠️ UID DEBUG: This is a different user with duplicate UID - blocking")
                     return (nil, "Participant already exists", false)
                 }
             } else {
-                print("✅ UID DEBUG: Firebase UID \(validatedFirebaseUID) not found in participants - safe to add")
             }
         }
 
@@ -5156,11 +4879,9 @@ class BillSplitSession: ObservableObject {
                 
                 if existingTransactionContact == nil {
                     // Email not in transaction history but is registered - show "add to your network" modal
-                    print("📝 Registered email \(validEmail) not in user's transaction history - showing add to network")
                     return (nil, "Add \(validEmail) to your SplitSmart network", true)
                 } else {
                     // Email found in transaction history - proceed with normal flow
-                    print("📋 Email \(validEmail) found in transaction history as: \(existingTransactionContact?.displayName ?? "Unknown")")
                 }
             }
         }
@@ -5181,7 +4902,6 @@ class BillSplitSession: ObservableObject {
         await MainActor.run {
             participants.append(newParticipant)
         }
-        print("✅ Added validated participant: \(trimmedName) (\(validatedFirebaseUID))")
         return (newParticipant, nil, false)
     }
     
@@ -5202,7 +4922,6 @@ class BillSplitSession: ObservableObject {
             assignedItems[index].assignedToParticipants.remove(participant.id)
         }
         
-        print("🗑️ Removed participant: \(participant.name)")
     }
     
     func assignItem(itemId: Int, to participantId: String?) {
@@ -5210,7 +4929,6 @@ class BillSplitSession: ObservableObject {
             assignedItems[index].assignedTo = participantId
 
             let participantName = participants.first { $0.id == participantId }?.name ?? "Unassigned"
-            print("📝 Assigned \(assignedItems[index].name) to \(participantName)")
         }
     }
     
@@ -5221,7 +4939,6 @@ class BillSplitSession: ObservableObject {
             assignedItems[index].assignedToParticipants.insert(participantId)
             
             let participantName = participants.first { $0.id == participantId }?.name ?? "Unknown"
-            print("➕ Added \(participantName) to \(assignedItems[index].name)")
         }
     }
     
@@ -5230,18 +4947,13 @@ class BillSplitSession: ObservableObject {
             assignedItems[index].assignedToParticipants.remove(participantId)
             
             let participantName = participants.first { $0.id == participantId }?.name ?? "Unknown"
-            print("➖ Removed \(participantName) from \(assignedItems[index].name)")
         }
     }
     
     func updateItemAssignments(_ updatedItem: UIItem) {
         if let index = assignedItems.firstIndex(where: { $0.id == updatedItem.id }) {
             assignedItems[index] = updatedItem
-            print("🔄 Updated assignments for \(updatedItem.name)")
-            print("   - Assigned to: \(updatedItem.assignedToParticipants.count) participants")
-            print("   - Participant IDs: \(Array(updatedItem.assignedToParticipants))")
         } else {
-            print("⚠️ Could not find item with ID \(updatedItem.id) to update")
         }
     }
     
@@ -5264,7 +4976,6 @@ class BillSplitSession: ObservableObject {
     
     func completeSession() {
         sessionState = .complete
-        print("🎉 Bill split session completed")
     }
     
     // MARK: - Dual Processing Methods
@@ -5275,7 +4986,6 @@ class BillSplitSession: ObservableObject {
         confirmedTotal: Double,
         expectedItemCount: Int
     ) async {
-        print("🔄 Processing with both regex and LLM approaches...")
         
         await MainActor.run {
             self.confirmedTax = confirmedTax
@@ -5288,7 +4998,6 @@ class BillSplitSession: ObservableObject {
         
         // Process with regex approach (current mathematical approach)
         await MainActor.run {
-            print("📊 Starting regex processing...")
         }
         
         let regexItems = await ocrService.processWithMathematicalApproach(
@@ -5301,12 +5010,10 @@ class BillSplitSession: ObservableObject {
         
         await MainActor.run {
             self.regexDetectedItems = regexItems
-            print("✅ Regex processing complete: \(regexItems.count) items")
         }
         
         // Process with LLM approach
         await MainActor.run {
-            print("🤖 Starting LLM processing...")
         }
         
         let llmItems = await ocrService.processWithLLMApproach(
@@ -5319,7 +5026,6 @@ class BillSplitSession: ObservableObject {
         
         await MainActor.run {
             self.llmDetectedItems = llmItems
-            print("✅ LLM processing complete: \(llmItems.count) items")
         }
     }
     
@@ -5332,30 +5038,25 @@ class BillSplitSession: ObservableObject {
     var isReadyForBillCreation: Bool {
         // Must have assigned items
         guard !assignedItems.isEmpty else { 
-            print("❌ isReadyForBillCreation: No assigned items")
             return false 
         }
         
         // All items must be assigned to participants
         let allItemsAssigned = assignedItems.allSatisfy { !$0.assignedToParticipants.isEmpty }
         guard allItemsAssigned else { 
-            print("❌ isReadyForBillCreation: Not all items assigned to participants")
             return false 
         }
         
         // Must have selected who paid the bill
         guard paidByParticipantID != nil else { 
-            print("❌ isReadyForBillCreation: No paidBy participant selected")
             return false 
         }
         
         // Must have at least 2 participants (including "You")
         guard participants.count >= 2 else { 
-            print("❌ isReadyForBillCreation: Need at least 2 participants, have \(participants.count)")
             return false 
         }
         
-        print("✅ isReadyForBillCreation: All validations passed")
         return true
     }
 
@@ -5485,7 +5186,6 @@ class BillSplitSession: ObservableObject {
     func autoSaveSession() {
         // Don't save completed or home (uninitialized) sessions
         guard sessionState != .complete && sessionState != .home else {
-            print("⏭️ BillSplitSession: Skipping auto-save for \(sessionState) session")
             return
         }
 
@@ -5498,7 +5198,6 @@ class BillSplitSession: ObservableObject {
 
             // Double-check session state before saving (state might have changed during delay)
             guard self.sessionState != .complete && self.sessionState != .home else {
-                print("⏭️ BillSplitSession: Session state changed to \(self.sessionState), canceling auto-save")
                 return
             }
 
@@ -5506,9 +5205,7 @@ class BillSplitSession: ObservableObject {
                 do {
                     let snapshot = self.createSnapshot()
                     try SessionPersistenceManager.shared.saveSession(snapshot)
-                    print("💾 BillSplitSession: Auto-saved successfully (state: \(self.sessionState))")
                 } catch {
-                    print("❌ BillSplitSession: Auto-save failed - \(error.localizedDescription)")
                 }
             }
         }
@@ -5554,7 +5251,6 @@ class BillSplitSession: ObservableObject {
 
     /// Restores session state from a saved snapshot
     func restoreFrom(snapshot: BillSplitSessionSnapshot) {
-        print("🔄 BillSplitSession: Restoring from snapshot...")
 
         // Restore basic properties
         billName = snapshot.billName
@@ -5585,7 +5281,6 @@ class BillSplitSession: ObservableObject {
         let filteredCount = snapshot.assignedItems.count - validItemSnapshots.count
 
         if filteredCount > 0 {
-            print("⚠️ EDGE-001: Filtered out \(filteredCount) invalid items during session restoration")
         }
 
         assignedItems = validItemSnapshots.map { itemSnapshot in
@@ -5608,11 +5303,6 @@ class BillSplitSession: ObservableObject {
             sessionState = .assigning // Safe default
         }
 
-        print("✅ BillSplitSession: Restored session successfully")
-        print("   - Items: \(assignedItems.count)")
-        print("   - Participants: \(participants.count)")
-        print("   - Screen: \(currentScreenIndex)")
-        print("   - State: \(sessionState)")
     }
 }
 
@@ -5631,7 +5321,6 @@ class ContactsManager: ObservableObject {
     func setCurrentUser(_ userId: String) {
         // Clear existing data if switching users
         if let currentUser = self.currentUserId, currentUser != userId {
-            print("🔄 Switching users from \(currentUser) to \(userId) - clearing contacts")
             // Remove old listener
             contactsListener?.remove()
             contactsListener = nil
@@ -5644,7 +5333,6 @@ class ContactsManager: ObservableObject {
     }
     
     func clearCurrentUser() {
-        print("🧹 Clearing ContactsManager data on logout")
         // Remove listener
         contactsListener?.remove()
         contactsListener = nil
@@ -5662,7 +5350,6 @@ class ContactsManager: ObservableObject {
         
         isLoading = true
         
-        print("📡 Loading transaction contacts for user: \(userId)")
         contactsListener = db.collection("users").document(userId).collection("transactionContacts")
             .order(by: "lastTransactionAt", descending: true)
             .addSnapshotListener { [weak self] snapshot, error in
@@ -5670,31 +5357,25 @@ class ContactsManager: ObservableObject {
                     self?.isLoading = false
                     
                     if let error = error {
-                        print("❌ Failed to load transaction contacts: \(error.localizedDescription)")
                         self?.errorMessage = "Failed to load transaction contacts: \(error.localizedDescription)"
                         return
                     }
                     
                     guard let documents = snapshot?.documents else {
-                        print("📭 No documents found in transaction contacts")
                         self?.transactionContacts = []
                         return
                     }
                     
-                    print("📊 Found \(documents.count) transaction contact documents")
                     let contacts = documents.compactMap { doc in
                         do {
                             let contact = try doc.data(as: TransactionContact.self)
-                            print("✅ Loaded contact: \(contact.displayName) (\(contact.email))")
                             return contact
                         } catch {
-                            print("❌ Failed to decode contact document \(doc.documentID): \(error)")
                             return nil
                         }
                     }
                     
                     self?.transactionContacts = contacts
-                    print("📋 Total transaction contacts loaded: \(contacts.count)")
                 }
             }
     }
@@ -5717,12 +5398,10 @@ class ContactsManager: ObservableObject {
                     "totalTransactions": newTotalTransactions
                 ])
             
-            print("✅ Updated existing transaction contact: \(existing.displayName)")
         } else {
             // Save new transaction contact
             try db.collection("users").document(userId).collection("transactionContacts").document(contact.id).setData(from: contact)
             
-            print("✅ Saved new transaction contact: \(contact.displayName) (\(contact.email))")
         }
     }
     

@@ -263,7 +263,6 @@ struct UIItemAssignCard: View {
             } else {
                 // Invalid price (zero or negative) - show alert and revert
                 showInvalidPriceAlert = true
-                print("❌ Invalid price attempt: $\(price) - must be > $0.00")
             }
         }
         // If parse fails, ignore - user is still typing
@@ -524,7 +523,6 @@ struct EditableRegexItemCard: View {
             } else {
                 // Invalid price (zero or negative) - show alert and revert
                 showInvalidPriceAlert = true
-                print("❌ Invalid price attempt: $\(price) - must be > $0.00")
             }
         }
         // If parse fails, ignore - user is still typing
@@ -776,7 +774,7 @@ struct ItemRowWithParticipants: View {
     let onItemUpdate: (UIItem) -> Void
     
     @State private var showingSuccessAnimation = false
-    @State private var everyoneButtonSelected = false
+    @State private var isEveryoneSelected = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -837,7 +835,7 @@ struct ItemRowWithParticipants: View {
                         onParticipantRemove: { participantId in
                             removeParticipant(participantId)
                         },
-                        everyoneSelected: everyoneButtonSelected,
+                        everyoneSelected: isEveryoneSelected,
                         onEveryoneToggle: {
                             toggleEveryoneButton()
                         }
@@ -885,14 +883,14 @@ struct ItemRowWithParticipants: View {
     }
     
     private func toggleEveryoneButton() {
-        if everyoneButtonSelected {
+        if isEveryoneSelected {
             // Deselect everyone - clear all assignments
             item.assignedToParticipants.removeAll()
-            everyoneButtonSelected = false
+            isEveryoneSelected = false
         } else {
             // Select everyone - assign to all participants
             item.assignedToParticipants = Set(participants.map { $0.id })
-            everyoneButtonSelected = true
+            isEveryoneSelected = true
         }
         onItemUpdate(item)
         triggerSuccessAnimation()
@@ -900,7 +898,7 @@ struct ItemRowWithParticipants: View {
     
     private func updateEveryoneButtonState() {
         let allParticipantIds = Set(participants.map { $0.id })
-        everyoneButtonSelected = !item.assignedToParticipants.isEmpty && 
+        isEveryoneSelected = !item.assignedToParticipants.isEmpty && 
                                  item.assignedToParticipants == allParticipantIds
     }
 }

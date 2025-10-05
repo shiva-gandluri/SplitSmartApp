@@ -303,10 +303,6 @@ struct UISummaryScreen: View {
                 
                 // Add Bill Button with loading state
                 Button(action: {
-                    print("🔵 Add Bill button tapped")
-                    print("🔍 Session ready: \(session.isReadyForBillCreation)")
-                    print("🔍 PaidBy ID: \(session.paidByParticipantID?.description ?? "nil")")
-                    print("🔍 Items count: \(session.assignedItems.count)")
                     Task {
                         await createBill()
                     }
@@ -365,7 +361,6 @@ struct UISummaryScreen: View {
     private func createBill() async {
         // EDGE-016: Block bill creation when offline
         guard networkMonitor.isConnected else {
-            print("❌ EDGE-016: Bill creation blocked - no network connection")
             showOfflineAlert = true
             return
         }
@@ -380,7 +375,6 @@ struct UISummaryScreen: View {
         billCreationError = nil
         
         do {
-            print("🔵 Starting Firebase bill creation process...")
             
             // Create bill using BillService
             let bill = try await billService.createBill(
@@ -390,14 +384,11 @@ struct UISummaryScreen: View {
             )
             
             createdBill = bill
-            print("✅ Bill creation successful! ID: \(bill.id)")
 
             // Clear saved session after successful bill creation
             do {
                 try SessionPersistenceManager.shared.clearSession()
-                print("🗑️ SummaryScreen: Cleared saved session after bill creation")
             } catch {
-                print("⚠️ SummaryScreen: Failed to clear session - \(error.localizedDescription)")
                 // Non-fatal error, continue anyway
             }
 
@@ -407,7 +398,6 @@ struct UISummaryScreen: View {
             onDone()
             
         } catch {
-            print("❌ Bill creation failed: \(error.localizedDescription)")
             
             // Check if it's a Firebase permissions error
             if error.localizedDescription.contains("Missing or insufficient permissions") {

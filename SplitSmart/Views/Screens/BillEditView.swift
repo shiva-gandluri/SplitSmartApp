@@ -389,14 +389,12 @@ struct BillEditView: View {
                 billManager: billManager
             )
             
-            print("✅ Bill updated successfully")
             
             // TODO: Send notifications to participants about the update
             
             onDismiss()
             
         } catch {
-            print("❌ Bill update failed: \(error.localizedDescription)")
             updateError = error.localizedDescription
             showingError = true
         }

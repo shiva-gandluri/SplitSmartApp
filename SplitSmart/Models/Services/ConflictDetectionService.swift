@@ -83,8 +83,6 @@ final class ConflictDetectionService {
         // Note: Bill struct has immutable properties, so we cannot directly merge
         // This function is a placeholder for future implementation when Bill becomes mutable
         // For now, return server version as the safest option
-        print("⚠️ Auto-resolve not implemented - Bill struct properties are immutable")
-        print("   Returning server version for conflict: \(conflict.conflictingFields.joined(separator: ", "))")
 
         return serverBill
     }

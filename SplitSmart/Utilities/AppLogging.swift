@@ -199,17 +199,14 @@ struct DevLog {
     
     static func trace(_ message: String, file: String = #file, function: String = #function, line: Int = #line) {
         let fileName = (file as NSString).lastPathComponent
-        print("🔧 TRACE [\(fileName):\(line)] \(function): \(message)")
     }
     
     static func variable<T>(_ name: String, value: T, file: String = #file, line: Int = #line) {
         let fileName = (file as NSString).lastPathComponent
-        print("📊 VAR [\(fileName):\(line)] \(name) = \(value)")
     }
     
     static func step(_ step: String, details: String = "") {
         let suffix = details.isEmpty ? "" : " - \(details)"
-        print("👣 STEP: \(step)\(suffix)")
     }
 }
 #endif
@@ -223,8 +220,6 @@ struct MigrationLog {
     
     static func migrate(_ originalPrint: String, to newLogging: String) {
         #if DEBUG
-        print("🔄 MIGRATION: \(originalPrint)")
-        print("    → Should become: \(newLogging)")
         #endif
     }
 }

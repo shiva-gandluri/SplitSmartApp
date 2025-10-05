@@ -20,63 +20,75 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            VStack(spacing: 0) {
-                // Back button for navigation flows
-                if showBackButton {
-                    HStack {
-                        Button(action: handleBackAction) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "chevron.left")
-                                    .font(.system(size: 16, weight: .medium))
-                                Text("Back")
-                                    .font(.body)
-                            }
-                            .foregroundColor(.blue)
-                        }
-                        .padding(.horizontal)
-                        .padding(.top, 12)
+            mainContent
+            sessionRecoveryOverlay
+        }
+        .lifecycleHandlers(
+            authViewModel: authViewModel,
+            contactsManager: contactsManager,
+            billManager: billManager,
+            billSplitSession: billSplitSession,
+            setupKeyboardObservers: setupKeyboardObservers,
+            removeKeyboardObservers: removeKeyboardObservers
+        )
+        .deepLinkHandlers(
+            deepLinkCoordinator: deepLinkCoordinator,
+            selectedTab: $selectedTab,
+            billManager: billManager,
+            authViewModel: authViewModel
+        )
+    }
 
-                        Spacer()
-                    }
+    // MARK: - Main Content
+
+    private var mainContent: some View {
+        VStack(spacing: 0) {
+            if showBackButton {
+                backButtonSection
+            }
+            currentTabView
+            if !isKeyboardVisible {
+                TabBarView(selectedTab: $selectedTab)
+            }
+        }
+    }
+
+    @Environment(\.scenePhase) private var scenePhase
+
+    // MARK: - View Components
+
+    private var backButtonSection: some View {
+        HStack {
+            Button(action: handleBackAction) {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 16, weight: .medium))
+                    Text("Back")
+                        .font(.body)
                 }
+                .foregroundColor(.blue)
+            }
+            .padding(.horizontal)
+            .padding(.top, 12)
+            Spacer()
+        }
+    }
 
+    private var currentTabView: some View {
+        Group {
             switch selectedTab {
             case "home":
-                UIHomeScreen(session: billSplitSession, billManager: billManager, authViewModel: authViewModel) {
-                    billSplitSession.startNewSession()
-                    billSplitSession.currentScreenIndex = 1 // Moving to scan
-                    selectedTab = "scan"
-                }
+                UIHomeScreen(session: billSplitSession, billManager: billManager, authViewModel: authViewModel, onCreateNew: startNewBill)
             case "groups":
                 UIGroupsScreen()
             case "scan":
-                UIScanScreen(session: billSplitSession) {
-                    billSplitSession.currentScreenIndex = 2 // Moving to assign
-                    selectedTab = "assign"
-                }
+                UIScanScreen(session: billSplitSession, onContinue: moveToAssign)
             case "assign":
-                UIAssignScreen(session: billSplitSession, contactsManager: contactsManager) {
-                    billSplitSession.completeAssignment()
-                    billSplitSession.currentScreenIndex = 3 // Moving to summary
-                    selectedTab = "summary"
-                }
+                UIAssignScreen(session: billSplitSession, contactsManager: contactsManager, onContinue: moveToSummary)
             case "summary":
                 UISummaryScreen(
                     session: billSplitSession,
-                    onDone: {
-                        billSplitSession.completeSession()
-
-                        // Ensure saved session is cleared (defensive - SummaryScreen should already clear it)
-                        do {
-                            try SessionPersistenceManager.shared.clearSession()
-                            print("✅ ContentView: Cleared session after bill creation")
-                        } catch {
-                            print("⚠️ ContentView: Failed to clear session - \(error.localizedDescription)")
-                        }
-
-                        billSplitSession.currentScreenIndex = 0 // Returning to home
-                        selectedTab = "home"
-                    },
+                    onDone: handleSummaryComplete,
                     contactsManager: contactsManager,
                     authViewModel: authViewModel,
                     billManager: billManager
@@ -88,131 +100,59 @@ struct ContentView: View {
                 UIProfileScreen()
                     .environmentObject(authViewModel)
             default:
-                UIHomeScreen(session: billSplitSession, billManager: billManager, authViewModel: authViewModel) {
-                    billSplitSession.startNewSession()
-                    billSplitSession.currentScreenIndex = 1 // Moving to scan
-                    selectedTab = "scan"
-                }
+                UIHomeScreen(session: billSplitSession, billManager: billManager, authViewModel: authViewModel, onCreateNew: startNewBill)
             }
-            
-                // Only show TabBar when keyboard is not visible
-                if !isKeyboardVisible {
-                    TabBarView(selectedTab: $selectedTab)
-                }
-            }
-            .onAppear {
-                setupKeyboardObservers()
+        }
+    }
 
-                // Initialize managers with current user
-                if let userId = authViewModel.user?.uid {
-                    contactsManager.setCurrentUser(userId)
-                    billManager.setCurrentUser(userId)
-                }
-            }
-            .onChange(of: authViewModel.user?.uid) { oldUserId, newUserId in
-                // Handle user changes (logout/login with different user)
-                if let userId = newUserId {
-                    contactsManager.setCurrentUser(userId)
-                    billManager.setCurrentUser(userId)
-                } else {
-                    contactsManager.clearCurrentUser()
-                    billManager.clearCurrentUser()
-                }
-            }
-            .onChange(of: scenePhase) { oldPhase, newPhase in
-                // Auto-save when app goes to background
-                if newPhase == .background {
-                    print("📱 ContentView: App backgrounding - auto-saving session")
-                    billSplitSession.autoSaveSession()
-                }
-            }
-            .onDisappear {
-                removeKeyboardObservers()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
-                // Auto-save on memory warning
-                print("⚠️ ContentView: Memory warning received - auto-saving session")
-                billSplitSession.autoSaveSession()
-            }
-
-            // Session recovery banner overlay
+    private var sessionRecoveryOverlay: some View {
+        Group {
             if sessionRecoveryManager.showRecoveryBanner {
                 VStack {
                     SessionRecoveryBanner(
-                        onRestore: {
-                            restoreSession()
-                        },
-                        onDiscard: {
-                            sessionRecoveryManager.discardRecovery()
-                        }
+                        onRestore: restoreSession,
+                        onDiscard: { sessionRecoveryManager.discardRecovery() }
                     )
-
                     Spacer()
                 }
                 .transition(.move(edge: .top))
                 .animation(.easeInOut(duration: 0.3), value: sessionRecoveryManager.showRecoveryBanner)
             }
         }
-        .onChange(of: deepLinkCoordinator.activeDestination) { oldDestination, newDestination in
-            // Handle deep link navigation
-            if case .billDetail = newDestination {
-                // Navigation handled by sheet below
-                print("🔗 Deep link activated - showing bill detail")
-            } else if case .home = newDestination {
-                print("🔗 Deep link activated - navigating to home")
-                selectedTab = "home"
-                deepLinkCoordinator.clearDestination()
-            }
-        }
-        .sheet(item: $deepLinkCoordinator.activeDestination) { destination in
-            // Present bill detail as modal when deep link activated
-            if case .billDetail(let bill) = destination {
-                // TODO: Replace with BillDetailScreen once Views/Screens is added to Xcode project
-                // BillDetailScreen(bill: bill, billManager: billManager, authViewModel: authViewModel)
-                NavigationView {
-                    VStack(spacing: 20) {
-                        Text("Bill Detail")
-                            .font(.title)
-                            .bold()
-
-                        Text(bill.billName ?? "Unnamed Bill")
-                            .font(.headline)
-
-                        Text("Total: $\(bill.totalAmount, specifier: "%.2f")")
-                            .font(.title2)
-
-                        Spacer()
-
-                        Button("Close") {
-                            deepLinkCoordinator.clearDestination()
-                        }
-                        .buttonStyle(.borderedProminent)
-                    }
-                    .padding()
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .navigationBarTrailing) {
-                            Button("Done") {
-                                deepLinkCoordinator.clearDestination()
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        .alert("Deep Link Error", isPresented: .constant(deepLinkCoordinator.errorMessage != nil)) {
-            Button("OK") {
-                deepLinkCoordinator.clearDestination()
-            }
-        } message: {
-            if let errorMessage = deepLinkCoordinator.errorMessage {
-                Text(errorMessage)
-            }
-        }
     }
 
-    @Environment(\.scenePhase) private var scenePhase
-    
+    // MARK: - Navigation Methods
+
+    private func startNewBill() {
+        billSplitSession.startNewSession()
+        billSplitSession.currentScreenIndex = 1
+        selectedTab = "scan"
+    }
+
+    private func moveToAssign() {
+        billSplitSession.currentScreenIndex = 2
+        selectedTab = "assign"
+    }
+
+    private func moveToSummary() {
+        billSplitSession.completeAssignment()
+        billSplitSession.currentScreenIndex = 3
+        selectedTab = "summary"
+    }
+
+    private func handleSummaryComplete() {
+        billSplitSession.completeSession()
+
+        do {
+            try SessionPersistenceManager.shared.clearSession()
+        } catch {
+            // Session cleared defensively
+        }
+
+        billSplitSession.currentScreenIndex = 0
+        selectedTab = "home"
+    }
+
     private func handleBackAction() {
         switch selectedTab {
         case "scan":
@@ -232,10 +172,8 @@ struct ContentView: View {
     // MARK: - Session Recovery
 
     private func restoreSession() {
-        print("🔄 ContentView: Restoring session...")
 
         guard let snapshot = sessionRecoveryManager.savedSessionSnapshot else {
-            print("❌ ContentView: No snapshot available for recovery")
             sessionRecoveryManager.discardRecovery()
             return
         }
@@ -264,7 +202,6 @@ struct ContentView: View {
             selectedTab = "assign"
         }
 
-        print("✅ ContentView: Session restored, navigated to: \(selectedTab)")
 
         // Accept recovery and hide banner
         sessionRecoveryManager.acceptRecovery()
@@ -1029,24 +966,18 @@ struct SimpleBillDetailView: View {
     }
 
     var body: some View {
-        let _ = print("📱 SimpleBillDetailView - RENDERING for bill: \(displayBill.id.prefix(8)), isDeleted: \(displayBill.isDeleted)")
 
         ScrollView {
             VStack(spacing: 20) {
                 // Debug tracking and refetch bill
                 Color.clear.frame(height: 0).onAppear {
-                    print("🎯 SimpleBillDetailView - Appeared for bill: \(displayBill.id)")
-                    print("🎯 SimpleBillDetailView - Initial isDeleted: \(bill.isDeleted)")
                     Task {
                         if let freshBill = await billManager.getBillById(bill.id) {
-                            print("🔄 SimpleBillDetailView - Refetched bill, isDeleted: \(freshBill.isDeleted)")
                             await MainActor.run {
                                 currentBill = freshBill
                             }
                         }
                     }
-                    print("🎯 SimpleBillDetailView - isCreator: \(isCreator)")
-                    print("🎯 SimpleBillDetailView - Should show Delete button: \(isCreator && !displayBill.isDeleted)")
                 }
 
                 // Header
@@ -1127,9 +1058,6 @@ struct BillActionButtons: View {
             .cornerRadius(12)
             
             Button("Delete Bill") {
-                print("🚨 BillActionButtons - DELETE BUTTON CLICKED for bill: \(bill.id.prefix(8))")
-                print("🚨 BillActionButtons - Bill isDeleted: \(bill.isDeleted)")
-                print("🚨 BillActionButtons - This is from SimpleBillDetailView in ContentView.swift")
                 showingDeleteAlert = true
             }
             .foregroundColor(.red)
@@ -1163,15 +1091,12 @@ struct BillActionButtons: View {
                 currentUserId: authViewModel.user?.uid ?? "",
                 billManager: billManager
             )
-            print("✅ Bill deleted successfully")
             
             // Force refresh the bill manager to ensure balance updates immediately
             if let userId = authViewModel.user?.uid {
-                print("🔄 Force refreshing BillManager after deletion")
                 billManager.setCurrentUser(userId)
             }
         } catch {
-            print("❌ Failed to delete bill: \(error.localizedDescription)")
             // TODO: Show error alert to user
         }
     }
@@ -1323,11 +1248,6 @@ struct BillEditFlow: View {
             )
         }
         
-        print("✅ Loaded bill into edit session:")
-        print("  - Items: \(editSession.assignedItems.count)")
-        print("  - Participants: \(editSession.participants.count)")
-        print("  - Total: $\(String(format: "%.2f", editSession.confirmedTotal))")
-        print("  - Paid by: \(editSession.paidByParticipantID?.description ?? "nil")")
     }
 }
 
@@ -1816,10 +1736,6 @@ struct BillEditSummaryScreen: View {
                 
                 // Update Bill Button with loading state
                 Button(action: {
-                    print("🔵 Update Bill button tapped")
-                    print("🔍 Session ready: \(session.isReadyForBillCreation)")
-                    print("🔍 PaidBy ID: \(session.paidByParticipantID?.description ?? "nil")")
-                    print("🔍 Items count: \(session.assignedItems.count)")
                     Task {
                         await updateBill()
                     }
@@ -1883,7 +1799,6 @@ struct BillEditSummaryScreen: View {
         updateError = nil
         
         do {
-            print("🔵 Starting Firebase bill update process...")
             
             // Convert session data back to BillItem and BillParticipant format
             let updatedItems = session.assignedItems.map { assignedItem in
@@ -1896,27 +1811,21 @@ struct BillEditSummaryScreen: View {
             
             let paidByParticipantId: String = {
                 if let paidByID = session.paidByParticipantID {
-                    print("🔍 Mapping payer UIParticipant ID \(paidByID) to Firebase UID")
 
                     if paidByID == authViewModel.user?.uid { // Current user
-                        print("🔍 Payer is current user → \(paidByID)")
                         return authViewModel.user?.uid ?? ""
                     } else {
                         // Use the Firebase UID directly since UIParticipant.id is now Firebase UID
-                        print("🔍 Payer is other participant → \(paidByID)")
 
                         // Verify the participant exists in bill participants
                         if bill.participants.contains(where: { $0.id == paidByID }) {
-                            print("🔍 ✅ Payer Firebase UID verified in bill participants")
                             return paidByID
                         } else {
-                            print("⚠️ Payer Firebase UID not found in bill participants, using fallback")
                             return authViewModel.user?.uid ?? ""
                         }
                     }
                 } else {
                     let originalPayer = bill.paidBy
-                    print("🔍 No payer change, keeping original: \(originalPayer)")
                     return originalPayer
                 }
             }()
@@ -1932,26 +1841,16 @@ struct BillEditSummaryScreen: View {
                 billManager: billManager
             )
             
-            print("✅ Bill update successful! ID: \(bill.id)")
             
             // 🔧 CRITICAL DEBUG: Final verification of update results
-            print("🔧 FINAL VERIFICATION:")
-            print("🔧   - Bill ID: \(bill.id)")
-            print("🔧   - Updated payer: \(paidByParticipantId)")
-            print("🔧   - Current user UID: \(authViewModel.user?.uid ?? "nil")")
-            print("🔧   - If payer changed FROM current user TO other person:")
-            print("🔧     Current user should now owe money to the new payer")
-            print("🔧   - BillManager should refresh and show updated balances on home screen")
             
             // Force refresh BillManager to ensure UI updates
             await billManager.refreshBills()
-            print("🔧 Forced BillManager refresh completed")
             
             // Call the completion handler
             onDone()
             
         } catch {
-            print("❌ Bill update failed: \(error.localizedDescription)")
             updateError = error.localizedDescription
             showingError = true
         }
@@ -2092,6 +1991,146 @@ struct BillRowView: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(Color(.systemGray4), lineWidth: 0.5)
         )
+    }
+}
+
+// MARK: - View Modifiers
+
+/// ViewModifier for lifecycle event handling
+private struct LifecycleModifiers: ViewModifier {
+    @ObservedObject var authViewModel: AuthViewModel
+    @ObservedObject var contactsManager: ContactsManager
+    @ObservedObject var billManager: BillManager
+    @ObservedObject var billSplitSession: BillSplitSession
+    @Environment(\.scenePhase) var scenePhase
+
+    let setupKeyboardObservers: () -> Void
+    let removeKeyboardObservers: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear {
+                setupKeyboardObservers()
+
+                if let userId = authViewModel.user?.uid {
+                    contactsManager.setCurrentUser(userId)
+                    billManager.setCurrentUser(userId)
+                }
+            }
+            .onChange(of: authViewModel.user?.uid) { oldUserId, newUserId in
+                if let userId = newUserId {
+                    contactsManager.setCurrentUser(userId)
+                    billManager.setCurrentUser(userId)
+                } else {
+                    contactsManager.clearCurrentUser()
+                    billManager.clearCurrentUser()
+                }
+            }
+            .onChange(of: scenePhase) { oldPhase, newPhase in
+                if newPhase == .background {
+                    billSplitSession.autoSaveSession()
+                }
+            }
+            .onDisappear {
+                removeKeyboardObservers()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+                billSplitSession.autoSaveSession()
+            }
+    }
+}
+
+/// ViewModifier for deep link handling
+private struct DeepLinkHandlingModifiers: ViewModifier {
+    @ObservedObject var deepLinkCoordinator: DeepLinkCoordinator
+    @Binding var selectedTab: String
+    @ObservedObject var billManager: BillManager
+    @ObservedObject var authViewModel: AuthViewModel
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: deepLinkCoordinator.activeDestination) { oldDestination, newDestination in
+                if case .billDetail = newDestination {
+                    // Navigation handled by sheet below
+                } else if case .home = newDestination {
+                    selectedTab = "home"
+                    deepLinkCoordinator.clearDestination()
+                }
+            }
+            .sheet(item: $deepLinkCoordinator.activeDestination) { destination in
+                if case .billDetail(let bill) = destination {
+                    NavigationView {
+                        VStack(spacing: 20) {
+                            Text("Bill Detail")
+                                .font(.title)
+                                .bold()
+
+                            Text(bill.billName ?? "Unnamed Bill")
+                                .font(.headline)
+
+                            Text("Total: $\(bill.totalAmount, specifier: "%.2f")")
+                                .font(.title2)
+
+                            Spacer()
+
+                            Button("Close") {
+                                deepLinkCoordinator.clearDestination()
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                        .padding()
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .navigationBarTrailing) {
+                                Button("Done") {
+                                    deepLinkCoordinator.clearDestination()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .alert("Deep Link Error", isPresented: .constant(deepLinkCoordinator.errorMessage != nil)) {
+                Button("OK") {
+                    deepLinkCoordinator.clearDestination()
+                }
+            } message: {
+                Text(deepLinkCoordinator.errorMessage ?? "")
+            }
+    }
+}
+
+extension View {
+    func lifecycleHandlers(
+        authViewModel: AuthViewModel,
+        contactsManager: ContactsManager,
+        billManager: BillManager,
+        billSplitSession: BillSplitSession,
+        setupKeyboardObservers: @escaping () -> Void,
+        removeKeyboardObservers: @escaping () -> Void
+    ) -> some View {
+        modifier(LifecycleModifiers(
+            authViewModel: authViewModel,
+            contactsManager: contactsManager,
+            billManager: billManager,
+            billSplitSession: billSplitSession,
+            setupKeyboardObservers: setupKeyboardObservers,
+            removeKeyboardObservers: removeKeyboardObservers
+        ))
+    }
+
+    func deepLinkHandlers(
+        deepLinkCoordinator: DeepLinkCoordinator,
+        selectedTab: Binding<String>,
+        billManager: BillManager,
+        authViewModel: AuthViewModel
+    ) -> some View {
+        modifier(DeepLinkHandlingModifiers(
+            deepLinkCoordinator: deepLinkCoordinator,
+            selectedTab: selectedTab,
+            billManager: billManager,
+            authViewModel: authViewModel
+        ))
     }
 }
 
@@ -2247,10 +2286,8 @@ class DeepLinkCoordinator: ObservableObject {
     private let db = Firestore.firestore()
     
     func handle(_ url: URL) {
-        print("📲 Deep link received: \(url.absoluteString)")
         
         guard url.scheme == "splitsmart" else {
-            print("❌ Invalid URL scheme: \(url.scheme ?? "none")")
             errorMessage = "Invalid link format"
             return
         }
@@ -2258,23 +2295,19 @@ class DeepLinkCoordinator: ObservableObject {
         let host = url.host ?? ""
         let pathComponents = url.pathComponents.filter { $0 != "/" }
         
-        print("🔍 Parsing URL - host: \(host), path: \(pathComponents)")
         
         switch host {
         case "bill":
             guard let billId = pathComponents.first else {
-                print("❌ Missing bill ID in URL")
                 errorMessage = "Invalid bill link - missing ID"
                 return
             }
             handleBillDeepLink(billId: billId)
             
         case "home":
-            print("🏠 Navigating to home")
             activeDestination = .home
             
         default:
-            print("❌ Unknown deep link destination: \(host)")
             errorMessage = "Unknown link destination"
         }
     }
@@ -2290,7 +2323,6 @@ class DeepLinkCoordinator: ObservableObject {
     }
     
     private func handleBillDeepLink(billId: String) {
-        print("📋 Fetching bill: \(billId)")
         isLoading = true
         
         Task { @MainActor in
@@ -2298,25 +2330,21 @@ class DeepLinkCoordinator: ObservableObject {
                 let billDoc = try await db.collection("bills").document(billId).getDocument()
                 
                 guard billDoc.exists else {
-                    print("❌ Bill not found: \(billId)")
                     isLoading = false
                     errorMessage = "Bill not found or has been deleted"
                     return
                 }
                 
                 guard let bill = try? billDoc.data(as: Bill.self) else {
-                    print("❌ Failed to decode bill: \(billId)")
                     isLoading = false
                     errorMessage = "Failed to load bill data"
                     return
                 }
                 
-                print("✅ Bill loaded: \(bill.billName)")
                 isLoading = false
                 activeDestination = .billDetail(bill)
                 
             } catch {
-                print("❌ Error fetching bill: \(error.localizedDescription)")
                 isLoading = false
                 errorMessage = "Network error. Please try again."
             }

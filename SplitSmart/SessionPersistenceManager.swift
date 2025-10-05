@@ -32,14 +32,8 @@ final class SessionPersistenceManager {
             // Atomic write prevents corruption if interrupted
             try data.write(to: sessionFileURL, options: .atomic)
 
-            print("💾 SessionPersistenceManager: Saved session successfully")
-            print("   - File: \(sessionFileURL.path)")
-            print("   - Size: \(data.count) bytes")
-            print("   - Items: \(snapshot.assignedItems.count)")
-            print("   - Participants: \(snapshot.participants.count)")
 
         } catch {
-            print("❌ SessionPersistenceManager: Save failed - \(error.localizedDescription)")
             throw SessionPersistenceError.saveFailed(error.localizedDescription)
         }
     }
@@ -49,7 +43,6 @@ final class SessionPersistenceManager {
     /// Loads session from disk, returns nil if not found or expired
     func loadSession() -> BillSplitSessionSnapshot? {
         guard fileManager.fileExists(atPath: sessionFileURL.path) else {
-            print("ℹ️ SessionPersistenceManager: No session file found")
             return nil
         }
 
@@ -63,23 +56,17 @@ final class SessionPersistenceManager {
             // Check expiration
             let expirationDate = snapshot.lastSavedAt.addingTimeInterval(sessionExpirationInterval)
             if expirationDate < Date() {
-                print("⏰ SessionPersistenceManager: Session expired (\(snapshot.lastSavedAt))")
                 try? clearSession()
                 return nil
             }
 
-            print("✅ SessionPersistenceManager: Loaded session successfully")
-            print("   - Saved: \(snapshot.lastSavedAt)")
-            print("   - Age: \(Int(Date().timeIntervalSince(snapshot.lastSavedAt) / 60)) minutes")
 
             return snapshot
 
         } catch DecodingError.dataCorrupted {
-            print("❌ SessionPersistenceManager: Corrupted session file - deleting")
             try? clearSession()
             return nil
         } catch {
-            print("❌ SessionPersistenceManager: Load failed - \(error.localizedDescription)")
             try? clearSession()
             return nil
         }
@@ -90,15 +77,12 @@ final class SessionPersistenceManager {
     /// Deletes session file from disk
     func clearSession() throws {
         guard fileManager.fileExists(atPath: sessionFileURL.path) else {
-            print("ℹ️ SessionPersistenceManager: No session file to clear")
             return
         }
 
         do {
             try fileManager.removeItem(at: sessionFileURL)
-            print("✅ SessionPersistenceManager: Session file deleted")
         } catch {
-            print("❌ SessionPersistenceManager: Clear failed - \(error.localizedDescription)")
             throw SessionPersistenceError.clearFailed(error.localizedDescription)
         }
     }
@@ -121,7 +105,6 @@ final class SessionPersistenceManager {
         let isExpired = expirationDate < Date()
 
         if isExpired {
-            print("⏰ SessionPersistenceManager: Session file exists but is expired")
             try? clearSession()
             return false
         }

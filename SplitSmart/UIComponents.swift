@@ -609,7 +609,6 @@ struct UIAssignScreen: View {
                 Menu {
                     ForEach(session.participants) { participant in
                         Button(action: {
-                            print("👉 Selected \(participant.name) (\(participant.id)) as payer")
                             session.paidByParticipantID = participant.id
                         }) {
                             HStack {
@@ -630,9 +629,7 @@ struct UIAssignScreen: View {
                 }
                 .onTapGesture {
                     // Debug log when Menu is tapped
-                    print("🔍 Menu tapped - participants count: \(session.participants.count)")
                     for participant in session.participants {
-                        print("🔍 Menu participant: \(participant.name) (\(participant.id))")
                     }
                 }
             }
@@ -643,387 +640,363 @@ struct UIAssignScreen: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-                // Header with image preview
-                HStack {
-                    headerSection
-                    
-                    Spacer()
-                    
-                    // Image preview thumbnail
-                    if let image = session.capturedReceiptImage {
-                        Button(action: {
-                            showingImagePopup = true
-                        }) {
-                            Image(uiImage: image)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: 60, height: 60)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(Color.blue, lineWidth: 2)
-                                )
-                        }
-                        .buttonStyle(PlainButtonStyle())
-                    }
-                }
-                .padding(.horizontal)
-                
-                // Modern Search Interface for Adding Participants
-                VStack(alignment: .leading, spacing: 12) {
-                    ParticipantSearchView(
-                        searchText: $newParticipantName,
-                        transactionContacts: contactsManager.transactionContacts,
-                        onContactSelected: { contact in
-                            handleExistingContactSelected(contact)
-                        },
-                        onNewContactSubmit: { searchText in
-                            handleNewContactSubmit(searchText)
-                        },
-                        onCancel: {
-                            // No cancel button anymore, but keep callback for compatibility
-                        }
-                    )
-                    .padding(.horizontal)
-                    
-                    // Participants chips with delete functionality
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: 12) {
-                        ForEach(session.participants) { participant in
-                            ParticipantChip(
-                                participant: participant,
-                                canDelete: participant.name != "You", // Can't delete yourself
-                                onDelete: {
-                                    session.removeParticipant(participant)
-                                }
-                            )
-                        }
-                    }
-                    .padding(.horizontal)
-                }
-                
-                // Regex Approach Section
-                VStack(alignment: .leading, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Receipt Items (based on Regex)")
-                            .font(.body)
-                            .fontWeight(.medium)
-                        Text("Mathematical approach using regex patterns")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(.horizontal)
-                    
-                    if session.regexDetectedItems.isEmpty {
-                        VStack(spacing: 12) {
-                            ProgressView()
-                                .scaleEffect(1.2)
-                            Text("Processing with regex approach...")
-                                .font(.body)
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(.vertical, 20)
-                        .padding(.horizontal)
-                    } else {
-                        // Convert regex items to assignedItems if not already done
-                        if session.assignedItems.isEmpty {
-                            let _ = session.assignedItems = session.regexDetectedItems.enumerated().map { index, receiptItem in
-                                UIItem(
-                                    id: index + 1,
-                                    name: receiptItem.name,
-                                    price: receiptItem.price,
-                                    assignedTo: nil,
-                                    assignedToParticipants: Set<String>(),
-                                    confidence: receiptItem.confidence,
-                                    originalDetectedName: receiptItem.originalDetectedName,
-                                    originalDetectedPrice: receiptItem.originalDetectedPrice
-                                )
-                            }
-                        }
-                        
-                        // New Per-Item Participant Assignment Interface for Regex
-                        ForEach(session.assignedItems.indices, id: \.self) { index in
-                            ItemRowWithParticipants(
-                                item: $session.assignedItems[index],
-                                participants: session.participants,
-                                onItemUpdate: { updatedItem in
-                                    session.updateItemAssignments(updatedItem)
-                                }
-                            )
-                            .padding(.horizontal)
-                        }
-                    }
-                }
-                
-                // Regex Totals Section - Removed "Use These Items" button since items auto-load
-                // Items appear above and user can immediately start assigning participants
-                // User scrolls down to "Continue to Summary" when ready
-                
-                // LLM Approach Section
-                VStack(alignment: .leading, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Receipt Items (based on Apple Intelligence)")
-                            .font(.body)
-                            .fontWeight(.medium)
-                        Text("AI-powered approach using Apple's Natural Language framework")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(.horizontal)
-                    
-                    if session.llmDetectedItems.isEmpty {
-                        VStack(spacing: 12) {
-                            ProgressView()
-                                .scaleEffect(1.2)
-                            Text("Processing with Apple Intelligence...")
-                                .font(.body)
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(.vertical, 20)
-                        .padding(.horizontal)
-                    } else {
-                        // New Per-Item Participant Assignment Interface
-                        ForEach(session.assignedItems.indices, id: \.self) { index in
-                            ItemRowWithParticipants(
-                                item: $session.assignedItems[index],
-                                participants: session.participants,
-                                onItemUpdate: { updatedItem in
-                                    session.updateItemAssignments(updatedItem)
-                                }
-                            )
-                            .padding(.horizontal)
-                        }
-                    }
-                }
-                
-                // Assignment Summary and Continue Section
-                if !session.assignedItems.isEmpty {
-                    // Calculate assignment progress values
-                    let totalItems = session.assignedItems.count
-                    let assignedItems = session.assignedItems.filter { !$0.assignedToParticipants.isEmpty }.count
-                    let assignedTotal = session.assignedItems.reduce(0.0) { total, item in
-                        return total + (item.assignedToParticipants.isEmpty ? 0 : item.price)
-                    }
-                    
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Assignment Summary")
-                            .font(.body)
-                            .fontWeight(.medium)
-                            .padding(.horizontal)
-                        
-                        VStack(spacing: 8) {
-                            HStack {
-                                Text("Receipt Total")
-                                    .font(.body)
-                                Spacer()
-                                Text(String(format: "$%.2f", session.confirmedTotal))
-                                    .font(.body)
-                                    .fontWeight(.bold)
-                            }
-                            
-                            HStack {
-                                Text("Assigned Total")
-                                    .font(.body)
-                                Spacer()
-                                Text(String(format: "$%.2f", assignedTotal))
-                                    .font(.body)
-                                    .fontWeight(.bold)
-                                    .foregroundColor(abs(assignedTotal - session.confirmedTotal) > 0.01 ? .orange : .green)
-                            }
-                            
-                            HStack {
-                                Text("Items Assigned")
-                                    .font(.body)
-                                Spacer()
-                                Text("\(assignedItems) of \(totalItems)")
-                                    .font(.body)
-                                    .fontWeight(.bold)
-                                    .foregroundColor(assignedItems == totalItems ? .green : .orange)
-                            }
-                        }
-                        .padding()
-                        .background(Color.gray.opacity(0.1))
-                        .cornerRadius(12)
-                        .padding(.horizontal)
-                    }
-                    
-                    VStack(spacing: 8) {
-                        let allItemsAssigned = session.assignedItems.allSatisfy { !$0.assignedToParticipants.isEmpty }
-                        let totalComplete = abs(assignedTotal - session.confirmedTotal) <= 0.01
-                        let whoePaidSelected = session.paidByParticipantID != nil
-                        let canContinue = session.isReadyForBillCreation && totalComplete
-                        
-                        Button(action: {
-                            onContinue()
-                        }) {
-                            HStack {
-                                Text("Continue to Summary")
-                                Image(systemName: "arrow.right")
-                            }
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(canContinue ? Color.blue : Color.gray)
-                            .cornerRadius(12)
-                        }
-                        .disabled(!canContinue)
-                        .padding(.horizontal)
-                        
-                        if !whoePaidSelected {
-                            HStack {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundColor(.red)
-                                Text("Please select who paid this bill.")
-                                    .font(.caption)
-                                    .foregroundColor(.red)
-                            }
-                            .padding(.horizontal)
-                        } else if !allItemsAssigned {
-                            HStack {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundColor(.orange)
-                                Text("Please assign all items to participants.")
-                                    .font(.caption)
-                                    .foregroundColor(.orange)
-                            }
-                            .padding(.horizontal)
-                        } else if !totalComplete {
-                            HStack {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundColor(.red)
-                                Text("Assignment total doesn't match bill total.")
-                                    .font(.caption)
-                                    .foregroundColor(.red)
-                            }
-                            .padding(.horizontal)
-                        }
-                    }
-                }
+                headerWithImagePreview
+                participantManagementSection
+                regexItemsSection
+                llmItemsSection
+                assignmentSummarySection
             }
             .padding(.top)
         }
-        .onAppear {
-            // First ensure current user is initialized in the session
-            Task {
-                print("🔍 UIAssignScreen: onAppear - checking participants...")
-                print("👥 Current participants count: \(session.participants.count)")
-                for participant in session.participants {
-                    print("👥 Participant: \(participant.name) (\(participant.id))")
-                }
+        .onAppear(perform: handleOnAppear)
+        .onTapGesture(perform: hideKeyboard)
+        .toolbar { keyboardToolbar }
+        .contactPickerSheet(
+            isPresented: $showContactPicker,
+            onContactsSelected: handleContactsSelected
+        )
+        .newContactModalSheet(
+            isPresented: $showNewContactModal,
+            contactsManager: contactsManager,
+            authViewModel: authViewModel,
+            prefilledEmail: pendingContactEmail,
+            onContactSaved: handleContactSaved
+        )
+        .imagePopupCover(
+            isPresented: $showingImagePopup,
+            image: session.capturedReceiptImage
+        )
+        .permissionAlert(
+            isPresented: $contactsPermissionManager.showPermissionAlert,
+            message: contactsPermissionManager.permissionMessage
+        )
+        .validationAlert(
+            isPresented: $showValidationAlert,
+            message: validationError
+        )
+        .successAlert(
+            isPresented: $showSuccessAlert,
+            message: successMessage
+        )
+    }
 
-                // Initialize current user as "You" participant if not already present
-                if session.participants.isEmpty {
-                    print("🔄 UIAssignScreen: Initializing session with current user...")
-                    await session.initializeWithCurrentUser(authViewModel: authViewModel)
-                    print("👥 UIAssignScreen: After initialization - participants count: \(session.participants.count)")
-                    for participant in session.participants {
-                        print("👥 UIAssignScreen participant: \(participant.name) (\(participant.id)) - color: \(participant.color)")
-                    }
-                } else {
-                    // Check if "You" participant exists
-                    let hasYouParticipant = session.participants.contains { $0.name == "You" }
-                    if !hasYouParticipant {
-                        print("🔄 UIAssignScreen: No 'You' participant found, initializing...")
-                        await session.initializeWithCurrentUser(authViewModel: authViewModel)
-                        print("👥 UIAssignScreen: After initialization - participants count: \(session.participants.count)")
-                    } else {
-                        print("✅ UIAssignScreen: 'You' participant already exists")
-                        print("👥 UIAssignScreen: Current participants count: \(session.participants.count)")
-                        for participant in session.participants {
-                            print("👥 UIAssignScreen participant: \(participant.name) (\(participant.id)) - color: \(participant.color)")
-                        }
-                    }
-                }
+    // MARK: - View Components
 
-                // Check if this is edit mode (assignments already exist) or new bill mode
-                if !session.assignedItems.isEmpty && !session.regexDetectedItems.isEmpty && !session.llmDetectedItems.isEmpty {
-                    // Edit mode: Items are already populated, don't reprocess
-                    print("✅ UIAssignScreen: Edit mode detected, skipping processing (items already assigned)")
-                    print("   - assignedItems: \(session.assignedItems.count)")
-                    print("   - regexDetectedItems: \(session.regexDetectedItems.count)")
-                    print("   - llmDetectedItems: \(session.llmDetectedItems.count)")
-                } else {
-                    // New bill mode: Trigger dual processing when screen appears to ensure fresh results
-                    // Clear any existing results first to prevent showing stale data
-                    await MainActor.run {
-                        session.regexDetectedItems.removeAll()
-                        session.llmDetectedItems.removeAll()
-                    }
-
-                    // Only process if we have the necessary data from the current session
-                    if session.confirmedTotal > 0 && !session.rawReceiptText.isEmpty && session.expectedItemCount > 0 {
-                        print("🔄 UIAssignScreen: Triggering dual processing for new bill")
-                        print("   - confirmedTotal: \(session.confirmedTotal)")
-                        print("   - expectedItemCount: \(session.expectedItemCount)")
-                        print("   - rawReceiptText length: \(session.rawReceiptText.count)")
-
-                        await session.processWithBothApproaches(
-                            confirmedTax: session.confirmedTax,
-                            confirmedTip: session.confirmedTip,
-                            confirmedTotal: session.confirmedTotal,
-                            expectedItemCount: session.expectedItemCount
-                        )
-                    } else {
-                        print("❌ UIAssignScreen: Not processing - missing required data")
-                        print("   - confirmedTotal: \(session.confirmedTotal)")
-                        print("   - expectedItemCount: \(session.expectedItemCount)")
-                        print("   - rawReceiptText isEmpty: \(session.rawReceiptText.isEmpty)")
-                    }
-                }
-            }
-        }
-        .onTapGesture {
-            hideKeyboard()
-        }
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") {
-                    hideKeyboard()
-                }
-            }
-        }
-        .sheet(isPresented: $showContactPicker) {
-            ContactPicker(isPresented: $showContactPicker) { contacts in
-                handleContactsSelected(contacts)
-            }
-        }
-        .sheet(isPresented: $showNewContactModal) {
-            NewContactModal(
-                contactsManager: contactsManager,
-                authViewModel: authViewModel,
-                prefilledEmail: pendingContactEmail
-            ) { savedContact in
-                handleContactSaved(savedContact)
-            }
-        }
-        .fullScreenCover(isPresented: $showingImagePopup) {
+    private var headerWithImagePreview: some View {
+        HStack {
+            headerSection
+            Spacer()
             if let image = session.capturedReceiptImage {
-                ImagePopupView(image: image) {
-                    showingImagePopup = false
-                }
+                receiptThumbnail(image: image)
             }
         }
-        .alert("Permission Required", isPresented: $contactsPermissionManager.showPermissionAlert) {
-            Button("Cancel", role: .cancel) { }
-            Button("Open Settings") {
-                if let settingsUrl = URL(string: UIApplication.openSettingsURLString) {
-                    UIApplication.shared.open(settingsUrl)
-                }
-            }
-        } message: {
-            Text(contactsPermissionManager.permissionMessage)
+        .padding(.horizontal)
+    }
+
+    private func receiptThumbnail(image: UIImage) -> some View {
+        Button(action: { showingImagePopup = true }) {
+            Image(uiImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: 60, height: 60)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.blue, lineWidth: 2)
+                )
         }
-        .alert("❌ Error", isPresented: $showValidationAlert) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text(validationError ?? "An error occurred.")
-        }
-        .alert("✅ Success", isPresented: $showSuccessAlert) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text(successMessage ?? "Operation completed successfully.")
+        .buttonStyle(PlainButtonStyle())
+    }
+
+    private var participantManagementSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ParticipantSearchView(
+                searchText: $newParticipantName,
+                transactionContacts: contactsManager.transactionContacts,
+                onContactSelected: handleExistingContactSelected,
+                onNewContactSubmit: handleNewContactSubmit,
+                onCancel: {}
+            )
+            .padding(.horizontal)
+
+            participantChips
         }
     }
+
+    private var participantChips: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: 12) {
+            ForEach(session.participants) { participant in
+                ParticipantChip(
+                    participant: participant,
+                    canDelete: participant.name != "You",
+                    onDelete: { session.removeParticipant(participant) }
+                )
+            }
+        }
+        .padding(.horizontal)
+    }
+
+    private var regexItemsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            regexSectionHeader
+            regexItemsList
+        }
+    }
+
+    private var regexSectionHeader: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Receipt Items (based on Regex)")
+                .font(.body)
+                .fontWeight(.medium)
+            Text("Mathematical approach using regex patterns")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding(.horizontal)
+    }
+
+    private var regexItemsList: some View {
+        Group {
+            if session.regexDetectedItems.isEmpty {
+                processingIndicator(message: "Processing with regex approach...")
+            } else {
+                itemAssignmentList
+            }
+        }
+    }
+
+    private var llmItemsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            llmSectionHeader
+            llmItemsList
+        }
+    }
+
+    private var llmSectionHeader: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Receipt Items (based on Apple Intelligence)")
+                .font(.body)
+                .fontWeight(.medium)
+            Text("AI-powered approach using Apple's Natural Language framework")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding(.horizontal)
+    }
+
+    private var llmItemsList: some View {
+        Group {
+            if session.llmDetectedItems.isEmpty {
+                processingIndicator(message: "Processing with Apple Intelligence...")
+            } else {
+                itemAssignmentList
+            }
+        }
+    }
+
+    private func processingIndicator(message: String) -> some View {
+        VStack(spacing: 12) {
+            ProgressView()
+                .scaleEffect(1.2)
+            Text(message)
+                .font(.body)
+                .foregroundColor(.secondary)
+        }
+        .padding(.vertical, 20)
+        .padding(.horizontal)
+    }
+
+    private var itemAssignmentList: some View {
+        Group {
+            if session.assignedItems.isEmpty {
+                let _ = initializeAssignedItems()
+            }
+
+            ForEach(session.assignedItems.indices, id: \.self) { index in
+                ItemRowWithParticipants(
+                    item: $session.assignedItems[index],
+                    participants: session.participants,
+                    onItemUpdate: session.updateItemAssignments
+                )
+                .padding(.horizontal)
+            }
+        }
+    }
+
+    private var assignmentSummarySection: some View {
+        Group {
+            if !session.assignedItems.isEmpty {
+                VStack(spacing: 8) {
+                    summaryDetails
+                    continueButtonSection
+                }
+            }
+        }
+    }
+
+    private var summaryDetails: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Assignment Summary")
+                .font(.body)
+                .fontWeight(.medium)
+                .padding(.horizontal)
+
+            summaryRows
+        }
+    }
+
+    private var summaryRows: some View {
+        let totalItems = session.assignedItems.count
+        let assignedItems = session.assignedItems.filter { !$0.assignedToParticipants.isEmpty }.count
+        let assignedTotal = session.assignedItems.reduce(0.0) { total, item in
+            total + (item.assignedToParticipants.isEmpty ? 0 : item.price)
+        }
+
+        return VStack(spacing: 8) {
+            summaryRow(label: "Receipt Total", value: String(format: "$%.2f", session.confirmedTotal), valueColor: nil)
+            summaryRow(
+                label: "Assigned Total",
+                value: String(format: "$%.2f", assignedTotal),
+                valueColor: abs(assignedTotal - session.confirmedTotal) > 0.01 ? .orange : .green
+            )
+            summaryRow(
+                label: "Items Assigned",
+                value: "\(assignedItems) of \(totalItems)",
+                valueColor: assignedItems == totalItems ? .green : .orange
+            )
+        }
+        .padding()
+        .background(Color.gray.opacity(0.1))
+        .cornerRadius(12)
+        .padding(.horizontal)
+    }
+
+    private func summaryRow(label: String, value: String, valueColor: Color?) -> some View {
+        HStack {
+            Text(label)
+                .font(.body)
+            Spacer()
+            Text(value)
+                .font(.body)
+                .fontWeight(.bold)
+                .foregroundColor(valueColor)
+        }
+    }
+
+    private var continueButtonSection: some View {
+        let assignedTotal = session.assignedItems.reduce(0.0) { total, item in
+            total + (item.assignedToParticipants.isEmpty ? 0 : item.price)
+        }
+        let allItemsAssigned = session.assignedItems.allSatisfy { !$0.assignedToParticipants.isEmpty }
+        let totalComplete = abs(assignedTotal - session.confirmedTotal) <= 0.01
+        let whoPaidSelected = session.paidByParticipantID != nil
+        let canContinue = session.isReadyForBillCreation && totalComplete
+
+        return VStack(spacing: 8) {
+            continueButton(enabled: canContinue)
+            validationMessages(
+                whoPaidSelected: whoPaidSelected,
+                allItemsAssigned: allItemsAssigned,
+                totalComplete: totalComplete
+            )
+        }
+    }
+
+    private func continueButton(enabled: Bool) -> some View {
+        Button(action: onContinue) {
+            HStack {
+                Text("Continue to Summary")
+                Image(systemName: "arrow.right")
+            }
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(enabled ? Color.blue : Color.gray)
+            .cornerRadius(12)
+        }
+        .disabled(!enabled)
+        .padding(.horizontal)
+    }
+
+    private func validationMessages(whoPaidSelected: Bool, allItemsAssigned: Bool, totalComplete: Bool) -> some View {
+        Group {
+            if !whoPaidSelected {
+                validationMessage(icon: "exclamationmark.triangle.fill", text: "Please select who paid this bill.", color: .red)
+            } else if !allItemsAssigned {
+                validationMessage(icon: "exclamationmark.triangle.fill", text: "Please assign all items to participants.", color: .orange)
+            } else if !totalComplete {
+                validationMessage(icon: "exclamationmark.triangle.fill", text: "Assignment total doesn't match bill total.", color: .red)
+            }
+        }
+    }
+
+    private func validationMessage(icon: String, text: String, color: Color) -> some View {
+        HStack {
+            Image(systemName: icon)
+                .foregroundColor(color)
+            Text(text)
+                .font(.caption)
+                .foregroundColor(color)
+        }
+        .padding(.horizontal)
+    }
+
+    @ToolbarContentBuilder
+    private var keyboardToolbar: some ToolbarContent {
+        ToolbarItemGroup(placement: .keyboard) {
+            Spacer()
+            Button("Done", action: hideKeyboard)
+        }
+    }
+
+    // MARK: - Helper Methods
+
+    private func initializeAssignedItems() {
+        session.assignedItems = session.regexDetectedItems.enumerated().map { index, receiptItem in
+            UIItem(
+                id: index + 1,
+                name: receiptItem.name,
+                price: receiptItem.price,
+                assignedTo: nil,
+                assignedToParticipants: Set<String>(),
+                confidence: receiptItem.confidence,
+                originalDetectedName: receiptItem.originalDetectedName,
+                originalDetectedPrice: receiptItem.originalDetectedPrice
+            )
+        }
+    }
+
+    private func handleOnAppear() {
+        Task {
+            if session.participants.isEmpty {
+                await session.initializeWithCurrentUser(authViewModel: authViewModel)
+            } else {
+                let hasYouParticipant = session.participants.contains { $0.name == "You" }
+                if !hasYouParticipant {
+                    await session.initializeWithCurrentUser(authViewModel: authViewModel)
+                }
+            }
+
+            if !session.assignedItems.isEmpty && !session.regexDetectedItems.isEmpty && !session.llmDetectedItems.isEmpty {
+                // Edit mode: Items already populated
+            } else {
+                await MainActor.run {
+                    session.regexDetectedItems.removeAll()
+                    session.llmDetectedItems.removeAll()
+                }
+
+                if session.confirmedTotal > 0 && !session.rawReceiptText.isEmpty && session.expectedItemCount > 0 {
+                    await session.processWithBothApproaches(
+                        confirmedTax: session.confirmedTax,
+                        confirmedTip: session.confirmedTip,
+                        confirmedTotal: session.confirmedTotal,
+                        expectedItemCount: session.expectedItemCount
+                    )
+                }
+            }
+        }
+    }
+                
     
     private func hideKeyboard() {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
@@ -1067,7 +1040,6 @@ struct UIAssignScreen: View {
     }
     
     private func handleContactsSelected(_ contacts: [CNContact]) {
-        print("📱 Selected \(contacts.count) contacts from picker")
         
         Task {
             var rejectedContacts: [String] = []
@@ -1087,9 +1059,7 @@ struct UIAssignScreen: View {
                 )
                 
                 if result.participant != nil {
-                    print("✅ Added validated participant: \(contactName)")
                 } else {
-                    print("⚠️ Participant \(contactName) rejected: \(result.error ?? "Unknown error")")
                     rejectedContacts.append(contactName)
                 }
             }
@@ -1124,7 +1094,6 @@ struct UIAssignScreen: View {
 
             await MainActor.run {
                 if result.participant != nil {
-                    print("✅ Added validated network contact as participant: \(contact.displayName)")
                     newParticipantName = ""
                     successMessage = "Contact saved and added to current bill!"
                     showSuccessAlert = true
@@ -1153,7 +1122,6 @@ struct UIAssignScreen: View {
 
             await MainActor.run {
                 if result.participant != nil {
-                    print("✅ Added validated existing contact as participant: \(contact.displayName)")
                     newParticipantName = ""
                 } else if let error = result.error {
                     validationError = error
@@ -1191,16 +1159,12 @@ struct UIAssignScreen: View {
                         email = emailValidation.sanitized
                         
                         // Check if this email is already in user's transaction contacts
-                        print("🔍 Checking transaction contacts (count: \(contactsManager.transactionContacts.count)) for email: \(emailValidation.sanitized ?? "")")
                         if let existingContact = contactsManager.transactionContacts.first(where: { 
                             $0.email.lowercased() == emailValidation.sanitized?.lowercased() 
                         }) {
                             // Use the saved display name from transaction contacts
                             participantName = existingContact.displayName
-                            print("📋 Found existing contact: \(existingContact.displayName) for email: \(emailValidation.sanitized ?? "")")
                         } else {
-                            print("❌ No existing contact found for email: \(emailValidation.sanitized ?? "")")
-                            print("📋 Available contacts: \(contactsManager.transactionContacts.map { "\($0.displayName) (\($0.email))" })")
                             // Extract name from email (part before @) as fallback
                             participantName = String(trimmedName.split(separator: "@").first ?? Substring(trimmedName))
                             
@@ -1253,11 +1217,9 @@ struct UIAssignScreen: View {
                 
                 await MainActor.run {
                     if result.participant != nil {
-                        print("✅ Added validated participant manually: \(trimmedName)")
                         newParticipantName = ""
                         showAddParticipantOptions = false
                     } else if result.needsContact {
-                        print("📝 Showing contact modal for email: \(email ?? "nil")")
                         // Show new contact modal for unregistered email
                         pendingContactEmail = email ?? ""
                         pendingContactName = participantName
@@ -1284,6 +1246,143 @@ struct UIAssignScreen: View {
 }
 
 // MARK: - Participant Chip Component
+
+// MARK: - View Modifiers
+
+private struct ContactPickerSheetModifier: ViewModifier {
+    @Binding var isPresented: Bool
+    let onContactsSelected: ([CNContact]) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(isPresented: $isPresented) {
+                ContactPicker(isPresented: $isPresented, onContactSelected: onContactsSelected)
+            }
+    }
+}
+
+private struct NewContactModalSheetModifier: ViewModifier {
+    @Binding var isPresented: Bool
+    @ObservedObject var contactsManager: ContactsManager
+    @ObservedObject var authViewModel: AuthViewModel
+    let prefilledEmail: String
+    let onContactSaved: (TransactionContact) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(isPresented: $isPresented) {
+                NewContactModal(
+                    contactsManager: contactsManager,
+                    authViewModel: authViewModel,
+                    prefilledEmail: prefilledEmail,
+                    onContactSaved: onContactSaved
+                )
+            }
+    }
+}
+
+private struct ImagePopupCoverModifier: ViewModifier {
+    @Binding var isPresented: Bool
+    let image: UIImage?
+
+    func body(content: Content) -> some View {
+        content
+            .fullScreenCover(isPresented: $isPresented) {
+                if let image = image {
+                    ImagePopupView(image: image) {
+                        isPresented = false
+                    }
+                }
+            }
+    }
+}
+
+private struct ValidationAlertModifier: ViewModifier {
+    @Binding var isPresented: Bool
+    let message: String?
+
+    func body(content: Content) -> some View {
+        content
+            .alert("❌ Error", isPresented: $isPresented) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(message ?? "An error occurred.")
+            }
+    }
+}
+
+private struct SuccessAlertModifier: ViewModifier {
+    @Binding var isPresented: Bool
+    let message: String?
+
+    func body(content: Content) -> some View {
+        content
+            .alert("✅ Success", isPresented: $isPresented) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(message ?? "Operation completed successfully.")
+            }
+    }
+}
+
+extension View {
+    func contactPickerSheet(
+        isPresented: Binding<Bool>,
+        onContactsSelected: @escaping ([CNContact]) -> Void
+    ) -> some View {
+        modifier(ContactPickerSheetModifier(
+            isPresented: isPresented,
+            onContactsSelected: onContactsSelected
+        ))
+    }
+
+    func newContactModalSheet(
+        isPresented: Binding<Bool>,
+        contactsManager: ContactsManager,
+        authViewModel: AuthViewModel,
+        prefilledEmail: String,
+        onContactSaved: @escaping (TransactionContact) -> Void
+    ) -> some View {
+        modifier(NewContactModalSheetModifier(
+            isPresented: isPresented,
+            contactsManager: contactsManager,
+            authViewModel: authViewModel,
+            prefilledEmail: prefilledEmail,
+            onContactSaved: onContactSaved
+        ))
+    }
+
+    func imagePopupCover(
+        isPresented: Binding<Bool>,
+        image: UIImage?
+    ) -> some View {
+        modifier(ImagePopupCoverModifier(
+            isPresented: isPresented,
+            image: image
+        ))
+    }
+
+    func validationAlert(
+        isPresented: Binding<Bool>,
+        message: String?
+    ) -> some View {
+        modifier(ValidationAlertModifier(
+            isPresented: isPresented,
+            message: message
+        ))
+    }
+
+    func successAlert(
+        isPresented: Binding<Bool>,
+        message: String?
+    ) -> some View {
+        modifier(SuccessAlertModifier(
+            isPresented: isPresented,
+            message: message
+        ))
+    }
+}
+
 struct ParticipantChip: View {
     let participant: UIParticipant
     let canDelete: Bool
@@ -1946,7 +2045,103 @@ struct UISummaryScreen: View {
             }
         }
     }
-    
+
+    // Extract detailed breakdown section to reduce nesting
+    @ViewBuilder
+    private var detailedBreakdownSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Detailed breakdown")
+                .font(.body)
+                .fontWeight(.medium)
+                .padding(.horizontal)
+
+            ForEach(session.breakdownSummaries) { person in
+                personBreakdownCard(for: person)
+            }
+        }
+    }
+
+    // Extract person breakdown card to further reduce nesting
+    @ViewBuilder
+    private func personBreakdownCard(for person: UIBreakdown) -> some View {
+        VStack(spacing: 0) {
+            // Header
+            personBreakdownHeader(for: person)
+
+            // Items
+            ForEach(person.items, id: \.name) { item in
+                itemRow(name: item.name, price: item.price)
+            }
+
+            // Subtotal
+            personSubtotalRow(for: person)
+        }
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+        )
+        .padding(.horizontal)
+    }
+
+    @ViewBuilder
+    private func personBreakdownHeader(for person: UIBreakdown) -> some View {
+        HStack {
+            Circle()
+                .fill(person.color)
+                .frame(width: 24, height: 24)
+                .overlay(
+                    Group {
+                        if person.name == "Shared" {
+                            Text("S")
+                                .font(.caption)
+                                .fontWeight(.bold)
+                                .foregroundColor(.white)
+                        } else {
+                            Image(systemName: "person.fill")
+                                .foregroundColor(.white)
+                                .font(.caption2)
+                        }
+                    }
+                )
+            Text(person.name)
+                .fontWeight(.medium)
+            Spacer()
+        }
+        .padding()
+        .background(Color.gray.opacity(0.05))
+    }
+
+    @ViewBuilder
+    private func itemRow(name: String, price: Double) -> some View {
+        HStack {
+            Text(name)
+            Spacer()
+            Text("$\(price, specifier: "%.2f")")
+                .fontWeight(.medium)
+        }
+        .padding()
+        .overlay(
+            Rectangle()
+                .frame(height: 1)
+                .foregroundColor(.gray.opacity(0.2)),
+            alignment: .bottom
+        )
+    }
+
+    @ViewBuilder
+    private func personSubtotalRow(for person: UIBreakdown) -> some View {
+        HStack {
+            Text("Subtotal")
+                .fontWeight(.medium)
+            Spacer()
+            Text("$\(person.items.reduce(0) { $0.currencyAdd($1.price) }, specifier: "%.2f")")
+                .fontWeight(.medium)
+        }
+        .padding()
+        .background(Color.gray.opacity(0.05))
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
@@ -1997,85 +2192,12 @@ struct UISummaryScreen: View {
                 
                 // Who Owes Whom section - Individual debts (not net amounts)
                 whoOwesWhomSection
-                
+
                 // Detailed breakdown section
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Detailed breakdown")
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .padding(.horizontal)
-                    
-                    ForEach(session.breakdownSummaries) { person in
-                        VStack(spacing: 0) {
-                            // Header
-                            HStack {
-                                Circle()
-                                    .fill(person.color)
-                                    .frame(width: 24, height: 24)
-                                    .overlay(
-                                        Group {
-                                            if person.name == "Shared" {
-                                                Text("S")
-                                                    .font(.caption)
-                                                    .fontWeight(.bold)
-                                                    .foregroundColor(.white)
-                                            } else {
-                                                Image(systemName: "person.fill")
-                                                    .foregroundColor(.white)
-                                                    .font(.caption2)
-                                            }
-                                        }
-                                    )
-                                Text(person.name)
-                                    .fontWeight(.medium)
-                                Spacer()
-                            }
-                            .padding()
-                            .background(Color.gray.opacity(0.05))
-                            
-                            // Items
-                            ForEach(person.items, id: \.name) { item in
-                                HStack {
-                                    Text(item.name)
-                                    Spacer()
-                                    Text("$\(item.price, specifier: "%.2f")")
-                                        .fontWeight(.medium)
-                                }
-                                .padding()
-                                .overlay(
-                                    Rectangle()
-                                        .frame(height: 1)
-                                        .foregroundColor(.gray.opacity(0.2)),
-                                    alignment: .bottom
-                                )
-                            }
-                            
-                            // Subtotal
-                            HStack {
-                                Text("Subtotal")
-                                    .fontWeight(.medium)
-                                Spacer()
-                                Text("$\(person.items.reduce(0) { $0.currencyAdd($1.price) }, specifier: "%.2f")")
-                                    .fontWeight(.medium)
-                            }
-                            .padding()
-                            .background(Color.gray.opacity(0.05))
-                        }
-                        .cornerRadius(12)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-                        )
-                        .padding(.horizontal)
-                    }
-                }
+                detailedBreakdownSection
                 
                 // Add Bill Button with loading state
                 Button(action: {
-                    print("🔵 Add Bill button tapped")
-                    print("🔍 Session ready: \(session.isReadyForBillCreation)")
-                    print("🔍 PaidBy ID: \(session.paidByParticipantID?.description ?? "nil")")
-                    print("🔍 Items count: \(session.assignedItems.count)")
                     Task {
                         await createBill()
                     }
@@ -2125,6 +2247,7 @@ struct UISummaryScreen: View {
     }
     
     // MARK: - Bill Creation Logic
+
     @MainActor
     private func createBill() async {
         guard session.isReadyForBillCreation else {
@@ -2137,7 +2260,6 @@ struct UISummaryScreen: View {
         billCreationError = nil
         
         do {
-            print("🔵 Starting Firebase bill creation process...")
             
             // Create bill using BillService
             let bill = try await billService.createBill(
@@ -2147,7 +2269,6 @@ struct UISummaryScreen: View {
             )
 
             createdBill = bill
-            print("✅ Bill creation successful! ID: \(bill.id)")
 
             // Phase 3: Add bill activity to history tracking for ALL participants
             if let currentUser = authViewModel.user {
@@ -2163,14 +2284,12 @@ struct UISummaryScreen: View {
                     amount: bill.totalAmount,
                     currency: bill.currency
                 )
-                print("✅ Bill activity added to history for all participants")
             }
 
             // Call the completion handler
             onDone()
             
         } catch {
-            print("❌ Bill creation failed: \(error.localizedDescription)")
             
             // Check if it's a Firebase permissions error
             if error.localizedDescription.contains("Missing or insufficient permissions") {
@@ -2191,172 +2310,190 @@ struct UISummaryScreen: View {
 
 struct UIProfileScreen: View {
     @EnvironmentObject var authViewModel: AuthViewModel
-    
+
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-                Text("Profile")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal)
-                
-                // User info section
-                HStack(spacing: 16) {
-                    AsyncImage(url: authViewModel.user?.photoURL) { image in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        Circle()
-                            .fill(Color.gray.opacity(0.3))
-                            .overlay(
-                                Image(systemName: "person.fill")
-                                    .font(.title2)
-                                    .foregroundColor(.white)
-                            )
-                    }
-                    .frame(width: 64, height: 64)
-                    .clipShape(Circle())
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(authViewModel.user?.displayName ?? "User")
-                            .font(.title3)
-                            .fontWeight(.bold)
-                        Text(authViewModel.user?.email ?? "No email")
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Spacer()
-                }
-                .padding(.horizontal)
-                
-                // Menu items
-                VStack(spacing: 8) {
-                    UIProfileMenuItem(
-                        icon: "gearshape",
-                        title: "Account Settings"
-                    )
-                    
-                    UIProfileMenuItem(
-                        icon: "bell",
-                        title: "Notifications"
-                    )
-                    
-                    UIProfileMenuItem(
-                        icon: "creditcard",
-                        title: "Payment Methods"
-                    )
-                    
-                    UIProfileMenuItem(
-                        icon: "questionmark.circle",
-                        title: "Help & Support"
-                    )
-                }
-                .padding(.horizontal)
-                
-                // Debug section (for development)
-                VStack(spacing: 8) {
-                    Text("Debug Tools")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal)
-                    
-                    Button(action: {
-                        Task {
-                            await authViewModel.createTestUser(
-                                email: "test@example.com",
-                                displayName: "Test User",
-                                phoneNumber: "+1234567890"
-                            )
-                        }
-                    }) {
-                        HStack {
-                            Image(systemName: "person.badge.plus")
-                                .foregroundColor(.blue)
-                            Text("Create Test User")
-                                .fontWeight(.medium)
-                            Spacer()
-                        }
-                        .padding()
-                        .background(Color.blue.opacity(0.1))
-                        .cornerRadius(12)
-                    }
-                    .padding(.horizontal)
-                    
-                    Button(action: {
-                        Task {
-                            let isRegistered = await authViewModel.isUserOnboarded(email: "test@example.com")
-                            print("🔍 Test user registered: \(isRegistered)")
-                        }
-                    }) {
-                        HStack {
-                            Image(systemName: "magnifyingglass")
-                                .foregroundColor(.green)
-                            Text("Check Test User")
-                                .fontWeight(.medium)
-                            Spacer()
-                        }
-                        .padding()
-                        .background(Color.green.opacity(0.1))
-                        .cornerRadius(12)
-                    }
-                    .padding(.horizontal)
-                    
-                    Button(action: {
-                        Task {
-                            // Check if the current signed-in user can be found
-                            if let currentEmail = authViewModel.user?.email {
-                                let isRegistered = await authViewModel.isUserOnboarded(email: currentEmail)
-                                print("🔍 Current user (\(currentEmail)) registered: \(isRegistered)")
-                            }
-                        }
-                    }) {
-                        HStack {
-                            Image(systemName: "person.circle")
-                                .foregroundColor(.blue)
-                            Text("Check Current User")
-                                .fontWeight(.medium)
-                            Spacer()
-                        }
-                        .padding()
-                        .background(Color.blue.opacity(0.1))
-                        .cornerRadius(12)
-                    }
-                    .padding(.horizontal)
-                }
-                
-                // Log out button
-                Button(action: {
-                    authViewModel.signOut()
-                }) {
-                    HStack {
-                        Image(systemName: "arrow.right.square")
-                        Text("Log Out")
-                    }
-                    .foregroundColor(.red)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.red.opacity(0.3), lineWidth: 1)
-                    )
-                    .cornerRadius(12)
-                }
-                .padding(.horizontal)
-                
-                // App info
-                VStack(spacing: 4) {
-                    Text("SplitSmart v1.0.0")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Text("© 2023 SplitSmart Inc.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.top)
+                headerSection
+                userInfoSection
+                menuItemsSection
+                debugToolsSection
+                logoutButton
+                appInfoSection
             }
             .padding(.top)
+        }
+    }
+
+    // MARK: - View Components
+
+    private var headerSection: some View {
+        Text("Profile")
+            .font(.title2)
+            .fontWeight(.bold)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal)
+    }
+
+    private var userInfoSection: some View {
+        HStack(spacing: 16) {
+            userAvatar
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(authViewModel.user?.displayName ?? "User")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                Text(authViewModel.user?.email ?? "No email")
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal)
+    }
+
+    private var userAvatar: some View {
+        AsyncImage(url: authViewModel.user?.photoURL) { image in
+            image
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+        } placeholder: {
+            Circle()
+                .fill(Color.gray.opacity(0.3))
+                .overlay(
+                    Image(systemName: "person.fill")
+                        .font(.title2)
+                        .foregroundColor(.white)
+                )
+        }
+        .frame(width: 64, height: 64)
+        .clipShape(Circle())
+    }
+
+    private var menuItemsSection: some View {
+        VStack(spacing: 8) {
+            UIProfileMenuItem(icon: "gearshape", title: "Account Settings")
+            UIProfileMenuItem(icon: "bell", title: "Notifications")
+            UIProfileMenuItem(icon: "creditcard", title: "Payment Methods")
+            UIProfileMenuItem(icon: "questionmark.circle", title: "Help & Support")
+        }
+        .padding(.horizontal)
+    }
+
+    private var debugToolsSection: some View {
+        VStack(spacing: 8) {
+            Text("Debug Tools")
+                .font(.headline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal)
+
+            createTestUserButton
+            checkTestUserButton
+            checkCurrentUserButton
+        }
+    }
+
+    private var createTestUserButton: some View {
+        Button(action: handleCreateTestUser) {
+            HStack {
+                Image(systemName: "person.badge.plus")
+                    .foregroundColor(.blue)
+                Text("Create Test User")
+                    .fontWeight(.medium)
+                Spacer()
+            }
+            .padding()
+            .background(Color.blue.opacity(0.1))
+            .cornerRadius(12)
+        }
+        .padding(.horizontal)
+    }
+
+    private var checkTestUserButton: some View {
+        Button(action: handleCheckTestUser) {
+            HStack {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.green)
+                Text("Check Test User")
+                    .fontWeight(.medium)
+                Spacer()
+            }
+            .padding()
+            .background(Color.green.opacity(0.1))
+            .cornerRadius(12)
+        }
+        .padding(.horizontal)
+    }
+
+    private var checkCurrentUserButton: some View {
+        Button(action: handleCheckCurrentUser) {
+            HStack {
+                Image(systemName: "person.circle")
+                    .foregroundColor(.blue)
+                Text("Check Current User")
+                    .fontWeight(.medium)
+                Spacer()
+            }
+            .padding()
+            .background(Color.blue.opacity(0.1))
+            .cornerRadius(12)
+        }
+        .padding(.horizontal)
+    }
+
+    private var logoutButton: some View {
+        Button(action: { authViewModel.signOut() }) {
+            HStack {
+                Image(systemName: "arrow.right.square")
+                Text("Log Out")
+            }
+            .foregroundColor(.red)
+            .frame(maxWidth: .infinity)
+            .padding()
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.red.opacity(0.3), lineWidth: 1)
+            )
+            .cornerRadius(12)
+        }
+        .padding(.horizontal)
+    }
+
+    private var appInfoSection: some View {
+        VStack(spacing: 4) {
+            Text("SplitSmart v1.0.0")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            Text("© 2023 SplitSmart Inc.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding(.top)
+    }
+
+    // MARK: - Helper Methods
+
+    private func handleCreateTestUser() {
+        Task {
+            await authViewModel.createTestUser(
+                email: "test@example.com",
+                displayName: "Test User",
+                phoneNumber: "+1234567890"
+            )
+        }
+    }
+
+    private func handleCheckTestUser() {
+        Task {
+            let isRegistered = await authViewModel.isUserOnboarded(email: "test@example.com")
+        }
+    }
+
+    private func handleCheckCurrentUser() {
+        Task {
+            if let currentEmail = authViewModel.user?.email {
+                let isRegistered = await authViewModel.isUserOnboarded(email: currentEmail)
+            }
         }
     }
 }
@@ -2545,7 +2682,7 @@ struct ItemRowWithParticipants: View {
     let onItemUpdate: (UIItem) -> Void
     
     @State private var showingSuccessAnimation = false
-    @State private var everyoneButtonSelected = false
+    @State private var isEveryoneSelected = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -2606,7 +2743,7 @@ struct ItemRowWithParticipants: View {
                         onParticipantRemove: { participantId in
                             removeParticipant(participantId)
                         },
-                        everyoneSelected: everyoneButtonSelected,
+                        everyoneSelected: isEveryoneSelected,
                         onEveryoneToggle: {
                             toggleEveryoneButton()
                         }
@@ -2654,14 +2791,14 @@ struct ItemRowWithParticipants: View {
     }
     
     private func toggleEveryoneButton() {
-        if everyoneButtonSelected {
+        if isEveryoneSelected {
             // Deselect everyone - clear all assignments
             item.assignedToParticipants.removeAll()
-            everyoneButtonSelected = false
+            isEveryoneSelected = false
         } else {
             // Select everyone - assign to all participants
             item.assignedToParticipants = Set(participants.map { $0.id })
-            everyoneButtonSelected = true
+            isEveryoneSelected = true
         }
         onItemUpdate(item)
         triggerSuccessAnimation()
@@ -2669,7 +2806,7 @@ struct ItemRowWithParticipants: View {
     
     private func updateEveryoneButtonState() {
         let allParticipantIds = Set(participants.map { $0.id })
-        everyoneButtonSelected = !item.assignedToParticipants.isEmpty && 
+        isEveryoneSelected = !item.assignedToParticipants.isEmpty && 
                                  item.assignedToParticipants == allParticipantIds
     }
 }
