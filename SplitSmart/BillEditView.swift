@@ -201,18 +201,10 @@ struct BillEditView: View {
                 Text("Items (\(editSession.items.count))")
                     .font(.headline)
                     .fontWeight(.semibold)
-                
+
                 Spacer()
-                
-                Button(action: addNewItem) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "plus")
-                        Text("Add Item")
-                    }
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundColor(.blue)
-                }
+
+                // Removed "Add Item" button to maintain OCR validation
             }
             .padding(.horizontal)
             
@@ -236,12 +228,9 @@ struct BillEditView: View {
             } else {
                 LazyVStack(spacing: 8) {
                     ForEach(editSession.items.indices, id: \.self) { index in
-                        ItemEditRow(
-                            item: $editSession.items[index],
-                            participants: editSession.participants,
-                            onDelete: {
-                                editSession.items.remove(at: index)
-                            }
+                        ItemViewOnlyRow(
+                            item: editSession.items[index],
+                            participants: editSession.participants
                         )
                     }
                 }
@@ -360,16 +349,7 @@ struct BillEditView: View {
     }
     
     // MARK: - Actions
-    
-    private func addNewItem() {
-        let newItem = BillItem(
-            name: "New Item",
-            price: 0.00,
-            participantIDs: editSession.participants.map { $0.id }
-        )
-        editSession.items.append(newItem)
-    }
-    
+
     @MainActor
     private func updateBill() async {
         guard hasValidChanges else { return }
@@ -385,13 +365,16 @@ struct BillEditView: View {
                 items: editSession.items,
                 participants: editSession.participants,
                 paidByParticipantId: editSession.paidByParticipantId,
-                currentUserId: authViewModel.currentUser?.uid ?? "",
+                currentUserId: authViewModel.user?.uid ?? "",
+                currentUserEmail: authViewModel.user?.email ?? "",
                 billManager: billManager
             )
-            
-            
+
+            // Wait for Firestore listeners to propagate changes
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+
             // TODO: Send notifications to participants about the update
-            
+
             onDismiss()
             
         } catch {
@@ -405,21 +388,54 @@ struct BillEditView: View {
 
 // MARK: - Supporting Views
 
+// ItemViewOnlyRow - Read-only view of items (preserves OCR validation)
+struct ItemViewOnlyRow: View {
+    let item: BillItem
+    let participants: [BillParticipant]
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text(item.name)
+                    .fontWeight(.medium)
+
+                Spacer()
+
+                Text("$\(item.price, specifier: "%.2f")")
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+            }
+
+            HStack {
+                Text("Split among \(item.participantIDs.count) people")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Spacer()
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(8)
+    }
+}
+
+// ItemEditRow - Deprecated, kept for reference only
 struct ItemEditRow: View {
     @Binding var item: BillItem
     let participants: [BillParticipant]
     let onDelete: () -> Void
-    
+
     @State private var showingDetail = false
-    
+
     var body: some View {
         VStack(spacing: 8) {
             HStack {
                 TextField("Item name", text: $item.name)
                     .fontWeight(.medium)
-                
+
                 Spacer()
-                
+
                 HStack(spacing: 8) {
                     Text("$")
                         .foregroundColor(.secondary)
@@ -430,14 +446,14 @@ struct ItemEditRow: View {
                         .frame(width: 60)
                 }
             }
-            
+
             HStack {
                 Text("Split among \(item.participantIDs.count) people")
                     .font(.caption)
                     .foregroundColor(.secondary)
-                
+
                 Spacer()
-                
+
                 Button("Delete") {
                     onDelete()
                 }

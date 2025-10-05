@@ -24,7 +24,7 @@ struct BillDetailScreen: View {
     @ObservedObject var authViewModel: AuthViewModel
     @Environment(\.dismiss) private var dismiss
 
-    // @StateObject private var editSession = BillEditSession() // TODO: Add Models/Core/BillEditSession.swift to Xcode target
+    @StateObject private var editSession = BillEditSession()
     @State private var showingEditView = false
     @State private var showingDeleteConfirmation = false
     @State private var isDeleting = false
@@ -86,18 +86,17 @@ struct BillDetailScreen: View {
         }
         .navigationTitle(bill.isDeleted ? "Deleted Bill" : "Bill Details")
         .navigationBarTitleDisplayMode(.inline)
-        // TODO: Re-enable edit functionality when BillEditView and BillEditSession are added to target
-        // .sheet(isPresented: $showingEditView) {
-        //     BillEditView(
-        //         bill: bill,
-        //         editSession: editSession,
-        //         billManager: billManager,
-        //         authViewModel: authViewModel
-        //     ) {
-        //         // Refresh bill data after edit
-        //         showingEditView = false
-        //     }
-        // }
+        .sheet(isPresented: $showingEditView) {
+            BillEditView(
+                bill: bill,
+                editSession: editSession,
+                billManager: billManager,
+                authViewModel: authViewModel,
+                onDismiss: {
+                    showingEditView = false
+                }
+            )
+        }
         .alert("Delete Bill", isPresented: $showingDeleteConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Delete", role: .destructive) {
@@ -373,27 +372,27 @@ struct BillDetailScreen: View {
     
     private var actionButtons: some View {
         VStack(spacing: 12) {
-            // TODO: Edit Button disabled until BillEditSession is in target
-            // Button(action: {
-            //     editSession.loadBill(bill)
-            //     showingEditView = true
-            // }) {
-            //     HStack {
-            //         Image(systemName: "pencil")
-            //         Text("Edit Bill")
-            //             .fontWeight(.semibold)
-            //     }
-            //     .foregroundColor(.blue)
-            //     .frame(maxWidth: .infinity)
-            //     .padding()
-            //     .background(Color.blue.opacity(0.1))
-            //     .cornerRadius(12)
-            //     .overlay(
-            //         RoundedRectangle(cornerRadius: 12)
-            //             .stroke(Color.blue.opacity(0.3), lineWidth: 1)
-            //     )
-            // }
-            
+            // Edit Button
+            Button(action: {
+                editSession.loadBill(bill)
+                showingEditView = true
+            }) {
+                HStack {
+                    Image(systemName: "pencil")
+                    Text("Edit Bill")
+                        .fontWeight(.semibold)
+                }
+                .foregroundColor(.blue)
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color.blue.opacity(0.1))
+                .cornerRadius(12)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+                )
+            }
+
             // Delete Button
             Button(action: {
                 showingDeleteConfirmation = true

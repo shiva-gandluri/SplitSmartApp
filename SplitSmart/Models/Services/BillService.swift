@@ -656,6 +656,116 @@ final class BillService: ObservableObject {
         // Commit batch atomically
         try await batch.commit()
     }
+
+    /**
+     Updates an existing bill with new values and creates edit activity for all participants.
+
+     This method is used by BillEditView to save changes to an existing bill.
+
+     - Parameters:
+       - billId: Firestore document ID of the bill to update
+       - billName: New bill name
+       - items: Updated list of bill items
+       - participants: Updated list of participants
+       - paidByParticipantId: ID of the participant who paid
+       - currentUserId: Firebase Auth UID of user making the edit
+       - billManager: BillManager instance to trigger UI refresh
+
+     - Throws: BillServiceError if update fails or user is not authorized
+
+     ## Features:
+     - Permission check: Only bill creator can edit
+     - Recalculates debt amounts based on new items
+     - Creates "edited" activity for all participants
+     - Updates bill in Firestore atomically
+     - Triggers real-time UI refresh via BillManager
+     */
+    func updateBill(
+        billId: String,
+        billName: String,
+        items: [BillItem],
+        participants: [BillParticipant],
+        paidByParticipantId: String,
+        currentUserId: String,
+        currentUserEmail: String,
+        billManager: BillManager
+    ) async throws {
+        // Fetch current bill
+        let billRef = db.collection("bills").document(billId)
+        let billSnapshot = try await billRef.getDocument()
+
+        guard var bill = try? billSnapshot.data(as: Bill.self) else {
+            throw BillDeleteError.billNotFound
+        }
+
+        // Permission check: Only creator can edit
+        guard bill.createdBy == currentUserId else {
+            throw BillDeleteError.notAuthorized
+        }
+
+        // Update bill properties
+        bill.billName = billName
+        bill.items = items
+        bill.participants = participants
+        bill.paidBy = paidByParticipantId
+
+        // Note: totalAmount is derived from items sum and doesn't need manual update
+        // Recalculate debt totals based on new items
+        bill.calculatedTotals = BillCalculator.calculateOwedAmounts(bill: bill)
+
+        // Update bill in Firestore
+        try await updateBillInFirestore(bill: bill)
+
+        // Create "edited" activity for all participants
+        let editorName = participants.first(where: { $0.id == currentUserId })?.displayName ?? "Someone"
+        // CRITICAL: Use current authenticated email, not bill snapshot email, for Firestore security rules
+        let editorEmail = currentUserEmail
+
+        // Calculate new total from updated items
+        let newTotalAmount = items.reduce(0.0) { $0 + $1.price }
+
+        AppLog.debug("Creating edit activity - Editor: \(editorEmail), Participants: \(participants.map { $0.email })", category: .billManagement)
+
+        let activityId = UUID().uuidString
+        let activity = BillActivity(
+            id: activityId,
+            billId: billId,
+            billName: billName,
+            activityType: .edited,
+            actorName: editorName,
+            actorEmail: editorEmail,
+            participantEmails: participants.map { $0.email },
+            timestamp: Date(),
+            amount: newTotalAmount,
+            currency: bill.currency ?? "USD"
+        )
+
+        // Save edit activity for all participants
+        let batch = db.batch()
+        for participantId in bill.participantIds {
+            let activityRef = db.collection("users")
+                .document(participantId)
+                .collection("billActivities")
+                .document(activityId)
+
+            do {
+                try batch.setData(from: activity, forDocument: activityRef)
+            } catch {
+                AppLog.billError("Failed to add activity to batch for participant \(participantId)", error: error)
+            }
+        }
+
+        do {
+            try await batch.commit()
+            AppLog.billSuccess("Edit activity saved for \(bill.participantIds.count) participants", billId: billId)
+        } catch {
+            AppLog.billError("Failed to commit edit activity batch", error: error)
+            throw error
+        }
+
+        // Refresh BillManager to update UI
+        await billManager.refreshBills()
+    }
 }
 
 // MARK: - Temporary Note

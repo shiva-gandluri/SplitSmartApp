@@ -1838,6 +1838,7 @@ struct BillEditSummaryScreen: View {
                 participants: bill.participants, // Keep same participants
                 paidByParticipantId: paidByParticipantId,
                 currentUserId: authViewModel.user?.uid ?? "",
+                currentUserEmail: authViewModel.user?.email ?? "",
                 billManager: billManager
             )
             

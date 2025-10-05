@@ -763,6 +763,7 @@ class BillService: ObservableObject {
         participants: [BillParticipant],
         paidByParticipantId: String,
         currentUserId: String,
+        currentUserEmail: String,
         billManager: BillManager
     ) async throws {
         AppLog.billOperation("Starting Firebase bill update", billId: billId)
@@ -852,7 +853,49 @@ class BillService: ObservableObject {
         
         // Update in Firestore
         try await updateBillInFirestore(bill: updatedBill)
-        
+
+        // Create "edited" activity for all participants
+        let editorName = participants.first(where: { $0.id == currentUserId })?.displayName ?? "Someone"
+        // CRITICAL: Use current authenticated email for Firestore security rules
+        let editorEmail = currentUserEmail
+
+        let activityId = UUID().uuidString
+        let activity = BillActivity(
+            id: activityId,
+            billId: billId,
+            billName: billName,
+            activityType: .edited,
+            actorName: editorName,
+            actorEmail: editorEmail,
+            participantEmails: participants.map { $0.email },
+            timestamp: Date(),
+            amount: newTotalAmount,
+            currency: updatedBill.currency
+        )
+
+        // Save edit activity for all participants
+        let batch = db.batch()
+        for participantId in updatedBill.participantIds {
+            let activityRef = db.collection("users")
+                .document(participantId)
+                .collection("billActivities")
+                .document(activityId)
+
+            do {
+                try batch.setData(from: activity, forDocument: activityRef)
+            } catch {
+                AppLog.billError("Failed to add activity to batch for participant \(participantId)", error: error)
+            }
+        }
+
+        do {
+            try await batch.commit()
+            AppLog.billSuccess("Edit activity saved for \(updatedBill.participantIds.count) participants", billId: billId)
+        } catch {
+            AppLog.billError("Failed to commit edit activity batch", error: error)
+            // Don't throw - bill update succeeded, just activity logging failed
+        }
+
         // Send notifications to all participants about the update
         Task {
             await PushNotificationService.shared.sendBillUpdateNotificationToParticipants(
@@ -860,7 +903,7 @@ class BillService: ObservableObject {
                 updatedBy: currentUserId
             )
         }
-        
+
         AppLog.billSuccess("Bill updated successfully", billId: billId)
         #if DEBUG
         #endif

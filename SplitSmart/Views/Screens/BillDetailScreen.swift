@@ -24,30 +24,39 @@ struct BillDetailScreen: View {
     @ObservedObject var authViewModel: AuthViewModel
     @Environment(\.dismiss) private var dismiss
 
-    // @StateObject private var editSession = BillEditSession() // TODO: Add Models/Core/BillEditSession.swift to Xcode target
+    @StateObject private var editSession = BillEditSession()
     @State private var showingEditView = false
     @State private var showingDeleteConfirmation = false
     @State private var isDeleting = false
     @State private var deleteError: String?
     
     // Computed properties
+    private var currentBill: Bill {
+        // For deleted bills, use passed bill since billManager filters them out
+        // For active bills, get latest from billManager to reflect real-time updates
+        if bill.isDeleted {
+            return bill
+        }
+        return billManager.bills.first(where: { $0.id == bill.id }) ?? bill
+    }
+
     private var isCreator: Bool {
-        let result = authViewModel.user?.uid == bill.createdBy
-        if let deletedBy = bill.deletedBy {
+        let result = authViewModel.user?.uid == currentBill.createdBy
+        if let deletedBy = currentBill.deletedBy {
         }
         return result
     }
-    
+
     private var billTotal: Double {
-        bill.items.reduce(0) { $0 + $1.price }
+        currentBill.items.reduce(0) { $0 + $1.price }
     }
-    
+
     private var creator: BillParticipant? {
-        bill.participants.first { $0.id == bill.createdBy }
+        currentBill.participants.first { $0.id == currentBill.createdBy }
     }
-    
+
     private var payer: BillParticipant? {
-        bill.participants.first { $0.id == bill.paidBy }
+        currentBill.participants.first { $0.id == currentBill.paidBy }
     }
     
     var body: some View {
@@ -56,12 +65,12 @@ struct BillDetailScreen: View {
             VStack(spacing: 24) {
                 // Debug logging for deletion state
                 Color.clear.onAppear {
-                    if let deletedBy = bill.deletedBy, let deletedAt = bill.deletedAt {
+                    if let deletedBy = currentBill.deletedBy, let deletedAt = currentBill.deletedAt {
                     }
                 }
 
                 // Deleted Bill Banner
-                if bill.isDeleted {
+                if currentBill.isDeleted {
                     deletedBillBanner
                 }
 
@@ -78,26 +87,25 @@ struct BillDetailScreen: View {
                 itemsSection
 
                 // Action Buttons (only for creators of active bills)
-                if isCreator && !bill.isDeleted {
+                if isCreator && !currentBill.isDeleted {
                     actionButtons
                 }
             }
             .padding(.vertical)
         }
-        .navigationTitle(bill.isDeleted ? "Deleted Bill" : "Bill Details")
+        .navigationTitle(currentBill.isDeleted ? "Deleted Bill" : "Bill Details")
         .navigationBarTitleDisplayMode(.inline)
-        // TODO: Re-enable edit functionality when BillEditView and BillEditSession are added to target
-        // .sheet(isPresented: $showingEditView) {
-        //     BillEditView(
-        //         bill: bill,
-        //         editSession: editSession,
-        //         billManager: billManager,
-        //         authViewModel: authViewModel
-        //     ) {
-        //         // Refresh bill data after edit
-        //         showingEditView = false
-        //     }
-        // }
+        .sheet(isPresented: $showingEditView) {
+            BillEditView(
+                bill: currentBill,
+                editSession: editSession,
+                billManager: billManager,
+                authViewModel: authViewModel,
+                onDismiss: {
+                    showingEditView = false
+                }
+            )
+        }
         .alert("Delete Bill", isPresented: $showingDeleteConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Delete", role: .destructive) {
@@ -131,8 +139,8 @@ struct BillDetailScreen: View {
                         .font(.headline)
                         .foregroundColor(.white)
 
-                    if let deletedByName = bill.deletedByDisplayName,
-                       let deletedAt = bill.deletedAt {
+                    if let deletedByName = currentBill.deletedByDisplayName,
+                       let deletedAt = currentBill.deletedAt {
                         Text("Deleted by \(deletedByName) on \(deletedAt.dateValue().formatted(date: .abbreviated, time: .shortened))")
                             .font(.caption)
                             .foregroundColor(.white.opacity(0.9))
@@ -157,15 +165,15 @@ struct BillDetailScreen: View {
         VStack(spacing: 12) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(bill.billName ?? "Bill #\(bill.id.prefix(8))")
+                    Text(currentBill.billName ?? "Bill #\(currentBill.id.prefix(8))")
                         .font(.title2)
                         .fontWeight(.bold)
-                    
-                    Text("Created on \(bill.date.dateValue().formatted(date: .abbreviated, time: .shortened))")
+
+                    Text("Created on \(currentBill.date.dateValue().formatted(date: .abbreviated, time: .shortened))")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
-                    
-                    if bill.isDeleted {
+
+                    if currentBill.isDeleted {
                         HStack {
                             Image(systemName: "trash.slash")
                                 .foregroundColor(.red)
@@ -260,7 +268,7 @@ struct BillDetailScreen: View {
                 .fontWeight(.semibold)
                 .padding(.horizontal)
             
-            let owedAmounts = BillCalculator.calculateOwedAmounts(bill: bill)
+            let owedAmounts = BillCalculator.calculateOwedAmounts(bill: currentBill)
             
             if owedAmounts.isEmpty || owedAmounts.allSatisfy({ $0.value <= 0.01 }) {
                 // All settled up
@@ -280,7 +288,7 @@ struct BillDetailScreen: View {
             } else {
                 // Show debts
                 ForEach(owedAmounts.sorted(by: { $0.key < $1.key }), id: \.key) { participantId, amount in
-                    if let debtor = bill.participants.first(where: { $0.id == participantId }),
+                    if let debtor = currentBill.participants.first(where: { $0.id == participantId }),
                        let payer = payer,
                        amount > 0.01 {
                         
@@ -340,13 +348,13 @@ struct BillDetailScreen: View {
     
     private var itemsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Items (\(bill.items.count))")
+            Text("Items (\(currentBill.items.count))")
                 .font(.headline)
                 .fontWeight(.semibold)
                 .padding(.horizontal)
-            
+
             LazyVStack(spacing: 8) {
-                ForEach(bill.items) { item in
+                ForEach(currentBill.items) { item in
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(item.name)
@@ -394,6 +402,27 @@ struct BillDetailScreen: View {
             //     )
             // }
             
+            // Edit Button
+            Button(action: {
+                editSession.loadBill(currentBill)
+                showingEditView = true
+            }) {
+                HStack {
+                    Image(systemName: "pencil")
+                    Text("Edit Bill")
+                        .fontWeight(.semibold)
+                }
+                .foregroundColor(.blue)
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color.blue.opacity(0.1))
+                .cornerRadius(12)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+                )
+            }
+
             // Delete Button
             Button(action: {
                 showingDeleteConfirmation = true
@@ -431,7 +460,7 @@ struct BillDetailScreen: View {
             // Use BillService to delete the bill
             let billService = BillService()
             try await billService.deleteBill(
-                billId: bill.id,
+                billId: currentBill.id,
                 currentUserId: authViewModel.user?.uid ?? "",
                 billManager: billManager
             )

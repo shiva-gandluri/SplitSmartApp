@@ -9,6 +9,9 @@
 /* Begin PBXBuildFile section */
 		066A8FF92E8F875D00298F33 /* SessionRecoveryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066A8FF82E8F875D00298F33 /* SessionRecoveryManager.swift */; };
 		066A8FFA2E8F875D00298F33 /* SessionPersistenceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066A8FF72E8F875D00298F33 /* SessionPersistenceManager.swift */; };
+		066A90062E923A5E00298F33 /* BillDetailScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066A90052E923A5E00298F33 /* BillDetailScreen.swift */; };
+		066A90092E9261C500298F33 /* BillEditSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066A90072E9261C500298F33 /* BillEditSession.swift */; };
+		066A900A2E9261C500298F33 /* BillEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066A90082E9261C500298F33 /* BillEditView.swift */; };
 		1111111111111111111111111111111A /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD /* GoogleService-Info.plist */; };
 		1111111111111111111111111111111C /* DataModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1111111111111111111111111111111D /* DataModels.swift */; };
 		1111111111111111111111111111111E /* ScanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1111111111111111111111111111111F /* ScanView.swift */; };
@@ -31,6 +34,9 @@
 		066A8FF62E8F84F900298F33 /* SplitSmart.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SplitSmart.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		066A8FF72E8F875D00298F33 /* SessionPersistenceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionPersistenceManager.swift; sourceTree = "<group>"; };
 		066A8FF82E8F875D00298F33 /* SessionRecoveryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRecoveryManager.swift; sourceTree = "<group>"; };
+		066A90052E923A5E00298F33 /* BillDetailScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BillDetailScreen.swift; sourceTree = "<group>"; };
+		066A90072E9261C500298F33 /* BillEditSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BillEditSession.swift; sourceTree = "<group>"; };
+		066A90082E9261C500298F33 /* BillEditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BillEditView.swift; sourceTree = "<group>"; };
 		1111111111111111111111111111111D /* DataModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DataModels.swift; path = Models/DataModels.swift; sourceTree = "<group>"; };
 		1111111111111111111111111111111F /* ScanView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ScanView.swift; path = Views/ScanView.swift; sourceTree = "<group>"; };
 		12A247C155DBFC137AF9BF03 /* SplitSmartApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SplitSmartApp.swift; sourceTree = "<group>"; };
@@ -72,6 +78,9 @@
 		A1234567890ABCDEF22 /* SplitSmart */ = {
 			isa = PBXGroup;
 			children = (
+				066A90072E9261C500298F33 /* BillEditSession.swift */,
+				066A90082E9261C500298F33 /* BillEditView.swift */,
+				066A90052E923A5E00298F33 /* BillDetailScreen.swift */,
 				066A8FF72E8F875D00298F33 /* SessionPersistenceManager.swift */,
 				066A8FF82E8F875D00298F33 /* SessionRecoveryManager.swift */,
 				12A247C155DBFC137AF9BF03 /* SplitSmartApp.swift */,
@@ -171,6 +180,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				066A90092E9261C500298F33 /* BillEditSession.swift in Sources */,
+				066A900A2E9261C500298F33 /* BillEditView.swift in Sources */,
 				81394FE99C162533B8CBFF9E /* ContentView.swift in Sources */,
 				E0CC6CB05F1EED362EC1D1EB /* GroupsView.swift in Sources */,
 				782AA4F1F7B1E6C2840B32F3 /* HistoryView.swift in Sources */,
@@ -179,6 +190,7 @@
 				EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE /* AuthViewModel.swift in Sources */,
 				066A8FF92E8F875D00298F33 /* SessionRecoveryManager.swift in Sources */,
 				066A8FFA2E8F875D00298F33 /* SessionPersistenceManager.swift in Sources */,
+				066A90062E923A5E00298F33 /* BillDetailScreen.swift in Sources */,
 				FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF /* AuthView.swift in Sources */,
 				1111111111111111111111111111111C /* DataModels.swift in Sources */,
 				1111111111111111111111111111111E /* ScanView.swift in Sources */,
