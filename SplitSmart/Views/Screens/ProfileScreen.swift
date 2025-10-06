@@ -19,9 +19,10 @@ import SwiftUI
 struct UIProfileScreen: View {
     @EnvironmentObject var authViewModel: AuthViewModel
     @EnvironmentObject var billManager: BillManager
-    
+
     var body: some View {
-        ScrollView {
+        NavigationView {
+            ScrollView {
             VStack(spacing: 24) {
                 Text("Profile")
                     .font(.title2)
@@ -61,96 +62,36 @@ struct UIProfileScreen: View {
                 
                 // Menu items
                 VStack(spacing: 8) {
-                    UIProfileMenuItem(
-                        icon: "gearshape",
-                        title: "Account Settings"
-                    )
-                    
-                    UIProfileMenuItem(
-                        icon: "bell",
-                        title: "Notifications"
-                    )
-                    
-                    UIProfileMenuItem(
-                        icon: "creditcard",
-                        title: "Payment Methods"
-                    )
-                    
+                    NavigationLink(destination: NotificationsSettingsView().environmentObject(authViewModel)) {
+                        HStack {
+                            HStack(spacing: 12) {
+                                Image(systemName: "bell")
+                                    .font(.system(size: 18))
+                                    .foregroundColor(.secondary)
+                                    .frame(width: 24)
+
+                                Text("Notifications")
+                                    .foregroundColor(.primary)
+                            }
+
+                            Spacer()
+
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding()
+                        .background(Color(.systemBackground))
+                        .cornerRadius(12)
+                        .shadow(color: .black.opacity(0.05), radius: 1, x: 0, y: 1)
+                    }
+
                     UIProfileMenuItem(
                         icon: "questionmark.circle",
                         title: "Help & Support"
                     )
                 }
                 .padding(.horizontal)
-                
-                // Debug section (for development)
-                VStack(spacing: 8) {
-                    Text("Debug Tools")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal)
-                    
-                    Button(action: {
-                        Task {
-                            await authViewModel.createTestUser(
-                                email: "test@example.com",
-                                displayName: "Test User",
-                                phoneNumber: "+1234567890"
-                            )
-                        }
-                    }) {
-                        HStack {
-                            Image(systemName: "person.badge.plus")
-                                .foregroundColor(.blue)
-                            Text("Create Test User")
-                                .fontWeight(.medium)
-                            Spacer()
-                        }
-                        .padding()
-                        .background(Color.blue.opacity(0.1))
-                        .cornerRadius(12)
-                    }
-                    .padding(.horizontal)
-                    
-                    Button(action: {
-                        Task {
-                            let isRegistered = await authViewModel.isUserOnboarded(email: "test@example.com")
-                        }
-                    }) {
-                        HStack {
-                            Image(systemName: "magnifyingglass")
-                                .foregroundColor(.green)
-                            Text("Check Test User")
-                                .fontWeight(.medium)
-                            Spacer()
-                        }
-                        .padding()
-                        .background(Color.green.opacity(0.1))
-                        .cornerRadius(12)
-                    }
-                    .padding(.horizontal)
-                    
-                    Button(action: {
-                        Task {
-                            // Check if the current signed-in user can be found
-                            if let currentEmail = authViewModel.user?.email {
-                                let isRegistered = await authViewModel.isUserOnboarded(email: currentEmail)
-                            }
-                        }
-                    }) {
-                        HStack {
-                            Image(systemName: "person.circle")
-                                .foregroundColor(.blue)
-                            Text("Check Current User")
-                                .fontWeight(.medium)
-                            Spacer()
-                        }
-                        .padding()
-                        .background(Color.blue.opacity(0.1))
-                        .cornerRadius(12)
-                    }
-                    .padding(.horizontal)
-                }
                 
                 // Log out button
                 Button(action: {
@@ -202,6 +143,7 @@ struct UIProfileScreen: View {
                 .padding(.top, 8)
             }
             .padding(.top)
+            }
         }
         .confirmationDialog(
             "Delete Account",
@@ -246,9 +188,9 @@ struct UIProfileScreen: View {
 
 /**
  * Profile Menu Item Component
- * 
+ *
  * Reusable menu item for profile settings navigation.
- * 
+ *
  * Features:
  * - Icon and title display
  * - Chevron indicator for navigation
@@ -258,7 +200,7 @@ struct UIProfileScreen: View {
 struct UIProfileMenuItem: View {
     let icon: String
     let title: String
-    
+
     var body: some View {
         Button(action: {}) {
             HStack {
@@ -267,13 +209,13 @@ struct UIProfileMenuItem: View {
                         .font(.system(size: 18))
                         .foregroundColor(.secondary)
                         .frame(width: 24)
-                    
+
                     Text(title)
                         .foregroundColor(.primary)
                 }
-                
+
                 Spacer()
-                
+
                 Image(systemName: "chevron.right")
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -283,5 +225,47 @@ struct UIProfileMenuItem: View {
             .cornerRadius(12)
             .shadow(color: .black.opacity(0.05), radius: 1, x: 0, y: 1)
         }
+    }
+}
+
+/**
+ * Notifications Settings View
+ *
+ * Allow users to manage their notification preferences
+ */
+struct NotificationsSettingsView: View {
+    @EnvironmentObject var authViewModel: AuthViewModel
+    @AppStorage("notificationsEnabled") private var notificationsEnabled = true
+    @AppStorage("billUpdatesEnabled") private var billUpdatesEnabled = true
+    @AppStorage("paymentRemindersEnabled") private var paymentRemindersEnabled = true
+    @AppStorage("newBillsEnabled") private var newBillsEnabled = true
+
+    var body: some View {
+        List {
+            Section {
+                Toggle("Enable Notifications", isOn: $notificationsEnabled)
+            } header: {
+                Text("General")
+            } footer: {
+                Text("Allow SplitSmart to send you notifications")
+            }
+
+            Section {
+                Toggle("Bill Updates", isOn: $billUpdatesEnabled)
+                    .disabled(!notificationsEnabled)
+
+                Toggle("Payment Reminders", isOn: $paymentRemindersEnabled)
+                    .disabled(!notificationsEnabled)
+
+                Toggle("New Bills", isOn: $newBillsEnabled)
+                    .disabled(!notificationsEnabled)
+            } header: {
+                Text("Notification Types")
+            } footer: {
+                Text("Choose which types of notifications you want to receive")
+            }
+        }
+        .navigationTitle("Notifications")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

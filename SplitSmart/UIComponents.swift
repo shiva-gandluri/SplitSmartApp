@@ -2310,18 +2310,46 @@ struct UISummaryScreen: View {
 
 struct UIProfileScreen: View {
     @EnvironmentObject var authViewModel: AuthViewModel
+    @EnvironmentObject var billManager: BillManager
+    @State private var showDeleteAccountConfirmation = false
+    @State private var showDeletionError = false
+    @State private var deletionErrorMessage = ""
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                headerSection
-                userInfoSection
-                menuItemsSection
-                debugToolsSection
-                logoutButton
-                appInfoSection
+        NavigationView {
+            ZStack(alignment: .bottom) {
+                ScrollView {
+                    VStack(spacing: 24) {
+                        headerSection
+                        userInfoSection
+                        menuItemsSection
+                        Spacer(minLength: 150)
+                    }
+                    .padding(.top)
+                }
+
+                VStack(spacing: 12) {
+                    logoutButton
+                    appInfoSection
+                }
             }
-            .padding(.top)
+        }
+        .confirmationDialog(
+            "Delete Account",
+            isPresented: $showDeleteAccountConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Account", role: .destructive) {
+                handleDeleteAccount()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Are you sure you want to delete your account? This action cannot be undone and all your data will be permanently deleted.")
+        }
+        .alert("Cannot Delete Account", isPresented: $showDeletionError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(deletionErrorMessage)
         }
     }
 
@@ -2372,127 +2400,101 @@ struct UIProfileScreen: View {
 
     private var menuItemsSection: some View {
         VStack(spacing: 8) {
-            UIProfileMenuItem(icon: "gearshape", title: "Account Settings")
-            UIProfileMenuItem(icon: "bell", title: "Notifications")
-            UIProfileMenuItem(icon: "creditcard", title: "Payment Methods")
-            UIProfileMenuItem(icon: "questionmark.circle", title: "Help & Support")
-        }
-        .padding(.horizontal)
-    }
+            NavigationLink(destination: NotificationsSettingsView().environmentObject(authViewModel)) {
+                HStack {
+                    HStack(spacing: 12) {
+                        Image(systemName: "bell")
+                            .font(.system(size: 18))
+                            .foregroundColor(.secondary)
+                            .frame(width: 24)
 
-    private var debugToolsSection: some View {
-        VStack(spacing: 8) {
-            Text("Debug Tools")
-                .font(.headline)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal)
+                        Text("Notifications")
+                            .foregroundColor(.primary)
+                    }
 
-            createTestUserButton
-            checkTestUserButton
-            checkCurrentUserButton
-        }
-    }
+                    Spacer()
 
-    private var createTestUserButton: some View {
-        Button(action: handleCreateTestUser) {
-            HStack {
-                Image(systemName: "person.badge.plus")
-                    .foregroundColor(.blue)
-                Text("Create Test User")
-                    .fontWeight(.medium)
-                Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                .background(Color(.systemBackground))
+                .cornerRadius(12)
+                .shadow(color: .black.opacity(0.05), radius: 1, x: 0, y: 1)
             }
-            .padding()
-            .background(Color.blue.opacity(0.1))
-            .cornerRadius(12)
+
+            NavigationLink(destination: HelpSupportView(
+                billManager: billManager,
+                showDeleteAccountConfirmation: $showDeleteAccountConfirmation
+            )
+            .environmentObject(authViewModel)) {
+                HStack {
+                    HStack(spacing: 12) {
+                        Image(systemName: "questionmark.circle")
+                            .font(.system(size: 18))
+                            .foregroundColor(.secondary)
+                            .frame(width: 24)
+
+                        Text("Help & Support")
+                            .foregroundColor(.primary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                .background(Color(.systemBackground))
+                .cornerRadius(12)
+                .shadow(color: .black.opacity(0.05), radius: 1, x: 0, y: 1)
+            }
         }
         .padding(.horizontal)
     }
 
-    private var checkTestUserButton: some View {
-        Button(action: handleCheckTestUser) {
-            HStack {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(.green)
-                Text("Check Test User")
-                    .fontWeight(.medium)
-                Spacer()
-            }
-            .padding()
-            .background(Color.green.opacity(0.1))
-            .cornerRadius(12)
-        }
-        .padding(.horizontal)
-    }
-
-    private var checkCurrentUserButton: some View {
-        Button(action: handleCheckCurrentUser) {
-            HStack {
-                Image(systemName: "person.circle")
-                    .foregroundColor(.blue)
-                Text("Check Current User")
-                    .fontWeight(.medium)
-                Spacer()
-            }
-            .padding()
-            .background(Color.blue.opacity(0.1))
-            .cornerRadius(12)
-        }
-        .padding(.horizontal)
-    }
 
     private var logoutButton: some View {
         Button(action: { authViewModel.signOut() }) {
             HStack {
-                Image(systemName: "arrow.right.square")
+                Image(systemName: "rectangle.portrait.and.arrow.right")
+                    .font(.system(size: 16))
                 Text("Log Out")
+                    .font(.system(size: 16, weight: .medium))
             }
-            .foregroundColor(.red)
+            .foregroundColor(.white)
             .frame(maxWidth: .infinity)
-            .padding()
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.red.opacity(0.3), lineWidth: 1)
-            )
+            .padding(.vertical, 14)
+            .background(Color.gray.opacity(0.8))
             .cornerRadius(12)
         }
         .padding(.horizontal)
     }
 
     private var appInfoSection: some View {
-        VStack(spacing: 4) {
-            Text("SplitSmart v1.0.0")
-                .font(.caption)
-                .foregroundColor(.secondary)
-            Text("© 2023 SplitSmart Inc.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-        .padding(.top)
+        Text("SplitSmart v1.0.0")
+            .font(.caption)
+            .foregroundColor(.secondary)
+            .padding(.bottom, 100)
+            .frame(maxWidth: .infinity)
+            .background(Color(.systemBackground))
     }
 
     // MARK: - Helper Methods
 
-    private func handleCreateTestUser() {
+    private func handleDeleteAccount() {
         Task {
-            await authViewModel.createTestUser(
-                email: "test@example.com",
-                displayName: "Test User",
-                phoneNumber: "+1234567890"
-            )
-        }
-    }
-
-    private func handleCheckTestUser() {
-        Task {
-            let isRegistered = await authViewModel.isUserOnboarded(email: "test@example.com")
-        }
-    }
-
-    private func handleCheckCurrentUser() {
-        Task {
-            if let currentEmail = authViewModel.user?.email {
-                let isRegistered = await authViewModel.isUserOnboarded(email: currentEmail)
+            do {
+                try await authViewModel.deleteAccount(billManager: billManager)
+                // Account deleted successfully - user will be automatically logged out
+            } catch {
+                // Show error to user
+                await MainActor.run {
+                    deletionErrorMessage = error.localizedDescription
+                    showDeletionError = true
+                }
             }
         }
     }
@@ -2501,7 +2503,7 @@ struct UIProfileScreen: View {
 struct UIProfileMenuItem: View {
     let icon: String
     let title: String
-    
+
     var body: some View {
         Button(action: {}) {
             HStack {
@@ -2510,13 +2512,13 @@ struct UIProfileMenuItem: View {
                         .font(.system(size: 18))
                         .foregroundColor(.secondary)
                         .frame(width: 24)
-                    
+
                     Text(title)
                         .foregroundColor(.primary)
                 }
-                
+
                 Spacer()
-                
+
                 Image(systemName: "chevron.right")
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -2526,6 +2528,87 @@ struct UIProfileMenuItem: View {
             .cornerRadius(12)
             .shadow(color: .black.opacity(0.05), radius: 1, x: 0, y: 1)
         }
+    }
+}
+
+// MARK: - Help & Support View
+
+struct HelpSupportView: View {
+    @EnvironmentObject var authViewModel: AuthViewModel
+    var billManager: BillManager
+    @Binding var showDeleteAccountConfirmation: Bool
+
+    var body: some View {
+        List {
+            Section {
+                Button(action: {
+                    showDeleteAccountConfirmation = true
+                }) {
+                    HStack {
+                        HStack(spacing: 12) {
+                            Image(systemName: "trash")
+                                .font(.system(size: 18))
+                                .foregroundColor(.red)
+                                .frame(width: 24)
+
+                            Text("Delete Account")
+                                .foregroundColor(.red)
+                        }
+
+                        Spacer()
+
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            } header: {
+                Text("Account")
+            } footer: {
+                Text("Permanently delete your account and all associated data")
+            }
+        }
+        .navigationTitle("Help & Support")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - Notifications Settings View
+
+struct NotificationsSettingsView: View {
+    @EnvironmentObject var authViewModel: AuthViewModel
+    @AppStorage("notificationsEnabled") private var notificationsEnabled = true
+    @AppStorage("billUpdatesEnabled") private var billUpdatesEnabled = true
+    @AppStorage("paymentRemindersEnabled") private var paymentRemindersEnabled = true
+    @AppStorage("newBillsEnabled") private var newBillsEnabled = true
+
+    var body: some View {
+        List {
+            Section {
+                Toggle("Enable Notifications", isOn: $notificationsEnabled)
+            } header: {
+                Text("General")
+            } footer: {
+                Text("Allow SplitSmart to send you notifications")
+            }
+
+            Section {
+                Toggle("Bill Updates", isOn: $billUpdatesEnabled)
+                    .disabled(!notificationsEnabled)
+
+                Toggle("Payment Reminders", isOn: $paymentRemindersEnabled)
+                    .disabled(!notificationsEnabled)
+
+                Toggle("New Bills", isOn: $newBillsEnabled)
+                    .disabled(!notificationsEnabled)
+            } header: {
+                Text("Notification Types")
+            } footer: {
+                Text("Choose which types of notifications you want to receive")
+            }
+        }
+        .navigationTitle("Notifications")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

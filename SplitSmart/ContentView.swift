@@ -79,8 +79,6 @@ struct ContentView: View {
             switch selectedTab {
             case "home":
                 UIHomeScreen(session: billSplitSession, billManager: billManager, authViewModel: authViewModel, onCreateNew: startNewBill)
-            case "groups":
-                UIGroupsScreen()
             case "scan":
                 UIScanScreen(session: billSplitSession, onContinue: moveToAssign)
             case "assign":
@@ -99,6 +97,7 @@ struct ContentView: View {
             case "profile":
                 UIProfileScreen()
                     .environmentObject(authViewModel)
+                    .environmentObject(billManager)
             default:
                 UIHomeScreen(session: billSplitSession, billManager: billManager, authViewModel: authViewModel, onCreateNew: startNewBill)
             }
@@ -249,9 +248,6 @@ struct TabBarView: View {
             TabButton(icon: "house.fill", label: "Home", isSelected: selectedTab == "home") {
                 selectedTab = "home"
             }
-            TabButton(icon: "person.2.fill", label: "Groups", isSelected: selectedTab == "groups") {
-                selectedTab = "groups"
-            }
             TabButton(icon: "camera.fill", label: "Scan", isSelected: selectedTab == "scan") {
                 selectedTab = "scan"
             }
@@ -271,23 +267,6 @@ struct TabBarView: View {
 }
 
 // TabButton is now in Components/TabButton.swift
-
-struct UIGroupsScreen: View {
-    var body: some View {
-        ScrollView {
-            VStack {
-                Text("Groups")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                Spacer()
-                Text("Groups functionality coming soon!")
-                    .foregroundColor(.secondary)
-                Spacer()
-            }
-            .padding()
-        }
-    }
-}
 
 struct UIHistoryScreen: View {
     @ObservedObject var billManager: BillManager
@@ -761,12 +740,8 @@ struct UIHomeScreen: View {
                         Text("SplitSmart")
                             .font(.title)
                             .fontWeight(.bold)
-                        
+
                         Spacer()
-                        
-                        Circle()
-                            .fill(Color.gray.opacity(0.3))
-                            .frame(width: 40, height: 40)
                     }
                     .padding(.horizontal)
                     
@@ -782,14 +757,14 @@ struct UIHomeScreen: View {
                         .padding()
                     }
                     
-                    // Balance Cards with exact React colors
+                    // Balance Cards with improved visibility
                     HStack(spacing: 12) {
-                        // "You are owed" card - matching React green-50, green-100, green-800
+                        // "You are owed" card - green with better contrast
                         VStack(alignment: .leading, spacing: 8) {
                             Text("You are owed")
                                 .font(.caption)
                                 .foregroundColor(Color(red: 22/255, green: 101/255, blue: 52/255)) // green-800
-                            
+
                             Text("$\(totalOwed, specifier: "%.2f")")
                                 .font(.title2)
                                 .fontWeight(.bold)
@@ -797,19 +772,19 @@ struct UIHomeScreen: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(12)
-                        .background(Color(red: 240/255, green: 253/255, blue: 244/255)) // green-50
+                        .background(Color(red: 220/255, green: 252/255, blue: 231/255)) // green-100 - more visible
                         .overlay(
                             RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color(red: 187/255, green: 247/255, blue: 208/255), lineWidth: 1) // green-100
+                                .stroke(Color(red: 134/255, green: 239/255, blue: 172/255), lineWidth: 1) // green-300 - stronger border
                         )
                         .cornerRadius(12)
-                        
-                        // "You owe" card - matching React red-50, red-100, red-800
+
+                        // "You owe" card - red with better contrast
                         VStack(alignment: .leading, spacing: 8) {
                             Text("You owe")
                                 .font(.caption)
                                 .foregroundColor(Color(red: 153/255, green: 27/255, blue: 27/255)) // red-800
-                            
+
                             Text("$\(totalOwe, specifier: "%.2f")")
                                 .font(.title2)
                                 .fontWeight(.bold)
@@ -817,10 +792,10 @@ struct UIHomeScreen: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(12)
-                        .background(Color(red: 254/255, green: 242/255, blue: 242/255)) // red-50
+                        .background(Color(red: 254/255, green: 226/255, blue: 226/255)) // red-100 - more visible
                         .overlay(
                             RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color(red: 254/255, green: 202/255, blue: 202/255), lineWidth: 1) // red-100
+                                .stroke(Color(red: 252/255, green: 165/255, blue: 165/255), lineWidth: 1) // red-300 - stronger border
                         )
                         .cornerRadius(12)
                     }
@@ -847,13 +822,13 @@ struct UIHomeScreen: View {
                             HStack {
                                 Image(systemName: "arrow.down")
                                     .font(.system(size: 18))
-                                    .foregroundColor(.green)
+                                    .foregroundColor(Color(red: 0/255, green: 180/255, blue: 50/255)) // slightly darker green
                                 Text("People who owe you")
                                     .font(.headline)
                                     .fontWeight(.semibold)
                             }
                             .padding(.horizontal)
-                            
+
                             VStack(spacing: 8) {
                                 ForEach(peopleWhoOweMe) { person in
                                     HStack {
@@ -865,15 +840,15 @@ struct UIHomeScreen: View {
                                                     .font(.system(size: 14))
                                                     .foregroundColor(.white)
                                             )
-                                        
+
                                         Text(person.name)
                                             .fontWeight(.medium)
-                                        
+
                                         Spacer()
-                                        
+
                                         Text("$\(person.total, specifier: "%.2f")")
                                             .fontWeight(.bold)
-                                            .foregroundColor(.green)
+                                            .foregroundColor(Color(red: 0/255, green: 180/255, blue: 50/255)) // slightly darker green
                                     }
                                     .padding(.vertical, 8)
                                     .padding(.horizontal)
@@ -888,13 +863,13 @@ struct UIHomeScreen: View {
                             HStack {
                                 Image(systemName: "arrow.up")
                                     .font(.system(size: 18))
-                                    .foregroundColor(.red)
+                                    .foregroundColor(Color(red: 153/255, green: 27/255, blue: 27/255)) // red-800 - consistent color
                                 Text("People you owe")
                                     .font(.headline)
                                     .fontWeight(.semibold)
                             }
                             .padding(.horizontal)
-                            
+
                             VStack(spacing: 8) {
                                 ForEach(peopleIOwe) { person in
                                     HStack {
@@ -906,15 +881,15 @@ struct UIHomeScreen: View {
                                                     .font(.system(size: 14))
                                                     .foregroundColor(.white)
                                             )
-                                        
+
                                         Text(person.name)
                                             .fontWeight(.medium)
-                                        
+
                                         Spacer()
-                                        
+
                                         Text("$\(person.total, specifier: "%.2f")")
                                             .fontWeight(.bold)
-                                            .foregroundColor(.red)
+                                            .foregroundColor(Color(red: 153/255, green: 27/255, blue: 27/255)) // red-800 - consistent color
                                     }
                                     .padding(.vertical, 8)
                                     .padding(.horizontal)
