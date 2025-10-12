@@ -41,6 +41,15 @@ service cloud.firestore {
         allow write: if isAuthenticated() &&
                         request.auth.token.email in request.resource.data.participantEmails;
       }
+
+      // Transaction Contacts subcollection - user's network/contact list
+      match /transactionContacts/{contactId} {
+        // Read: User can read their own transaction contacts
+        allow read: if isAuthenticated() && isOwner(userId);
+
+        // Write: User can manage their own transaction contacts
+        allow write: if isAuthenticated() && isOwner(userId);
+      }
     }
     
     // Participants collection - public user lookup (read-only for participants)

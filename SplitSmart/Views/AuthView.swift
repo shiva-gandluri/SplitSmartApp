@@ -1,43 +1,44 @@
 import SwiftUI
 import GoogleSignInSwift
 
+// MARK: - Refactored AuthView with Design System
 struct AuthView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
     @State private var isAnimating = false
-    
+
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // Gradient Background
+                // Gradient Background with adaptive colors
                 LinearGradient(
                     gradient: Gradient(colors: [
-                        Color.blue.opacity(0.1),
+                        Color.accentColor.opacity(0.1),
                         Color.purple.opacity(0.05),
-                        Color(.systemBackground)
+                        Color.adaptiveDepth0
                     ]),
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
                 .ignoresSafeArea()
-                
-                VStack(spacing: 40) {
+
+                VStack(spacing: .spacing2XL) {
                     Spacer()
-                    
+
                     // App Branding with enhanced design
-                    VStack(spacing: 24) {
+                    VStack(spacing: .spacingLG) {
                         // Animated App Icon
                         ZStack {
                             Circle()
                                 .fill(
                                     LinearGradient(
-                                        gradient: Gradient(colors: [Color.blue, Color.blue.opacity(0.7)]),
+                                        gradient: Gradient(colors: [Color.accentColor, Color.accentColor.opacity(0.7)]),
                                         startPoint: .topLeading,
                                         endPoint: .bottomTrailing
                                     )
                                 )
                                 .frame(width: 120, height: 120)
-                                .shadow(color: .blue.opacity(0.3), radius: 20, x: 0, y: 10)
-                            
+                                .shadow(color: .accentColor.opacity(0.3), radius: 20, x: 0, y: 10)
+
                             Image(systemName: "dollarsign.circle.fill")
                                 .font(.system(size: 60, weight: .bold))
                                 .foregroundColor(.white)
@@ -48,128 +49,129 @@ struct AuthView: View {
                                     value: isAnimating
                                 )
                         }
-                        
-                        VStack(spacing: 12) {
+
+                        VStack(spacing: .spacingSM) {
                             Text("SplitSmart")
                                 .font(.system(size: 36, weight: .bold, design: .rounded))
                                 .foregroundStyle(
                                     LinearGradient(
-                                        gradient: Gradient(colors: [.blue, .purple]),
+                                        gradient: Gradient(colors: [.accentColor, .purple]),
                                         startPoint: .leading,
                                         endPoint: .trailing
                                     )
                                 )
-                            
+
                             Text("Split bills easily with friends")
-                                .font(.title3)
-                                .foregroundColor(.secondary)
+                                .font(.h4Dynamic)
+                                .foregroundColor(.adaptiveTextSecondary)
                                 .multilineTextAlignment(.center)
-                                .padding(.horizontal)
+                                .padding(.horizontal, .paddingScreen)
                         }
                     }
-                    
+
                     Spacer()
-                    
-                    // Enhanced Sign In Section
-                    VStack(spacing: 24) {
+
+                    // Enhanced Sign In Section with design system
+                    VStack(spacing: .spacingLG) {
                         if authViewModel.isLoading {
-                            VStack(spacing: 20) {
+                            VStack(spacing: .spacingMD) {
                                 ProgressView()
                                     .scaleEffect(1.5)
-                                    .tint(.blue)
+                                    .tint(.accentColor)
                                 Text("Signing in...")
-                                    .font(.body)
-                                    .foregroundColor(.secondary)
+                                    .font(.bodyDynamic)
+                                    .foregroundColor(.adaptiveTextSecondary)
                             }
-                            .padding(32)
+                            .padding(.paddingSection)
                             .background(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .fill(Color(.systemBackground))
+                                RoundedRectangle(cornerRadius: .cornerRadiusMedium)
+                                    .fill(Color.adaptiveDepth1)
                                     .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: 5)
                             )
                         } else {
-                            // Custom styled Google Sign-In button
+                            // Custom styled Google Sign-In button with design system
                             Button(action: {
                                 Task {
                                     await authViewModel.signInWithGoogle()
                                 }
                             }) {
-                                HStack(spacing: 12) {
+                                HStack(spacing: .spacingSM) {
                                     Image(systemName: "person.crop.circle.fill")
                                         .font(.system(size: 20))
                                         .foregroundColor(.white)
-                                    
+
                                     Text("Continue with Google")
-                                        .font(.system(size: 18, weight: .semibold))
+                                        .font(.buttonText)
                                         .foregroundColor(.white)
                                 }
                                 .frame(maxWidth: .infinity)
                                 .frame(height: 56)
                                 .background(
                                     LinearGradient(
-                                        gradient: Gradient(colors: [.blue, .blue.opacity(0.8)]),
+                                        gradient: Gradient(colors: [.accentColor, .accentColor.opacity(0.8)]),
                                         startPoint: .leading,
                                         endPoint: .trailing
                                     )
                                 )
-                                .cornerRadius(16)
-                                .shadow(color: .blue.opacity(0.3), radius: 8, x: 0, y: 4)
+                                .cornerRadius(.cornerRadiusMedium)
+                                .shadow(color: .accentColor.opacity(0.3), radius: 8, x: 0, y: 4)
                             }
                             .scaleEffect(authViewModel.isLoading ? 0.95 : 1.0)
-                            .animation(.easeInOut(duration: 0.1), value: authViewModel.isLoading)
+                            .animation(.buttonPress, value: authViewModel.isLoading)
                         }
-                        
+
+                        // Error message with design system
                         if !authViewModel.errorMessage.isEmpty {
-                            HStack(spacing: 8) {
+                            HStack(spacing: .spacingXS) {
                                 Image(systemName: "exclamationmark.triangle.fill")
-                                    .font(.caption)
-                                    .foregroundColor(.red)
-                                
+                                    .font(.captionDynamic)
+                                    .foregroundColor(.adaptiveAccentRed)
+
                                 Text(authViewModel.errorMessage)
-                                    .font(.caption)
-                                    .foregroundColor(.red)
+                                    .font(.captionDynamic)
+                                    .foregroundColor(.adaptiveAccentRed)
                                     .multilineTextAlignment(.leading)
                             }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
+                            .padding(.horizontal, .paddingScreen)
+                            .padding(.vertical, .spacingSM)
                             .background(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(Color.red.opacity(0.1))
-                                    .stroke(Color.red.opacity(0.3), lineWidth: 1)
+                                RoundedRectangle(cornerRadius: .cornerRadiusSmall)
+                                    .fill(Color.adaptiveAccentRed.opacity(0.1))
+                                    .stroke(Color.adaptiveAccentRed.opacity(0.3), lineWidth: 1)
                             )
                         }
                     }
-                    .padding(.horizontal, 24)
-                    
+                    .padding(.horizontal, .spacingLG)
+
                     Spacer()
-                    
-                    // Enhanced Terms and Privacy
-                    VStack(spacing: 12) {
+
+                    // Enhanced Terms and Privacy with design system
+                    VStack(spacing: .spacingSM) {
                         Text("By continuing, you agree to our")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        HStack(spacing: 6) {
+                            .font(.captionDynamic)
+                            .foregroundColor(.adaptiveTextSecondary)
+
+                        HStack(spacing: .spacingXS) {
                             Button("Terms of Service") {
                                 // TODO: Implement terms of service
                             }
-                            .font(.caption)
-                            .foregroundColor(.blue)
-                            
+                            .font(.captionDynamic)
+                            .foregroundColor(.accentColor)
+
                             Text("and")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            
+                                .font(.captionDynamic)
+                                .foregroundColor(.adaptiveTextSecondary)
+
                             Button("Privacy Policy") {
                                 // TODO: Implement privacy policy
                             }
-                            .font(.caption)
-                            .foregroundColor(.blue)
+                            .font(.captionDynamic)
+                            .foregroundColor(.accentColor)
                         }
                     }
-                    .padding(.bottom, max(geometry.safeAreaInsets.bottom, 20))
+                    .padding(.bottom, max(geometry.safeAreaInsets.bottom, .spacingMD))
                 }
-                .padding(.horizontal, 32)
+                .padding(.horizontal, .paddingSection)
             }
         }
         .onAppear {

@@ -194,7 +194,7 @@ struct ImagePreview: View {
                 
                 Text("Position the receipt for best OCR accuracy")
                     .font(.caption2)
-                    .foregroundColor(.blue)
+                    .foregroundColor(.adaptiveAccentBlue)
             }
             .padding(.horizontal)
             
@@ -206,10 +206,10 @@ struct ImagePreview: View {
                     }
                     .font(.body)
                     .fontWeight(.medium)
-                    .foregroundColor(.blue)
+                    .foregroundColor(.adaptiveAccentBlue)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(Color.blue.opacity(0.1))
+                    .background(Color.adaptiveAccentBlue.opacity(0.1))
                     .cornerRadius(10)
                 }
                 
@@ -227,7 +227,7 @@ struct ImagePreview: View {
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(Color.blue)
+                    .background(Color.adaptiveAccentBlue)
                     .cornerRadius(10)
                 }
             }
@@ -494,6 +494,7 @@ extension View {
     }
 }
 
+// MARK: - Refactored UIScanScreen with Design System
 struct UIScanScreen: View {
     let session: BillSplitSession
     let onContinue: () -> Void
@@ -508,15 +509,16 @@ struct UIScanScreen: View {
     @State private var ocrResult: OCRResult?
     @StateObject private var permissionManager = CameraPermissionManager()
     @StateObject private var ocrService = OCRService()
-    
+
     var body: some View {
         ScrollView {
-            VStack(spacing: 24) {
+            VStack(spacing: .spacingLG) {
                 headerTitle
                 contentView
             }
-            .padding(.top)
+            .padding(.top, .spacingMD)
         }
+        .background(Color.adaptiveDepth0.ignoresSafeArea())
         .cameraSheet(
             isPresented: $showingCamera,
             capturedImage: $capturedImage,
@@ -534,14 +536,18 @@ struct UIScanScreen: View {
         .onAppear(perform: checkPermissions)
     }
 
-    // MARK: - View Components
+    // MARK: - View Components (Refactored with Design System)
 
     private var headerTitle: some View {
-        Text("Scan Receipt")
-            .font(.title2)
-            .fontWeight(.bold)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal)
+        Group {
+            if !showingOCRResults {
+                Text("Scan Receipt")
+                    .font(.h3Dynamic)
+                    .foregroundColor(.adaptiveTextPrimary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, .paddingScreen)
+            }
+        }
     }
 
     private var contentView: some View {
@@ -567,8 +573,15 @@ struct UIScanScreen: View {
                     await processWithConfirmedData(result: result, confirmedData: confirmedData)
                 }
             },
-            onRetry: handleRetryOCR
+            onRetry: handleRetryOCR,
+            onBack: handleBackToImageAdjustment
         )
+    }
+
+    private func handleBackToImageAdjustment() {
+        showingOCRResults = false
+        ocrResult = nil
+        showingImagePreview = true
     }
 
     private func imagePreviewView(image: UIImage) -> some View {
@@ -593,24 +606,7 @@ struct UIScanScreen: View {
                 onScan: handleScanReceipt,
                 onUpload: handlePhotoLibrary
             )
-            debugTestButton
         }
-    }
-
-    private var debugTestButton: some View {
-        Button(action: performDebugTest) {
-            HStack {
-                Image(systemName: "doc.text.magnifyingglass")
-                Text("TEST: Comprehensive Detection")
-            }
-            .font(.system(size: 12, weight: .medium))
-            .foregroundColor(.green)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 6)
-            .background(Color.green.opacity(0.1))
-            .cornerRadius(6)
-        }
-        .padding(.horizontal)
     }
 
     // MARK: - Helper Methods
@@ -744,125 +740,178 @@ struct UIScanScreen: View {
     
 }
 
-// MARK: - Supporting Views
+// MARK: - Supporting Views (Refactored with Design System)
 
 struct ScanInputSection: View {
     let scanningStatus: String
     let onScan: () -> Void
     let onUpload: () -> Void
-    
+
     var body: some View {
-        VStack(spacing: 16) {
-            // Camera area
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(style: StrokeStyle(lineWidth: 2, dash: [10]))
-                .foregroundColor(.gray)
-                .background(Color.gray.opacity(0.05))
-                .frame(height: 350)
-                .overlay(
-                    VStack(spacing: 16) {
-                        if scanningStatus.isEmpty {
-                            CameraInputView(onScan: onScan, onUpload: onUpload)
-                        } else {
-                            ScanningProgressView(status: scanningStatus)
-                        }
+        VStack(spacing: .spacingLG) {
+            // Modern camera area with clean design
+            ZStack {
+                // Solid background with depth
+                RoundedRectangle(cornerRadius: .cornerRadiusMedium)
+                    .fill(Color.adaptiveDepth2)
+                    .frame(height: 400)
+
+                // Subtle border
+                RoundedRectangle(cornerRadius: .cornerRadiusMedium)
+                    .stroke(Color.adaptiveTextPrimary.opacity(0.08), lineWidth: 1)
+                    .frame(height: 400)
+
+                // Content overlay
+                VStack(spacing: .spacingLG) {
+                    if scanningStatus.isEmpty {
+                        CameraInputView(onScan: onScan, onUpload: onUpload)
+                    } else {
+                        ScanningProgressView(status: scanningStatus)
                     }
-                )
-                .padding(.horizontal)
-            
+                }
+                .padding(.spacingLG)
+            }
+            .padding(.horizontal, .paddingScreen)
+
             ScanTipsView()
         }
     }
 }
 
+// MARK: - Refactored CameraInputView with Design System
 struct CameraInputView: View {
     let onScan: () -> Void
     let onUpload: () -> Void
-    
+
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: .spacingLG) {
             Image(systemName: "camera")
-                .font(.system(size: 48))
-                .foregroundColor(.gray)
-            
+                .font(.system(size: 60))
+                .foregroundColor(.adaptiveTextSecondary)
+
             Text("Take a photo of your receipt or upload from gallery")
+                .font(.bodyDynamic)
                 .multilineTextAlignment(.center)
-                .foregroundColor(.secondary)
-                .padding(.horizontal)
-            
-            VStack(spacing: 12) {
-                // Primary action: Take Photo
+                .foregroundColor(.adaptiveTextSecondary)
+                .padding(.horizontal, .spacingLG)
+
+            VStack(spacing: .spacingMD) {
+                // Primary action: Take Photo - Modern button design
                 Button(action: onScan) {
-                    HStack {
+                    HStack(spacing: .spacingSM) {
                         Image(systemName: "camera.fill")
+                            .font(.system(size: 16, weight: .semibold))
                         Text("Take Photo")
+                            .font(.system(size: 16, weight: .semibold))
                     }
-                    .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Color.blue)
-                    .cornerRadius(12)
+                    .padding(.vertical, 16)
+                    .background(Color.adaptiveAccentBlue)
+                    .cornerRadius(.cornerRadiusMedium)
+                    .shadow(color: Color.black.opacity(0.2), radius: 10, x: 0, y: 3)
                 }
-                
-                // Secondary action: Upload from Gallery
+                .buttonStyle(PlainButtonStyle())
+
+                // Secondary action: Upload from Gallery - Clean secondary style
                 Button(action: onUpload) {
-                    HStack {
+                    HStack(spacing: .spacingSM) {
                         Image(systemName: "photo.on.rectangle")
+                            .font(.system(size: 16, weight: .medium))
                         Text("Upload from Gallery")
+                            .font(.system(size: 16, weight: .medium))
                     }
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(.blue)
+                    .foregroundColor(.adaptiveAccentBlue)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Color.blue.opacity(0.1))
-                    .cornerRadius(12)
+                    .padding(.vertical, 16)
+                    .background(
+                        ZStack {
+                            Color.adaptiveDepth0
+                            Color.adaptiveAccentBlue.opacity(0.12)
+                        }
+                    )
+                    .cornerRadius(.cornerRadiusMedium)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: .cornerRadiusMedium)
+                            .stroke(Color.adaptiveAccentBlue.opacity(0.3), lineWidth: 1)
                     )
                 }
+                .buttonStyle(PlainButtonStyle())
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, .spacingLG)
         }
     }
 }
 
+// MARK: - Refactored ScanningProgressView with Design System
 struct ScanningProgressView: View {
     let status: String
-    
+
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: .spacingMD) {
             ProgressView()
                 .scaleEffect(2)
-                .padding()
-            
+                .padding(.spacingMD)
+
             Text(status == "scanning" ? "Scanning receipt..." : "Processing items...")
-                .foregroundColor(.secondary)
+                .font(.bodyDynamic)
+                .foregroundColor(.adaptiveTextSecondary)
         }
     }
 }
 
+// MARK: - Refactored ScanTipsView with Design System
 struct ScanTipsView: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Tips for best results:")
-                .fontWeight(.medium)
-                .foregroundColor(.orange)
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text("• Ensure good lighting")
-                Text("• Place receipt on a flat surface")
-                Text("• Make sure all items are visible")
-                Text("• Hold the camera steady")
+        VStack(alignment: .leading, spacing: .spacingMD) {
+            HStack(spacing: .spacingSM) {
+                Image(systemName: "lightbulb.fill")
+                    .font(.system(size: 16))
+                    .foregroundColor(.adaptiveAccentOrange)
+
+                Text("Tips for best results:")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.adaptiveTextPrimary)
             }
-            .font(.caption)
-            .foregroundColor(.orange)
+
+            VStack(alignment: .leading, spacing: .spacingSM) {
+                TipRow(icon: "sun.max.fill", text: "Ensure good lighting")
+                TipRow(icon: "rectangle.on.rectangle", text: "Place receipt on a flat surface")
+                TipRow(icon: "eye.fill", text: "Make sure all items are visible")
+                TipRow(icon: "camera.metering.center.weighted", text: "Hold the camera steady")
+            }
         }
-        .padding()
-        .background(Color.orange.opacity(0.1))
-        .cornerRadius(12)
-        .padding(.horizontal)
+        .padding(.spacingLG)
+        .background(
+            ZStack {
+                Color.adaptiveDepth1
+                Color.adaptiveAccentOrange.opacity(0.1)
+            }
+        )
+        .cornerRadius(.cornerRadiusMedium)
+        .overlay(
+            RoundedRectangle(cornerRadius: .cornerRadiusMedium)
+                .stroke(Color.adaptiveAccentOrange.opacity(0.25), lineWidth: 1)
+        )
+        .padding(.horizontal, .paddingScreen)
+    }
+}
+
+struct TipRow: View {
+    let icon: String
+    let text: String
+
+    var body: some View {
+        HStack(spacing: .spacingSM) {
+            Image(systemName: icon)
+                .font(.system(size: 12))
+                .foregroundColor(.adaptiveAccentOrange)
+                .frame(width: 16)
+
+            Text(text)
+                .font(.system(size: 14))
+                .foregroundColor(.adaptiveTextSecondary)
+        }
     }
 }
 
@@ -883,7 +932,7 @@ struct ReceiptResultSection: View {
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
                 .padding()
-                .background(Color.blue)
+                .background(Color.adaptiveAccentBlue)
                 .cornerRadius(12)
             }
             .padding(.horizontal)
@@ -896,14 +945,14 @@ struct SuccessMessageView: View {
         VStack(spacing: 8) {
             Text("Receipt Scanned Successfully!")
                 .fontWeight(.medium)
-                .foregroundColor(.green)
+                .foregroundColor(.adaptiveAccentGreen)
             
             Text("We've identified the following items:")
                 .font(.caption)
-                .foregroundColor(.green)
+                .foregroundColor(.adaptiveAccentGreen)
         }
         .padding()
-        .background(Color.green.opacity(0.1))
+        .background(Color.adaptiveAccentGreen.opacity(0.1))
         .cornerRadius(12)
         .padding(.horizontal)
     }
@@ -922,11 +971,11 @@ struct ReceiptItemsView: View {
                         .fontWeight(.medium)
                 }
                 .padding()
-                .background(Color(.systemBackground))
+                .background(Color.adaptiveDepth1)
                 .overlay(
                     Rectangle()
                         .frame(height: 1)
-                        .foregroundColor(.gray.opacity(0.3)),
+                        .foregroundColor(.adaptiveTextTertiary.opacity(0.3)),
                     alignment: .bottom
                 )
             }
@@ -957,7 +1006,7 @@ struct ReceiptTotalSection: View {
                     .fontWeight(.bold)
             }
             .padding()
-            .background(Color.gray.opacity(0.1))
+            .background(Color.adaptiveDepth1)
         }
     }
 }
@@ -974,7 +1023,7 @@ struct ReceiptTotalRow: View {
                 .fontWeight(.medium)
         }
         .padding()
-        .background(Color.gray.opacity(0.05))
+        .background(Color.adaptiveDepth1.opacity(0.5))
     }
 }
 
@@ -991,19 +1040,19 @@ struct OCRProcessingView: View {
                 // OCR Icon with animation
                 ZStack {
                     Circle()
-                        .stroke(Color.blue.opacity(0.3), lineWidth: 4)
+                        .stroke(Color.adaptiveAccentBlue.opacity(0.3), lineWidth: 4)
                         .frame(width: 80, height: 80)
                     
                     Circle()
                         .trim(from: 0, to: CGFloat(progress))
-                        .stroke(Color.blue, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                        .stroke(Color.adaptiveAccentBlue, style: StrokeStyle(lineWidth: 4, lineCap: .round))
                         .frame(width: 80, height: 80)
                         .rotationEffect(.degrees(-90))
                         .animation(.easeInOut(duration: 0.3), value: progress)
                     
                     Image(systemName: "doc.text.magnifyingglass")
                         .font(.system(size: 32))
-                        .foregroundColor(.blue)
+                        .foregroundColor(.adaptiveAccentBlue)
                 }
                 
                 VStack(spacing: 8) {
@@ -1035,7 +1084,7 @@ struct OCRProcessingView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("OCR Processing Tips:")
                     .fontWeight(.medium)
-                    .foregroundColor(.blue)
+                    .foregroundColor(.adaptiveAccentBlue)
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("• Better lighting improves text recognition")
@@ -1043,10 +1092,10 @@ struct OCRProcessingView: View {
                     Text("• Processing may take a few seconds")
                 }
                 .font(.caption)
-                .foregroundColor(.blue)
+                .foregroundColor(.adaptiveAccentBlue)
             }
             .padding()
-            .background(Color.blue.opacity(0.1))
+            .background(Color.adaptiveAccentBlue.opacity(0.1))
             .cornerRadius(12)
             .padding(.horizontal)
             
@@ -1135,7 +1184,7 @@ struct OCRHeaderView: View {
                         showRawText = true
                     }
                     .font(.caption)
-                    .foregroundColor(.blue)
+                    .foregroundColor(.adaptiveAccentBlue)
                 }
             }
             .padding()
@@ -1260,36 +1309,36 @@ struct OCRItemListView: View {
                                 HStack {
                                     Text("Remaining to add")
                                         .font(.caption)
-                                        .foregroundColor(.blue)
+                                        .foregroundColor(.adaptiveAccentBlue)
                                     
                                     Spacer()
                                     
                                     Text("$\(abs(difference), specifier: "%.2f")")
                                         .font(.caption)
                                         .fontWeight(.medium)
-                                        .foregroundColor(.blue)
+                                        .foregroundColor(.adaptiveAccentBlue)
                                 }
                             } else {
                                 // Total exceeds receipt total
                                 HStack {
                                     Text("Over by")
                                         .font(.caption)
-                                        .foregroundColor(.orange)
+                                        .foregroundColor(.adaptiveAccentOrange)
                                     
                                     Spacer()
                                     
                                     Text("$\(difference, specifier: "%.2f")")
                                         .font(.caption)
-                                        .foregroundColor(.orange)
+                                        .foregroundColor(.adaptiveAccentOrange)
                                 }
                             }
                         } else {
                             HStack {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
+                                    .foregroundColor(.adaptiveAccentGreen)
                                 Text("Totals match!")
                                     .font(.caption)
-                                    .foregroundColor(.green)
+                                    .foregroundColor(.adaptiveAccentGreen)
                                 
                                 Spacer()
                             }
@@ -1307,7 +1356,7 @@ struct OCRItemListView: View {
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
-                    .background(Color.blue)
+                    .background(Color.adaptiveAccentBlue)
                     .cornerRadius(12)
                 }
                 .padding(.horizontal)
@@ -1381,7 +1430,7 @@ struct EditableItemRow: View {
                     Text("$\(item.price, specifier: "%.2f")")
                         .font(.body)
                         .fontWeight(.medium)
-                        .foregroundColor(.blue)
+                        .foregroundColor(.adaptiveAccentBlue)
                         .onTapGesture {
                             startPriceEditing()
                         }
@@ -1458,13 +1507,13 @@ struct OCREmptyStateView: View {
                 VStack(spacing: 16) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 64))
-                        .foregroundColor(.green)
+                        .foregroundColor(.adaptiveAccentGreen)
                     
                     VStack(spacing: 8) {
                         Text("Total Found: $\(total, specifier: "%.2f")")
                             .font(.title2)
                             .fontWeight(.bold)
-                            .foregroundColor(.green)
+                            .foregroundColor(.adaptiveAccentGreen)
                         
                         Text("Now add items manually to split the bill")
                             .font(.body)
@@ -1478,7 +1527,7 @@ struct OCREmptyStateView: View {
                             Text("Suggested amounts found:")
                                 .font(.subheadline)
                                 .fontWeight(.medium)
-                                .foregroundColor(.blue)
+                                .foregroundColor(.adaptiveAccentBlue)
                             
                             LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: min(suggestedAmounts.count, 4)), spacing: 8) {
                                 ForEach(suggestedAmounts.prefix(8), id: \.self) { amount in
@@ -1486,14 +1535,14 @@ struct OCREmptyStateView: View {
                                         .font(.caption)
                                         .padding(.horizontal, 8)
                                         .padding(.vertical, 4)
-                                        .background(Color.blue.opacity(0.1))
-                                        .foregroundColor(.blue)
+                                        .background(Color.adaptiveAccentBlue.opacity(0.1))
+                                        .foregroundColor(.adaptiveAccentBlue)
                                         .cornerRadius(6)
                                 }
                             }
                         }
                         .padding()
-                        .background(Color.blue.opacity(0.05))
+                        .background(Color.adaptiveAccentBlue.opacity(0.05))
                         .cornerRadius(12)
                         .padding(.horizontal)
                     }
@@ -1526,10 +1575,10 @@ struct OCREmptyStateView: View {
                         Text("Try Another Photo")
                     }
                     .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(.blue)
+                    .foregroundColor(.adaptiveAccentBlue)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
-                    .background(Color.blue.opacity(0.1))
+                    .background(Color.adaptiveAccentBlue.opacity(0.1))
                     .cornerRadius(12)
                 }
             }
@@ -1581,6 +1630,7 @@ struct OCRConfirmationView: View {
     let image: UIImage?
     let onConfirm: (ConfirmedReceiptData) -> Void
     let onRetry: () -> Void
+    let onBack: () -> Void
     
     @State private var taxInput = ""
     @State private var tipInput = ""
@@ -1603,20 +1653,40 @@ struct OCRConfirmationView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-                // Header with image preview
+                // Back button
                 HStack {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Confirm Receipt Details")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                        
-                        Text("Please review and confirm the detected values")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
+                    Button(action: onBack) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 16, weight: .semibold))
+                            Text("Back")
+                                .font(.system(size: 16, weight: .regular))
+                        }
+                        .foregroundColor(.adaptiveAccentBlue)
                     }
-                    
+
                     Spacer()
-                    
+                }
+                .padding(.horizontal, .paddingScreen)
+                .padding(.top, 8)
+
+                // Header with image preview - Option A: Icon + Compact Layout
+                HStack(alignment: .top, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Confirm Receipt Details")
+                            .font(.h3Dynamic)
+                            .foregroundColor(.adaptiveTextPrimary)
+
+                        HStack(spacing: 8) {
+                            Text("Review the detected values below")
+                                .font(.system(size: 15))
+                                .foregroundColor(.adaptiveTextSecondary)
+                                .lineLimit(1)
+                        }
+                    }
+
+                    Spacer()
+
                     // Image preview thumbnail
                     if let image = image {
                         Button(action: {
@@ -1629,14 +1699,15 @@ struct OCRConfirmationView: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 8)
-                                        .stroke(Color.blue, lineWidth: 2)
+                                        .stroke(Color.adaptiveAccentBlue, lineWidth: 2)
                                 )
                         }
                         .buttonStyle(PlainButtonStyle())
                     }
                 }
-                .padding(.horizontal)
-                
+                .padding(.horizontal, .paddingScreen)
+                .padding(.bottom, .spacingMD)  // Add 16px for 40px total spacing to form
+
                 if isLoading {
                     VStack(spacing: 16) {
                         ProgressView()
@@ -1646,180 +1717,191 @@ struct OCRConfirmationView: View {
                     }
                     .frame(height: 200)
                 } else {
-                    VStack(spacing: 20) {
-                        // Tax input
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text("Tax Amount")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                
-                                Spacer()
-                                
-                                if detectedTax > 0 {
-                                    Text("Detected: $\(detectedTax, specifier: "%.2f")")
-                                        .font(.caption)
-                                        .foregroundColor(.green)
+                    // Bill Details Form - Clean layout without container
+                    VStack(spacing: 16) {
+                        // Number of Items Field
+                        HStack(spacing: 12) {
+                            // Label on left
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(spacing: 4) {
+                                    Text("Number of Items")
+                                        .font(.system(size: 16, weight: .medium))
+                                        .foregroundColor(.adaptiveTextPrimary)
+                                        .lineLimit(1)
+                                    Text("*")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundColor(.adaptiveAccentRed)
                                 }
-                            }
-                            
-                            HStack {
-                                Text("$")
-                                    .font(.body)
-                                TextField("0.00", text: $taxInput)
-                                    .keyboardType(.numbersAndPunctuation)
-                                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                                    .focused($focusedField, equals: .tax)
-                                    .submitLabel(.done)
-                                    .onSubmit {
-                                        focusedField = nil
-                                    }
-                            }
-                        }
-                        .padding()
-                        .background(Color(.systemGray6))
-                        .cornerRadius(12)
-                        
-                        // Tip input
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text("Tip Amount")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                
-                                Spacer()
-                                
-                                if detectedTip > 0 {
-                                    Text("Detected: $\(detectedTip, specifier: "%.2f")")
-                                        .font(.caption)
-                                        .foregroundColor(.green)
-                                }
-                            }
-                            
-                            HStack {
-                                Text("$")
-                                    .font(.body)
-                                TextField("0.00", text: $tipInput)
-                                    .keyboardType(.numbersAndPunctuation)
-                                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                                    .focused($focusedField, equals: .tip)
-                                    .submitLabel(.done)
-                                    .onSubmit {
-                                        focusedField = nil
-                                    }
-                            }
-                        }
-                        .padding()
-                        .background(Color(.systemGray6))
-                        .cornerRadius(12)
-                        
-                        // Total input
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text("Total Amount")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                
-                                Text("*")
-                                    .foregroundColor(.red)
-                                
-                                Spacer()
-                                
-                                if detectedTotal > 0 {
-                                    Text("Detected: $\(detectedTotal, specifier: "%.2f")")
-                                        .font(.caption)
-                                        .foregroundColor(.green)
-                                }
-                            }
-                            
-                            HStack {
-                                Text("$")
-                                    .font(.body)
-                                TextField("0.00", text: $totalInput)
-                                    .keyboardType(.numbersAndPunctuation)
-                                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                                    .focused($focusedField, equals: .total)
-                                    .submitLabel(.done)
-                                    .onSubmit {
-                                        focusedField = nil
-                                    }
-                            }
-                        }
-                        .padding()
-                        .background(Color(.systemGray6))
-                        .cornerRadius(12)
-                        
-                        // Item count input
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text("Number of Items")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                
-                                Text("*")
-                                    .foregroundColor(.red)
-                                
-                                Spacer()
-                                
                                 if detectedItemCount > 0 {
                                     Text("Detected: \(detectedItemCount) items")
-                                        .font(.caption)
-                                        .foregroundColor(.green)
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.adaptiveAccentGreen)
                                 }
                             }
-                            
+
+                            Spacer()
+
+                            // Input field on right
                             TextField("0", text: $itemCountInput)
-                                .keyboardType(.numbersAndPunctuation)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .keyboardType(.numberPad)
+                                .font(.system(size: 16, weight: .regular))
+                                .foregroundColor(.adaptiveTextPrimary)
+                                .multilineTextAlignment(.trailing)
                                 .focused($focusedField, equals: .itemCount)
-                                .submitLabel(.done)
-                                .onSubmit {
-                                    focusedField = nil
+                                .frame(width: 140)
+                                .padding(.spacingMD)
+                                .background(
+                                    RoundedRectangle(cornerRadius: .cornerRadiusMedium)
+                                        .fill(Color.adaptiveDepth2)
+                                        .shadow(color: focusedField == .itemCount ? Color.adaptiveAccentBlue.opacity(0.3) : Color.black.opacity(0.05), radius: focusedField == .itemCount ? 8 : 4, x: 0, y: 2)
+                                )
+                                .animation(.easeOut(duration: 0.2), value: focusedField == .itemCount)
+                        }
+
+                        // Tax Amount Field
+                        HStack(spacing: 12) {
+                            // Label on left
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Tax Amount")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.adaptiveTextPrimary)
+                                if detectedTax > 0 {
+                                    Text("Detected: $\(detectedTax, specifier: "%.2f")")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.adaptiveAccentGreen)
                                 }
+                            }
+
+                            Spacer()
+
+                            // Input field on right
+                            HStack(spacing: 4) {
+                                Text("$")
+                                    .font(.system(size: 16, weight: .regular))
+                                    .foregroundColor(.adaptiveTextSecondary)
+                                TextField("0.00", text: $taxInput)
+                                    .keyboardType(.decimalPad)
+                                    .font(.system(size: 16, weight: .regular))
+                                    .foregroundColor(.adaptiveTextPrimary)
+                                    .multilineTextAlignment(.trailing)
+                                    .focused($focusedField, equals: .tax)
+                            }
+                            .frame(width: 140)
+                            .padding(.spacingMD)
+                            .background(
+                                RoundedRectangle(cornerRadius: .cornerRadiusMedium)
+                                    .fill(Color.adaptiveDepth2)
+                                    .shadow(color: focusedField == .tax ? Color.adaptiveAccentBlue.opacity(0.3) : Color.black.opacity(0.05), radius: focusedField == .tax ? 8 : 4, x: 0, y: 2)
+                            )
+                            .animation(.easeOut(duration: 0.2), value: focusedField == .tax)
                         }
-                        .padding()
-                        .background(Color(.systemGray6))
-                        .cornerRadius(12)
-                        
-                        // Calculation summary
-                        CalculationSummaryView(
-                            tax: Double(taxInput) ?? 0,
-                            tip: Double(tipInput) ?? 0,
-                            total: Double(totalInput) ?? 0
-                        )
+
+                        // Tip Amount Field
+                        HStack(spacing: 12) {
+                            // Label on left
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Tip Amount")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.adaptiveTextPrimary)
+                                if detectedTip > 0 {
+                                    Text("Detected: $\(detectedTip, specifier: "%.2f")")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.adaptiveAccentGreen)
+                                }
+                            }
+
+                            Spacer()
+
+                            // Input field on right
+                            HStack(spacing: 4) {
+                                Text("$")
+                                    .font(.system(size: 16, weight: .regular))
+                                    .foregroundColor(.adaptiveTextSecondary)
+                                TextField("0.00", text: $tipInput)
+                                    .keyboardType(.decimalPad)
+                                    .font(.system(size: 16, weight: .regular))
+                                    .foregroundColor(.adaptiveTextPrimary)
+                                    .multilineTextAlignment(.trailing)
+                                    .focused($focusedField, equals: .tip)
+                            }
+                            .frame(width: 140)
+                            .padding(.spacingMD)
+                            .background(
+                                RoundedRectangle(cornerRadius: .cornerRadiusMedium)
+                                    .fill(Color.adaptiveDepth2)
+                                    .shadow(color: focusedField == .tip ? Color.adaptiveAccentBlue.opacity(0.3) : Color.black.opacity(0.05), radius: focusedField == .tip ? 8 : 4, x: 0, y: 2)
+                            )
+                            .animation(.easeOut(duration: 0.2), value: focusedField == .tip)
+                        }
+
+                        // Elegant divider before Total Amount
+                        Rectangle()
+                            .fill(Color.adaptiveTextPrimary.opacity(0.15))
+                            .frame(height: 1)
+                            .padding(.vertical, 8)
+
+                        // Total Amount Field - Same styling as others
+                        HStack(spacing: 12) {
+                            // Label on left
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(spacing: 4) {
+                                    Text("Total Amount")
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundColor(.adaptiveTextPrimary)
+                                        .lineLimit(1)
+                                    Text("*")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundColor(.adaptiveAccentRed)
+                                }
+                                if detectedTotal > 0 {
+                                    Text("Detected: $\(detectedTotal, specifier: "%.2f")")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.adaptiveAccentGreen)
+                                }
+                            }
+
+                            Spacer()
+
+                            // Input field on right - same size as others
+                            HStack(spacing: 4) {
+                                Text("$")
+                                    .font(.system(size: 16, weight: .regular))
+                                    .foregroundColor(.adaptiveTextPrimary)
+                                TextField("0.00", text: $totalInput)
+                                    .keyboardType(.decimalPad)
+                                    .font(.system(size: 16, weight: .regular))
+                                    .foregroundColor(.adaptiveTextPrimary)
+                                    .multilineTextAlignment(.trailing)
+                                    .focused($focusedField, equals: .total)
+                            }
+                            .frame(width: 140)
+                            .padding(.spacingMD)
+                            .background(
+                                RoundedRectangle(cornerRadius: .cornerRadiusMedium)
+                                    .fill(Color.adaptiveDepth2)
+                                    .shadow(color: focusedField == .total ? Color.adaptiveAccentGreen.opacity(0.3) : Color.black.opacity(0.05), radius: focusedField == .total ? 8 : 4, x: 0, y: 2)
+                            )
+                            .animation(.easeOut(duration: 0.2), value: focusedField == .total)
+                        }
                     }
-                    .padding(.horizontal)
+                    .padding(.horizontal, .paddingScreen)
+                    .padding(.bottom, .spacingMD)  // Add 16px for 40px total spacing to buttons
                 }
-                
-                // Action buttons
-                VStack(spacing: 12) {
-                    Button(action: handleConfirm) {
-                        HStack {
-                            Image(systemName: "checkmark")
-                            Text("Confirm & Continue")
-                        }
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(canConfirm ? Color.blue : Color.gray)
-                        .cornerRadius(12)
+
+                // Action button
+                Button(action: handleConfirm) {
+                    HStack {
+                        Image(systemName: "checkmark")
+                        Text("Continue")
                     }
-                    .disabled(!canConfirm)
-                    
-                    Button(action: onRetry) {
-                        HStack {
-                            Image(systemName: "camera.rotate")
-                            Text("Try Another Photo")
-                        }
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.blue)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(Color.blue.opacity(0.1))
-                        .cornerRadius(12)
-                    }
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.spacingMD)
+                    .background(canConfirm ? Color.adaptiveAccentBlue : Color.gray)
+                    .cornerRadius(12)
                 }
+                .disabled(!canConfirm)
                 .padding(.horizontal)
             }
             .padding(.top)
@@ -1833,7 +1915,7 @@ struct OCRConfirmationView: View {
                 Button("Done") {
                     focusedField = nil
                 }
-                .foregroundColor(.blue)
+                .foregroundColor(.adaptiveAccentBlue)
             }
         }
         .fullScreenCover(isPresented: $showingImagePopup) {
@@ -1964,7 +2046,7 @@ struct CalculationSummaryView: View {
                         Text("Less: Tax")
                         Spacer()
                         Text("-$\(tax, specifier: "%.2f")")
-                            .foregroundColor(.red)
+                            .foregroundColor(.adaptiveAccentRed)
                     }
                 }
                 
@@ -1973,7 +2055,7 @@ struct CalculationSummaryView: View {
                         Text("Less: Tip")
                         Spacer()
                         Text("-$\(tip, specifier: "%.2f")")
-                            .foregroundColor(.red)
+                            .foregroundColor(.adaptiveAccentRed)
                     }
                 }
                 
@@ -1986,7 +2068,7 @@ struct CalculationSummaryView: View {
                     Text("$\(actualItemsPrice, specifier: "%.2f")")
                         .font(.title3)
                         .fontWeight(.bold)
-                        .foregroundColor(.blue)
+                        .foregroundColor(.adaptiveAccentBlue)
                 }
             }
             .font(.subheadline)
@@ -1999,7 +2081,7 @@ struct CalculationSummaryView: View {
             }
         }
         .padding()
-        .background(Color.blue.opacity(0.05))
+        .background(Color.adaptiveAccentBlue.opacity(0.05))
         .cornerRadius(12)
     }
 }

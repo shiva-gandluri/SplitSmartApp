@@ -240,11 +240,11 @@ struct UIItemAssignCard: View {
                 .padding(.bottom)
             }
         }
-        .background(assignedParticipant != nil ? Color.gray.opacity(0.05) : Color(.systemBackground))
+        .background(assignedParticipant != nil ? Color.adaptiveDepth1.opacity(0.5) : Color.adaptiveDepth0)
         .cornerRadius(12)
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(assignedParticipant != nil ? Color.gray.opacity(0.3) : Color.gray.opacity(0.2), lineWidth: 1)
+                .stroke(assignedParticipant != nil ? Color.adaptiveTextTertiary.opacity(0.3) : Color.adaptiveTextTertiary.opacity(0.2), lineWidth: 1)
         )
     }
 
@@ -358,8 +358,8 @@ struct RegexItemCard: View {
                     .fontWeight(.bold)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Color.orange.opacity(0.2))
-                    .foregroundColor(.orange)
+                    .background(Color.adaptiveAccentOrange.opacity(0.2))
+                    .foregroundColor(.adaptiveAccentOrange)
                     .cornerRadius(4)
             }
             .padding()
@@ -494,8 +494,8 @@ struct EditableRegexItemCard: View {
                     .fontWeight(.bold)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Color.orange.opacity(0.2))
-                    .foregroundColor(.orange)
+                    .background(Color.adaptiveAccentOrange.opacity(0.2))
+                    .foregroundColor(.adaptiveAccentOrange)
                     .cornerRadius(4)
             }
             .padding()
@@ -618,8 +618,8 @@ struct LLMItemCard: View {
                     .fontWeight(.bold)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Color.blue.opacity(0.2))
-                    .foregroundColor(.blue)
+                    .background(Color.adaptiveAccentBlue.opacity(0.2))
+                    .foregroundColor(.adaptiveAccentBlue)
                     .cornerRadius(4)
             }
             .padding()
@@ -803,11 +803,11 @@ struct ItemRowWithParticipants: View {
                 
                 // Assignment status indicator
                 Circle()
-                    .fill(item.assignedToParticipants.isEmpty ? Color.orange : Color.green)
+                    .fill(item.assignedToParticipants.isEmpty ? Color.adaptiveAccentOrange : Color.adaptiveAccentGreen)
                     .frame(width: 8, height: 8)
                     .overlay(
                         Circle()
-                            .fill(showingSuccessAnimation ? Color.green.opacity(0.3) : Color.clear)
+                            .fill(showingSuccessAnimation ? Color.adaptiveAccentGreen.opacity(0.3) : Color.clear)
                             .scaleEffect(showingSuccessAnimation ? 2.0 : 1.0)
                             .animation(.easeOut(duration: 0.4), value: showingSuccessAnimation)
                     )

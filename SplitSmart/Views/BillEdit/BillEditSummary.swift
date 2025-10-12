@@ -1,54 +1,45 @@
+//
+//  BillEditSummary.swift
+//  SplitSmart
+//
+//  Bill edit summary screen
+//  Updates existing bill instead of creating new one
+//
+
 import SwiftUI
 
-/**
- * Summary Screen - Final Bill Review and Creation Interface
- * 
- * Comprehensive bill summary displaying debt calculations and detailed breakdowns.
- * 
- * Features:
- * - Editable bill name with smart defaults
- * - Bill payer and total amount display
- * - Individual debt calculations (who owes whom)
- * - Detailed per-participant item breakdown
- * - Async Firebase bill creation with error handling
- * - Loading states and validation feedback
- * 
- * Architecture: MVVM with async Firebase operations
- * Data Flow: Session → BillService → Firebase Firestore
- */
-
-struct UISummaryScreen: View {
+struct BillEditSummaryScreen: View {
+    let bill: Bill
     let session: BillSplitSession
     let onDone: () -> Void
     @ObservedObject var contactsManager: ContactsManager
     @ObservedObject var authViewModel: AuthViewModel
+    @ObservedObject var billManager: BillManager
 
     @StateObject private var billService = BillService()
-    @ObservedObject private var networkMonitor = NetworkMonitor.shared
-    @State private var isCreatingBill = false
-    @State private var billCreationError: String?
+    @State private var isUpdating = false
+    @State private var updateError: String?
     @State private var showingError = false
-    @State private var showOfflineAlert = false
-    @State private var createdBill: Bill?
-    
-    var defaultBillName: String {
+
+    // Use similar layout to UISummaryScreen but for updating
+    private var defaultBillName: String {
         let itemCount = session.assignedItems.count
         return itemCount == 1 ? session.assignedItems[0].name : "\(itemCount) items"
     }
-    
+
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Summary")
+                    Text("Update Summary")
                         .font(.title2)
                         .fontWeight(.bold)
-                    Text("Receipt • \(Date().formatted(date: .abbreviated, time: .omitted))")
+                    Text("Bill changes • \(Date().formatted(date: .abbreviated, time: .omitted))")
                         .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal)
-                
+
                 // Bill name editing section
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
@@ -60,7 +51,7 @@ struct UISummaryScreen: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
-                    
+
                     TextField("Enter bill name (e.g., \"Dinner at Olive Garden\")", text: Binding(
                         get: { session.billName },
                         set: { session.billName = $0 }
@@ -75,13 +66,13 @@ struct UISummaryScreen: View {
                             .stroke(Color.adaptiveTextPrimary.opacity(0.2), lineWidth: 1)
                     )
                     .autocorrectionDisabled()
-                    
+
                     Text("Leave empty to use default: \"\(defaultBillName)\"")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
                 .padding(.horizontal)
-                
+
                 // Bill paid by section
                 VStack(spacing: 12) {
                     HStack {
@@ -105,7 +96,7 @@ struct UISummaryScreen: View {
                         }
                         Spacer()
                     }
-                    
+
                     HStack {
                         Text("Total amount:")
                         Spacer()
@@ -113,7 +104,7 @@ struct UISummaryScreen: View {
                             .fontWeight(.bold)
                     }
                     .foregroundColor(.adaptiveAccentBlue)
-                    
+
                     HStack {
                         Text("Date & Time:")
                         Spacer()
@@ -130,22 +121,22 @@ struct UISummaryScreen: View {
                         .stroke(Color.adaptiveAccentBlue.opacity(0.3), lineWidth: 1)
                 )
                 .padding(.horizontal)
-                
-                // Who Owes Whom section - Individual debts (not net amounts)
+
+                // Who Owes Whom section
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Who Owes Whom")
                         .font(.body)
                         .fontWeight(.medium)
                         .padding(.horizontal)
-                    
+
                     if let paidByID = session.paidByParticipantID,
                        let paidByParticipant = session.participants.first(where: { $0.id == paidByID }) {
-                        
+
                         // Calculate individual debts to the payer
                         ForEach(session.individualDebts.sorted(by: { $0.key < $1.key }), id: \.key) { participantID, amountOwed in
-                            if let debtor = session.participants.first(where: { $0.id == Int(participantID) }),
+                            if let debtor = session.participants.first(where: { $0.id == participantID }),
                                amountOwed > 0.01 { // Only show significant amounts
-                                
+
                                 HStack {
                                     // From person (debtor)
                                     HStack(spacing: 8) {
@@ -160,11 +151,11 @@ struct UISummaryScreen: View {
                                         Text(debtor.name)
                                             .fontWeight(.medium)
                                     }
-                                    
+
                                     Image(systemName: "arrow.right")
                                         .foregroundColor(.gray)
                                         .padding(.horizontal, 8)
-                                    
+
                                     // To person (payer)
                                     HStack(spacing: 8) {
                                         Circle()
@@ -178,9 +169,9 @@ struct UISummaryScreen: View {
                                         Text(paidByParticipant.name)
                                             .fontWeight(.medium)
                                     }
-                                    
+
                                     Spacer()
-                                    
+
                                     // Amount owed
                                     VStack(alignment: .trailing, spacing: 2) {
                                         Text("$\(amountOwed, specifier: "%.2f")")
@@ -202,7 +193,7 @@ struct UISummaryScreen: View {
                                 .padding(.horizontal)
                             }
                         }
-                        
+
                         // Show "No debts" message if everyone paid their share
                         if session.individualDebts.allSatisfy({ $0.value <= 0.01 }) {
                             VStack(spacing: 8) {
@@ -219,31 +210,16 @@ struct UISummaryScreen: View {
                             .cornerRadius(12)
                             .padding(.horizontal)
                         }
-                    } else {
-                        // Error state - no payer selected
-                        VStack(spacing: 8) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundColor(.adaptiveAccentRed)
-                                .font(.title2)
-                            Text("Error: No payer selected")
-                                .fontWeight(.medium)
-                                .foregroundColor(.adaptiveAccentRed)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.adaptiveAccentRed.opacity(0.1))
-                        .cornerRadius(12)
-                        .padding(.horizontal)
                     }
                 }
-                
+
                 // Detailed breakdown section
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Detailed breakdown")
                         .font(.body)
                         .fontWeight(.medium)
                         .padding(.horizontal)
-                    
+
                     ForEach(session.breakdownSummaries) { person in
                         VStack(spacing: 0) {
                             // Header
@@ -271,7 +247,7 @@ struct UISummaryScreen: View {
                             }
                             .padding()
                             .background(Color.adaptiveDepth1.opacity(0.5))
-                            
+
                             // Items
                             ForEach(person.items, id: \.name) { item in
                                 HStack {
@@ -288,7 +264,7 @@ struct UISummaryScreen: View {
                                     alignment: .bottom
                                 )
                             }
-                            
+
                             // Subtotal
                             HStack {
                                 Text("Subtotal")
@@ -308,34 +284,34 @@ struct UISummaryScreen: View {
                         .padding(.horizontal)
                     }
                 }
-                
-                // Add Bill Button with loading state
+
+                // Update Bill Button with loading state
                 Button(action: {
                     Task {
-                        await createBill()
+                        await updateBill()
                     }
                 }) {
                     HStack {
-                        if isCreatingBill {
+                        if isUpdating {
                             ProgressView()
                                 .progressViewStyle(CircularProgressViewStyle(tint: .white))
                                 .scaleEffect(0.8)
                         } else {
-                            Image(systemName: "plus.circle.fill")
+                            Image(systemName: "checkmark.circle.fill")
                         }
-                        Text(isCreatingBill ? "Creating Bill..." : "Add Bill")
+                        Text(isUpdating ? "Updating Bill..." : "Update Bill")
                     }
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding()
-                    .background(isCreatingBill ? Color.gray : Color.adaptiveAccentBlue)
+                    .background(isUpdating ? Color.gray : Color.adaptiveAccentBlue)
                     .cornerRadius(12)
                 }
-                .disabled(isCreatingBill || !session.isReadyForBillCreation)
+                .disabled(isUpdating || !session.isReadyForBillCreation)
                 .padding(.horizontal)
-                
-                // Show error if bill creation fails
-                if let error = billCreationError {
+
+                // Show error if bill update fails
+                if let error = updateError {
                     HStack {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundColor(.adaptiveAccentRed)
@@ -349,74 +325,88 @@ struct UISummaryScreen: View {
             }
             .padding(.top)
         }
-        .alert("Bill Creation Error", isPresented: $showingError) {
+        .navigationTitle("Update Bill")
+        .navigationBarTitleDisplayMode(.inline)
+        .alert("Bill Update Error", isPresented: $showingError) {
             Button("OK") {
                 showingError = false
-                billCreationError = nil
+                updateError = nil
             }
         } message: {
-            Text(billCreationError ?? "Unknown error occurred")
+            Text(updateError ?? "Unknown error occurred")
         }
-        .alert("No Internet Connection", isPresented: $showOfflineAlert) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text("SplitSmart requires an internet connection to create bills. Please connect to WiFi or cellular data and try again.")
-        }
-        .background(Color.adaptiveDepth0.ignoresSafeArea())
     }
-    
-    // MARK: - Bill Creation Logic
-    @MainActor
-    private func createBill() async {
-        // EDGE-016: Block bill creation when offline
-        guard networkMonitor.isConnected else {
-            showOfflineAlert = true
-            return
-        }
 
+    // MARK: - Bill Update Logic
+    @MainActor
+    private func updateBill() async {
         guard session.isReadyForBillCreation else {
-            billCreationError = session.billCreationErrorMessage ?? "Session is not ready for bill creation"
+            updateError = session.billCreationErrorMessage ?? "Session is not ready for bill update"
             showingError = true
             return
         }
 
-        isCreatingBill = true
-        billCreationError = nil
-        
-        do {
-            
-            // Create bill using BillService
-            let bill = try await billService.createBill(
-                from: session,
-                authViewModel: authViewModel,
-                contactsManager: contactsManager
-            )
-            
-            createdBill = bill
+        isUpdating = true
+        updateError = nil
 
-            // Clear saved session after successful bill creation
-            do {
-                try SessionPersistenceManager.shared.clearSession()
-            } catch {
-                // Non-fatal error, continue anyway
+        do {
+
+            // Convert session data back to BillItem and BillParticipant format
+            let updatedItems = session.assignedItems.map { assignedItem in
+                BillItem(
+                    name: assignedItem.name,
+                    price: assignedItem.price,
+                    participantIDs: Array(assignedItem.assignedToParticipants)  // Use Firebase UIDs directly
+                )
             }
 
-            // TODO: Phase 3 - Send push notifications here
+            let paidByParticipantId: String = {
+                if let paidByID = session.paidByParticipantID {
+
+                    if paidByID == authViewModel.user?.uid { // Current user
+                        return authViewModel.user?.uid ?? ""
+                    } else {
+                        // Use the Firebase UID directly since UIParticipant.id is now Firebase UID
+
+                        // Verify the participant exists in bill participants
+                        if bill.participants.contains(where: { $0.id == paidByID }) {
+                            return paidByID
+                        } else {
+                            return authViewModel.user?.uid ?? ""
+                        }
+                    }
+                } else {
+                    let originalPayer = bill.paidBy
+                    return originalPayer
+                }
+            }()
+
+            // Update bill using BillService
+            try await billService.updateBill(
+                billId: bill.id,
+                billName: session.billName.isEmpty ? defaultBillName : session.billName,
+                items: updatedItems,
+                participants: bill.participants, // Keep same participants
+                paidByParticipantId: paidByParticipantId,
+                currentUserId: authViewModel.user?.uid ?? "",
+                currentUserEmail: authViewModel.user?.email ?? "",
+                billManager: billManager
+            )
+
+
+            // 🔧 CRITICAL DEBUG: Final verification of update results
+
+            // Force refresh BillManager to ensure UI updates
+            await billManager.refreshBills()
 
             // Call the completion handler
             onDone()
-            
+
         } catch {
-            
-            // Check if it's a Firebase permissions error
-            if error.localizedDescription.contains("Missing or insufficient permissions") {
-                billCreationError = "Firebase Firestore permissions not configured. Please set up security rules to allow authenticated writes to the 'bills' and 'users' collections."
-            } else {
-                billCreationError = error.localizedDescription
-            }
+            updateError = error.localizedDescription
             showingError = true
         }
-        
-        isCreatingBill = false
+
+        isUpdating = false
     }
 }

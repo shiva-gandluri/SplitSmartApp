@@ -15,7 +15,7 @@ struct ContentView: View {
     @StateObject private var billManager = BillManager()
 
     var showBackButton: Bool {
-        return ["scan", "assign", "summary"].contains(selectedTab)
+        return ["assign", "summary"].contains(selectedTab)
     }
 
     var body: some View {
@@ -51,25 +51,27 @@ struct ContentView: View {
                 TabBarView(selectedTab: $selectedTab)
             }
         }
+        .background(Color.adaptiveDepth0.ignoresSafeArea())
     }
 
     @Environment(\.scenePhase) private var scenePhase
 
     // MARK: - View Components
 
+    // MARK: - Refactored with Design System
     private var backButtonSection: some View {
         HStack {
             Button(action: handleBackAction) {
-                HStack(spacing: 4) {
+                HStack(spacing: .spacingXS) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 16, weight: .medium))
                     Text("Back")
-                        .font(.body)
+                        .font(.bodyDynamic)
                 }
-                .foregroundColor(.blue)
+                .foregroundColor(.accentColor)
             }
-            .padding(.horizontal)
-            .padding(.top, 12)
+            .padding(.horizontal, .paddingScreen)
+            .padding(.top, .spacingSM)
             Spacer()
         }
     }
@@ -240,9 +242,10 @@ struct ContentView: View {
     }
 }
 
+// MARK: - Refactored TabBarView with Design System
 struct TabBarView: View {
     @Binding var selectedTab: String
-    
+
     var body: some View {
         HStack {
             TabButton(icon: "house.fill", label: "Home", isSelected: selectedTab == "home") {
@@ -258,10 +261,10 @@ struct TabBarView: View {
                 selectedTab = "profile"
             }
         }
-        .padding(.horizontal)
-        .padding(.top, 12)
-        .padding(.bottom, 8)
-        .background(Color(.systemBackground))
+        .padding(.horizontal, .paddingScreen)
+        .padding(.top, .spacingSM)
+        .padding(.bottom, .spacingXS)
+        .background(Color.adaptiveDepth0)
         .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: -2)
     }
 }
@@ -331,7 +334,7 @@ struct UIHistoryScreen: View {
                     VStack {
                         Text("Error loading bills")
                             .font(.headline)
-                            .foregroundColor(.red)
+                            .foregroundColor(.adaptiveAccentRed)
                         Text(errorMessage)
                             .font(.caption)
                             .foregroundColor(.secondary)
@@ -452,7 +455,7 @@ struct BillDetailView: View {
                     HStack {
                         if let paidByParticipant = bill.participants.first(where: { $0.id == bill.paidBy }) {
                             Circle()
-                                .fill(Color.blue) // Default color since we don't store colors in Bill
+                                .fill(Color.adaptiveAccentBlue)
                                 .frame(width: 24, height: 24)
                                 .overlay(
                                     Image(systemName: "person.fill")
@@ -474,7 +477,7 @@ struct BillDetailView: View {
                         Text("$\(bill.totalAmount, specifier: "%.2f")")
                             .fontWeight(.bold)
                     }
-                    .foregroundColor(.blue)
+                    .foregroundColor(.adaptiveAccentBlue)
                     
                     HStack {
                         Text("Date & Time:")
@@ -482,14 +485,14 @@ struct BillDetailView: View {
                         Text("\(formatFullDate(bill.date))")
                             .fontWeight(.medium)
                     }
-                    .foregroundColor(.blue)
+                    .foregroundColor(.adaptiveAccentBlue)
                 }
                 .padding()
-                .background(Color.blue.opacity(0.1))
+                .background(Color.adaptiveAccentBlue.opacity(0.1))
                 .cornerRadius(12)
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+                        .stroke(Color.adaptiveAccentBlue.opacity(0.3), lineWidth: 1)
                 )
                 .padding(.horizontal)
                 
@@ -509,7 +512,7 @@ struct BillDetailView: View {
                                 // From person (debtor)
                                 HStack(spacing: 8) {
                                     Circle()
-                                        .fill(Color.green) // Default color
+                                        .fill(Color.adaptiveAccentGreen)
                                         .frame(width: 32, height: 32)
                                         .overlay(
                                             Image(systemName: "person.fill")
@@ -538,7 +541,7 @@ struct BillDetailView: View {
                                         .fontWeight(.medium)
                                     
                                     Circle()
-                                        .fill(Color.blue) // Payer color
+                                        .fill(Color.adaptiveAccentBlue)
                                         .frame(width: 32, height: 32)
                                         .overlay(
                                             Image(systemName: "person.fill")
@@ -553,7 +556,7 @@ struct BillDetailView: View {
                                 Text("$\(amountOwed, specifier: "%.2f")")
                                     .font(.body)
                                     .fontWeight(.semibold)
-                                    .foregroundColor(.green)
+                                    .foregroundColor(.adaptiveAccentGreen)
                             }
                             .padding(.horizontal)
                             .padding(.vertical, 8)
@@ -643,7 +646,7 @@ struct ItemDetailCard: View {
                 Text(String(format: "$%.2f", item.price))
                     .font(.body)
                     .fontWeight(.semibold)
-                    .foregroundColor(.blue)
+                    .foregroundColor(.adaptiveAccentBlue)
             }
             
             if !item.participantIDs.isEmpty {
@@ -707,131 +710,120 @@ struct ItemDetailCard: View {
 
 // ParticipantDebtCard removed - replaced with integrated "Who Owes Whom" design
 
-// MARK: - UIHomeScreen with Recent Bills
+// MARK: - UIHomeScreen with Recent Bills (Refactored with Design System)
 
 struct UIHomeScreen: View {
     let session: BillSplitSession
     @ObservedObject var billManager: BillManager
     @ObservedObject var authViewModel: AuthViewModel
     let onCreateNew: () -> Void
-    
+
     // Real-time balance data from BillManager (using net balances)
-    private var totalOwed: Double { 
+    private var totalOwed: Double {
         billManager.getPeopleWhoOweUser().reduce(0) { $0 + $1.total }
     }
-    private var totalOwe: Double { 
+    private var totalOwe: Double {
         billManager.getPeopleUserOwes().reduce(0) { $0 + $1.total }
     }
-    
+
     // Detailed debt breakdown for individual people from BillManager
-    private var peopleWhoOweMe: [UIPersonDebt] { 
-        billManager.getPeopleWhoOweUser() 
+    private var peopleWhoOweMe: [UIPersonDebt] {
+        billManager.getPeopleWhoOweUser()
     }
-    private var peopleIOwe: [UIPersonDebt] { 
-        billManager.getPeopleUserOwes() 
+    private var peopleIOwe: [UIPersonDebt] {
+        billManager.getPeopleUserOwes()
     }
-    
+
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack(spacing: 24) {
-                    // Header
+                VStack(spacing: .spacingLG) {
+                    // Header with design system typography
                     HStack {
                         Text("SplitSmart")
-                            .font(.title)
-                            .fontWeight(.bold)
+                            .font(.h2Dynamic)
+                            .foregroundColor(.adaptiveTextPrimary)
 
                         Spacer()
                     }
-                    .padding(.horizontal)
+                    .padding(.horizontal, .paddingScreen)
                     
-                    // Loading indicator for balance updates
+                    // Loading indicator with design system
                     if billManager.isLoading {
-                        HStack {
+                        HStack(spacing: .spacingSM) {
                             ProgressView()
                                 .progressViewStyle(CircularProgressViewStyle())
                             Text("Loading balances...")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
+                                .font(.smallDynamic)
+                                .foregroundColor(.adaptiveTextSecondary)
                         }
-                        .padding()
+                        .padding(.spacingMD)
                     }
-                    
-                    // Balance Cards with improved visibility
-                    HStack(spacing: 12) {
-                        // "You are owed" card - green with better contrast
-                        VStack(alignment: .leading, spacing: 8) {
+
+                    // Balance Cards with design system colors and spacing
+                    HStack(spacing: .spacingSM) {
+                        // "You are owed" card - muted green for softer appearance
+                        VStack(alignment: .leading, spacing: .spacingXS) {
                             Text("You are owed")
-                                .font(.caption)
-                                .foregroundColor(Color(red: 22/255, green: 101/255, blue: 52/255)) // green-800
+                                .font(.captionDynamic)
+                                .foregroundColor(.adaptiveMutedGreen)
 
                             Text("$\(totalOwed, specifier: "%.2f")")
-                                .font(.title2)
-                                .fontWeight(.bold)
-                                .foregroundColor(Color(red: 22/255, green: 101/255, blue: 52/255)) // green-800
+                                .font(.h3Dynamic)
+                                .foregroundColor(.adaptiveMutedGreen)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
-                        .background(Color(red: 220/255, green: 252/255, blue: 231/255)) // green-100 - more visible
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color(red: 134/255, green: 239/255, blue: 172/255), lineWidth: 1) // green-300 - stronger border
+                        .padding(.spacingSM)
+                        .padding(.vertical, 4)
+                        .background(
+                            ZStack {
+                                Color.adaptiveDepth1
+                                Color.adaptiveMutedGreen.opacity(0.1)
+                            }
                         )
-                        .cornerRadius(12)
+                        .cornerRadius(.cornerRadiusSmall)
+                        .shadow(color: Color.black.opacity(0.10), radius: 2, x: 2, y: 2)
 
-                        // "You owe" card - red with better contrast
-                        VStack(alignment: .leading, spacing: 8) {
+                        // "You owe" card - muted red for softer appearance
+                        VStack(alignment: .leading, spacing: .spacingXS) {
                             Text("You owe")
-                                .font(.caption)
-                                .foregroundColor(Color(red: 153/255, green: 27/255, blue: 27/255)) // red-800
+                                .font(.captionDynamic)
+                                .foregroundColor(.adaptiveMutedRed)
 
                             Text("$\(totalOwe, specifier: "%.2f")")
-                                .font(.title2)
-                                .fontWeight(.bold)
-                                .foregroundColor(Color(red: 153/255, green: 27/255, blue: 27/255)) // red-800
+                                .font(.h3Dynamic)
+                                .foregroundColor(.adaptiveMutedRed)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
-                        .background(Color(red: 254/255, green: 226/255, blue: 226/255)) // red-100 - more visible
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color(red: 252/255, green: 165/255, blue: 165/255), lineWidth: 1) // red-300 - stronger border
+                        .padding(.spacingSM)
+                        .padding(.vertical, 4)
+                        .background(
+                            ZStack {
+                                Color.adaptiveDepth1
+                                Color.adaptiveMutedRed.opacity(0.1)
+                            }
                         )
-                        .cornerRadius(12)
+                        .cornerRadius(.cornerRadiusSmall)
+                        .shadow(color: Color.black.opacity(0.10), radius: 2, x: 2, y: 2)
                     }
-                    .padding(.horizontal)
-                    
-                    // Create New Split Button
-                    Button(action: onCreateNew) {
-                        HStack {
-                            Image(systemName: "plus")
-                            Text("Create New Split")
-                                .fontWeight(.semibold)
-                        }
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue)
-                        .cornerRadius(12)
-                    }
-                    .padding(.horizontal)
-                    
-                    // People who owe you - simple list
+                    .padding(.horizontal, .paddingScreen)
+
+                    // People who owe you - refactored with design system
                     if !peopleWhoOweMe.isEmpty {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack {
+                        VStack(alignment: .leading, spacing: .spacingSM) {
+                            HStack(spacing: .spacingXS) {
                                 Image(systemName: "arrow.down")
                                     .font(.system(size: 18))
-                                    .foregroundColor(Color(red: 0/255, green: 180/255, blue: 50/255)) // slightly darker green
+                                    .foregroundColor(.adaptiveAccentGreen)
                                 Text("People who owe you")
-                                    .font(.headline)
-                                    .fontWeight(.semibold)
+                                    .font(.smallDynamic)
+                                    .foregroundColor(.adaptiveTextPrimary)
                             }
-                            .padding(.horizontal)
+                            .padding(.horizontal, .paddingScreen)
 
-                            VStack(spacing: 8) {
+                            VStack(spacing: .spacingXS) {
                                 ForEach(peopleWhoOweMe) { person in
-                                    HStack {
+                                    HStack(spacing: .spacingMD) {
                                         Circle()
                                             .fill(person.color)
                                             .frame(width: 32, height: 32)
@@ -842,37 +834,39 @@ struct UIHomeScreen: View {
                                             )
 
                                         Text(person.name)
-                                            .fontWeight(.medium)
+                                            .font(.bodyDynamic)
+                                            .foregroundColor(.adaptiveTextPrimary)
 
                                         Spacer()
 
                                         Text("$\(person.total, specifier: "%.2f")")
+                                            .font(.bodyDynamic)
                                             .fontWeight(.bold)
-                                            .foregroundColor(Color(red: 0/255, green: 180/255, blue: 50/255)) // slightly darker green
+                                            .foregroundColor(.adaptiveAccentGreen)
                                     }
-                                    .padding(.vertical, 8)
-                                    .padding(.horizontal)
+                                    .padding(.vertical, .spacingXS)
+                                    .padding(.horizontal, .paddingScreen)
                                 }
                             }
                         }
                     }
                     
-                    // People you owe - simple list
+                    // People you owe - refactored with design system
                     if !peopleIOwe.isEmpty {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack {
+                        VStack(alignment: .leading, spacing: .spacingSM) {
+                            HStack(spacing: .spacingXS) {
                                 Image(systemName: "arrow.up")
                                     .font(.system(size: 18))
-                                    .foregroundColor(Color(red: 153/255, green: 27/255, blue: 27/255)) // red-800 - consistent color
+                                    .foregroundColor(.adaptiveAccentRed)
                                 Text("People you owe")
-                                    .font(.headline)
-                                    .fontWeight(.semibold)
+                                    .font(.smallDynamic)
+                                    .foregroundColor(.adaptiveTextPrimary)
                             }
-                            .padding(.horizontal)
+                            .padding(.horizontal, .paddingScreen)
 
-                            VStack(spacing: 8) {
+                            VStack(spacing: .spacingXS) {
                                 ForEach(peopleIOwe) { person in
-                                    HStack {
+                                    HStack(spacing: .spacingMD) {
                                         Circle()
                                             .fill(person.color)
                                             .frame(width: 32, height: 32)
@@ -883,41 +877,63 @@ struct UIHomeScreen: View {
                                             )
 
                                         Text(person.name)
-                                            .fontWeight(.medium)
+                                            .font(.bodyDynamic)
+                                            .foregroundColor(.adaptiveTextPrimary)
 
                                         Spacer()
 
                                         Text("$\(person.total, specifier: "%.2f")")
+                                            .font(.bodyDynamic)
                                             .fontWeight(.bold)
-                                            .foregroundColor(Color(red: 153/255, green: 27/255, blue: 27/255)) // red-800 - consistent color
+                                            .foregroundColor(.adaptiveAccentRed)
                                     }
-                                    .padding(.vertical, 8)
-                                    .padding(.horizontal)
+                                    .padding(.vertical, .spacingXS)
+                                    .padding(.horizontal, .paddingScreen)
                                 }
                             }
                         }
                     }
-                    
-                    // All settled up message
+
+                    // All settled up message - refactored with design system
                     if peopleWhoOweMe.isEmpty && peopleIOwe.isEmpty {
-                        VStack(spacing: 8) {
+                        VStack(spacing: .spacingXS) {
                             Text("All settled up!")
-                                .font(.body)
-                                .foregroundColor(.secondary)
+                                .font(.bodyDynamic)
+                                .foregroundColor(.adaptiveTextSecondary)
                             Text("You have no outstanding balances")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                                .font(.captionDynamic)
+                                .foregroundColor(.adaptiveTextTertiary)
                         }
                         .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.gray.opacity(0.1))
-                        .cornerRadius(12)
-                        .padding(.horizontal)
+                        .padding(.spacingMD)
+                        .background(Color.adaptiveDepth1)
+                        .cornerRadius(.cornerRadiusSmall)
+                        .padding(.horizontal, .paddingScreen)
                     }
                 }
-                .padding(.top)
+                .padding(.top, .spacingMD)
+                .padding(.bottom, 80)
             }
-            .background(Color.gray.opacity(0.05))
+            .background(Color.adaptiveDepth0)
+            .overlay(
+                // Floating Action Button (FAB) - Modern UI pattern
+                VStack {
+                    Spacer()
+                    Button(action: onCreateNew) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 28, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 60, height: 60)
+                            .background(
+                                Circle()
+                                    .fill(Color.adaptiveAccentBlue)
+                                    .shadow(color: Color.black.opacity(0.2), radius: 8, x: 0, y: 4)
+                            )
+                    }
+                    .padding(.bottom, 20)
+                }
+                , alignment: .bottom
+            )
         }
     }
 }
@@ -964,7 +980,7 @@ struct SimpleBillDetailView: View {
                     Text("$\(displayBill.totalAmount, specifier: "%.2f")")
                         .font(.title)
                         .fontWeight(.bold)
-                        .foregroundColor(.blue)
+                        .foregroundColor(.adaptiveAccentBlue)
 
                     Text("Created on \(displayBill.date.dateValue().formatted(date: .abbreviated, time: .shortened))")
                         .font(.subheadline)
@@ -1001,9 +1017,9 @@ struct SimpleBillDetailView: View {
                 if displayBill.isDeleted {
                     Text("This bill has been deleted")
                         .font(.headline)
-                        .foregroundColor(.red)
+                        .foregroundColor(.adaptiveAccentRed)
                         .padding()
-                        .background(Color.red.opacity(0.1))
+                        .background(Color.adaptiveAccentRed.opacity(0.1))
                         .cornerRadius(12)
                 }
             }
@@ -1026,19 +1042,19 @@ struct BillActionButtons: View {
             Button("Edit Bill") {
                 showingEditSheet = true
             }
-            .foregroundColor(.blue)
+            .foregroundColor(.adaptiveAccentBlue)
             .frame(maxWidth: .infinity)
             .padding()
-            .background(Color.blue.opacity(0.1))
+            .background(Color.adaptiveAccentBlue.opacity(0.1))
             .cornerRadius(12)
             
             Button("Delete Bill") {
                 showingDeleteAlert = true
             }
-            .foregroundColor(.red)
+            .foregroundColor(.adaptiveAccentRed)
             .frame(maxWidth: .infinity)
             .padding()
-            .background(Color.red.opacity(0.1))
+            .background(Color.adaptiveAccentRed.opacity(0.1))
             .cornerRadius(12)
         }
         .padding()
@@ -1077,763 +1093,14 @@ struct BillActionButtons: View {
     }
 }
 
-// MARK: - Bill Edit Flow (using existing create bill screens)
+// MARK: - Bill Edit Flow
+// BillEditFlow extracted to Views/BillEdit/BillEditFlow.swift
 
-struct BillEditFlow: View {
-    let bill: Bill
-    @ObservedObject var authViewModel: AuthViewModel
-    @ObservedObject var billManager: BillManager
-    @ObservedObject var contactsManager: ContactsManager
-    @Environment(\.dismiss) private var dismiss
-    
-    @StateObject private var editSession = BillSplitSession()
-    @State private var currentStep = "confirm" // confirm -> assign -> summary
-    
-    var body: some View {
-        NavigationView {
-            Group {
-                switch currentStep {
-                case "confirm":
-                    BillEditConfirmationView(
-                        bill: bill,
-                        session: editSession,
-                        onContinue: {
-                            currentStep = "assign"
-                        }
-                    )
-                case "assign":
-                    UIAssignScreen(
-                        session: editSession,
-                        contactsManager: contactsManager,
-                        onContinue: {
-                            editSession.completeAssignment()
-                            currentStep = "summary"
-                        }
-                    )
-                    .environmentObject(authViewModel)
-                case "summary":
-                    BillEditSummaryScreen(
-                        bill: bill,
-                        session: editSession,
-                        onDone: {
-                            editSession.completeSession()
-                            dismiss()
-                        },
-                        contactsManager: contactsManager,
-                        authViewModel: authViewModel,
-                        billManager: billManager
-                    )
-                default:
-                    BillEditConfirmationView(
-                        bill: bill,
-                        session: editSession,
-                        onContinue: {
-                            currentStep = "assign"
-                        }
-                    )
-                }
-            }
-            .navigationBarBackButtonHidden(true)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-            }
-        }
-        .onAppear {
-            loadBillIntoSession()
-        }
-    }
-    
-    private func loadBillIntoSession() {
-        // Convert existing Bill data into BillSplitSession format
-        
-        // 1. Set totals and tax/tip (reconstruct from bill data)
-        editSession.confirmedTotal = bill.totalAmount
-        editSession.identifiedTotal = bill.totalAmount
-        editSession.confirmedTax = 0.0 // We'll let user adjust if needed
-        editSession.confirmedTip = 0.0 // We'll let user adjust if needed
-        editSession.expectedItemCount = bill.items.count
-        
-        // 2. Convert BillItems to ReceiptItems (for assignment screen)
-        let receiptItems = bill.items.map { billItem in
-            ReceiptItem(name: billItem.name, price: billItem.price)
-        }
-        editSession.scannedItems = receiptItems
-        
-        // 2.5. Set rawReceiptText to prevent UIAssignScreen from clearing our data
-        // Create a synthetic receipt text from the existing bill items
-        editSession.rawReceiptText = receiptItems.map { "\($0.name) \($0.price)" }.joined(separator: "\n")
-        
-        // 2.6. Set comparison arrays to prevent loading screens in UIAssignScreen
-        // In edit mode, we already have the final items, so set both regex and LLM results to the same
-        editSession.regexDetectedItems = receiptItems
-        editSession.llmDetectedItems = receiptItems
-        
-        // 3. Set participants (convert BillParticipants to UIParticipants)
-        var uiParticipants: [UIParticipant] = []
-        
-        // Add current user as "You" first
-        if let currentUserId = authViewModel.user?.uid,
-           let currentUser = bill.participants.first(where: { $0.id == currentUserId }) {
-            uiParticipants.append(UIParticipant(id: currentUserId, name: "You", color: .blue))
-        }
+// MARK: - Bill Edit Confirmation View
+// BillEditConfirmationView extracted to Views/BillEdit/BillEditConfirmation.swift
 
-        // Add other participants with Firebase UIDs
-        for participant in bill.participants {
-            if participant.id != authViewModel.user?.uid {
-                uiParticipants.append(UIParticipant(
-                    id: participant.id,  // Use Firebase UID directly
-                    name: participant.displayName,
-                    color: .blue  // Use assignedColor computed property for consistent colors
-                ))
-            }
-        }
-        
-        editSession.participants = uiParticipants
-        
-        // 4. Set who paid the bill
-        if let payerParticipant = bill.participants.first(where: { $0.id == bill.paidBy }),
-           let payerUIParticipant = uiParticipants.first(where: { participant in
-               (participant.name == "You" && payerParticipant.id == authViewModel.user?.uid) ||
-               (participant.name == payerParticipant.displayName)
-           }) {
-            editSession.paidByParticipantID = payerUIParticipant.id
-        }
-        
-        // 5. Set bill name
-        editSession.billName = bill.billName ?? ""
-        
-        // 5.5. Set a flag to indicate this is edit mode to prevent reprocessing
-        editSession.sessionState = .assigning // Skip the processing phase
-        
-        // 6. Convert assignments
-        editSession.assignedItems = bill.items.enumerated().map { index, billItem in
-            UIItem(
-                id: index,
-                name: billItem.name,
-                price: billItem.price,
-                assignedTo: nil,
-                assignedToParticipants: Set(billItem.participantIDs),  // Use Firebase UIDs directly
-                confidence: .high,
-                originalDetectedName: nil,
-                originalDetectedPrice: nil
-            )
-        }
-        
-    }
-}
-
-// MARK: - Bill Edit Confirmation View (replaces scan screen for editing)
-
-struct BillEditConfirmationView: View {
-    let bill: Bill
-    @ObservedObject var session: BillSplitSession
-    let onContinue: () -> Void
-    
-    @State private var editedTax: String = "0.00"
-    @State private var editedTip: String = "0.00"
-    @State private var editedTotal: String = ""
-    @State private var editedItemCount: String = ""
-    
-    private var calculatedSubtotal: Double {
-        session.scannedItems.reduce(0) { $0 + $1.price }
-    }
-    
-    private var totalWithTaxAndTip: Double {
-        let tax = Double(editedTax) ?? 0.0
-        let tip = Double(editedTip) ?? 0.0
-        return calculatedSubtotal + tax + tip
-    }
-    
-    private var totalsMatch: Bool {
-        let enteredTotal = Double(editedTotal) ?? 0.0
-        return abs(totalWithTaxAndTip - enteredTotal) <= 0.01
-    }
-    
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                Text("Verify Bill Details")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal)
-                
-                Text("Review and adjust the bill details before proceeding to assign items.")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal)
-                
-                // Items Summary
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Items (\(session.scannedItems.count))")
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .padding(.horizontal)
-                    
-                    LazyVStack(spacing: 8) {
-                        ForEach(session.scannedItems.indices, id: \.self) { index in
-                            HStack {
-                                TextField("Item name", text: .constant(session.scannedItems[index].name))
-                                    .fontWeight(.medium)
-                                    .disabled(true)
-                                    .foregroundColor(.primary)
-                                
-                                Spacer()
-                                
-                                Text("$\(session.scannedItems[index].price, specifier: "%.2f")")
-                                    .fontWeight(.bold)
-                            }
-                            .padding()
-                            .background(Color(.systemGray6))
-                            .cornerRadius(8)
-                        }
-                    }
-                    .padding(.horizontal)
-                }
-                
-                // Totals Section (similar to OCR confirmation)
-                VStack(spacing: 16) {
-                    Text("Verify Totals")
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    
-                    // Subtotal (calculated)
-                    HStack {
-                        Text("Subtotal:")
-                            .fontWeight(.medium)
-                        Spacer()
-                        Text("$\(calculatedSubtotal, specifier: "%.2f")")
-                            .fontWeight(.bold)
-                            .foregroundColor(.blue)
-                    }
-                    
-                    // Tax (editable)
-                    HStack {
-                        Text("Tax:")
-                            .fontWeight(.medium)
-                        Spacer()
-                        HStack {
-                            Text("$")
-                            TextField("0.00", text: $editedTax)
-                                .keyboardType(.decimalPad)
-                                .multilineTextAlignment(.trailing)
-                                .frame(width: 80)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
-                        }
-                    }
-                    
-                    // Tip (editable)
-                    HStack {
-                        Text("Tip:")
-                            .fontWeight(.medium)
-                        Spacer()
-                        HStack {
-                            Text("$")
-                            TextField("0.00", text: $editedTip)
-                                .keyboardType(.decimalPad)
-                                .multilineTextAlignment(.trailing)
-                                .frame(width: 80)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
-                        }
-                    }
-                    
-                    Divider()
-                    
-                    // Calculated total
-                    HStack {
-                        Text("Calculated Total:")
-                            .fontWeight(.semibold)
-                        Spacer()
-                        Text("$\(totalWithTaxAndTip, specifier: "%.2f")")
-                            .fontWeight(.bold)
-                            .foregroundColor(.green)
-                    }
-                    
-                    // Receipt total verification
-                    HStack {
-                        Text("Receipt Total:")
-                            .fontWeight(.semibold)
-                        Spacer()
-                        HStack {
-                            Text("$")
-                            TextField("\(bill.totalAmount, specifier: "%.2f")", text: $editedTotal)
-                                .keyboardType(.decimalPad)
-                                .multilineTextAlignment(.trailing)
-                                .frame(width: 100)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
-                        }
-                    }
-                    
-                    // Item count verification
-                    HStack {
-                        Text("Number of Items:")
-                            .fontWeight(.medium)
-                        Spacer()
-                        TextField("\(session.scannedItems.count)", text: $editedItemCount)
-                            .keyboardType(.numberPad)
-                            .multilineTextAlignment(.trailing)
-                            .frame(width: 60)
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                    }
-                    
-                    // Validation message
-                    if !totalsMatch {
-                        Text("⚠️ Totals don't match. Please verify the amounts above.")
-                            .font(.caption)
-                            .foregroundColor(.orange)
-                            .padding(.top, 8)
-                    } else {
-                        Text("✅ Totals match!")
-                            .font(.caption)
-                            .foregroundColor(.green)
-                            .padding(.top, 8)
-                    }
-                }
-                .padding()
-                .background(Color.blue.opacity(0.1))
-                .cornerRadius(12)
-                .padding(.horizontal)
-                
-                // Continue Button
-                Button(action: {
-                    // Update session with confirmed values
-                    session.confirmedTax = Double(editedTax) ?? 0.0
-                    session.confirmedTip = Double(editedTip) ?? 0.0
-                    session.confirmedTotal = Double(editedTotal) ?? totalWithTaxAndTip
-                    session.expectedItemCount = Int(editedItemCount) ?? session.scannedItems.count
-                    session.identifiedTotal = session.confirmedTotal
-                    
-                    onContinue()
-                }) {
-                    HStack {
-                        Image(systemName: "arrow.right")
-                        Text("Continue to Assign Items")
-                    }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(totalsMatch ? Color.blue : Color.gray)
-                    .cornerRadius(12)
-                }
-                .disabled(!totalsMatch)
-                .padding(.horizontal)
-            }
-            .padding(.top)
-        }
-        .navigationTitle("Edit Bill")
-        .navigationBarTitleDisplayMode(.inline)
-        .onAppear {
-            // Initialize editable fields with current values
-            editedTax = String(format: "%.2f", session.confirmedTax)
-            editedTip = String(format: "%.2f", session.confirmedTip) 
-            editedTotal = String(format: "%.2f", session.confirmedTotal)
-            editedItemCount = "\(session.expectedItemCount)"
-        }
-    }
-}
-
-// MARK: - Bill Edit Summary Screen (updates existing bill instead of creating new)
-
-struct BillEditSummaryScreen: View {
-    let bill: Bill
-    let session: BillSplitSession
-    let onDone: () -> Void
-    @ObservedObject var contactsManager: ContactsManager
-    @ObservedObject var authViewModel: AuthViewModel
-    @ObservedObject var billManager: BillManager
-    
-    @StateObject private var billService = BillService()
-    @State private var isUpdating = false
-    @State private var updateError: String?
-    @State private var showingError = false
-    
-    // Use similar layout to UISummaryScreen but for updating
-    private var defaultBillName: String {
-        let itemCount = session.assignedItems.count
-        return itemCount == 1 ? session.assignedItems[0].name : "\(itemCount) items"
-    }
-    
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Update Summary")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                    Text("Bill changes • \(Date().formatted(date: .abbreviated, time: .omitted))")
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal)
-                
-                // Bill name editing section
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Text("Bill Name")
-                            .font(.headline)
-                            .fontWeight(.semibold)
-                        Spacer()
-                        Text("Optional")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    TextField("Enter bill name (e.g., \"Dinner at Olive Garden\")", text: Binding(
-                        get: { session.billName },
-                        set: { session.billName = $0 }
-                    ))
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .autocorrectionDisabled()
-                    
-                    Text("Leave empty to use default: \"\(defaultBillName)\"")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.horizontal)
-                
-                // Bill paid by section
-                VStack(spacing: 12) {
-                    HStack {
-                        if let paidByID = session.paidByParticipantID,
-                           let paidByParticipant = session.participants.first(where: { $0.id == paidByID }) {
-                            Circle()
-                                .fill(paidByParticipant.color)
-                                .frame(width: 24, height: 24)
-                                .overlay(
-                                    Image(systemName: "person.fill")
-                                        .foregroundColor(.white)
-                                        .font(.caption)
-                                )
-                            Text("Bill paid by \(paidByParticipant.name)")
-                                .fontWeight(.medium)
-                                .foregroundColor(.blue)
-                        } else {
-                            Text("Bill paid by Unknown")
-                                .fontWeight(.medium)
-                                .foregroundColor(.red)
-                        }
-                        Spacer()
-                    }
-                    
-                    HStack {
-                        Text("Total amount:")
-                        Spacer()
-                        Text("$\(session.totalAmount, specifier: "%.2f")")
-                            .fontWeight(.bold)
-                    }
-                    .foregroundColor(.blue)
-                    
-                    HStack {
-                        Text("Date & Time:")
-                        Spacer()
-                        Text("\(Date().formatted(date: .abbreviated, time: .shortened))")
-                            .fontWeight(.medium)
-                    }
-                    .foregroundColor(.blue)
-                }
-                .padding()
-                .background(Color.blue.opacity(0.1))
-                .cornerRadius(12)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.blue.opacity(0.3), lineWidth: 1)
-                )
-                .padding(.horizontal)
-                
-                // Who Owes Whom section
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Who Owes Whom")
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .padding(.horizontal)
-                    
-                    if let paidByID = session.paidByParticipantID,
-                       let paidByParticipant = session.participants.first(where: { $0.id == paidByID }) {
-                        
-                        // Calculate individual debts to the payer
-                        ForEach(session.individualDebts.sorted(by: { $0.key < $1.key }), id: \.key) { participantID, amountOwed in
-                            if let debtor = session.participants.first(where: { $0.id == participantID }),
-                               amountOwed > 0.01 { // Only show significant amounts
-                                
-                                HStack {
-                                    // From person (debtor)
-                                    HStack(spacing: 8) {
-                                        Circle()
-                                            .fill(debtor.color)
-                                            .frame(width: 32, height: 32)
-                                            .overlay(
-                                                Image(systemName: "person.fill")
-                                                    .foregroundColor(.white)
-                                                    .font(.caption)
-                                            )
-                                        Text(debtor.name)
-                                            .fontWeight(.medium)
-                                    }
-                                    
-                                    Image(systemName: "arrow.right")
-                                        .foregroundColor(.gray)
-                                        .padding(.horizontal, 8)
-                                    
-                                    // To person (payer)
-                                    HStack(spacing: 8) {
-                                        Circle()
-                                            .fill(paidByParticipant.color)
-                                            .frame(width: 32, height: 32)
-                                            .overlay(
-                                                Image(systemName: "person.fill")
-                                                    .foregroundColor(.white)
-                                                    .font(.caption)
-                                            )
-                                        Text(paidByParticipant.name)
-                                            .fontWeight(.medium)
-                                    }
-                                    
-                                    Spacer()
-                                    
-                                    // Amount owed
-                                    VStack(alignment: .trailing, spacing: 2) {
-                                        Text("$\(amountOwed, specifier: "%.2f")")
-                                            .fontWeight(.bold)
-                                            .foregroundColor(.red)
-                                        Text("owes")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                }
-                                .padding()
-                                .background(Color(.systemBackground))
-                                .cornerRadius(12)
-                                .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .stroke(Color.red.opacity(0.2), lineWidth: 1)
-                                )
-                                .padding(.horizontal)
-                            }
-                        }
-                        
-                        // Show "No debts" message if everyone paid their share
-                        if session.individualDebts.allSatisfy({ $0.value <= 0.01 }) {
-                            VStack(spacing: 8) {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
-                                    .font(.title2)
-                                Text("Everyone paid their share!")
-                                    .fontWeight(.medium)
-                                    .foregroundColor(.green)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.green.opacity(0.1))
-                            .cornerRadius(12)
-                            .padding(.horizontal)
-                        }
-                    }
-                }
-                
-                // Detailed breakdown section
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Detailed breakdown")
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .padding(.horizontal)
-                    
-                    ForEach(session.breakdownSummaries) { person in
-                        VStack(spacing: 0) {
-                            // Header
-                            HStack {
-                                Circle()
-                                    .fill(person.color)
-                                    .frame(width: 24, height: 24)
-                                    .overlay(
-                                        Group {
-                                            if person.name == "Shared" {
-                                                Text("S")
-                                                    .font(.caption)
-                                                    .fontWeight(.bold)
-                                                    .foregroundColor(.white)
-                                            } else {
-                                                Image(systemName: "person.fill")
-                                                    .foregroundColor(.white)
-                                                    .font(.caption2)
-                                            }
-                                        }
-                                    )
-                                Text(person.name)
-                                    .fontWeight(.medium)
-                                Spacer()
-                            }
-                            .padding()
-                            .background(Color.gray.opacity(0.05))
-                            
-                            // Items
-                            ForEach(person.items, id: \.name) { item in
-                                HStack {
-                                    Text(item.name)
-                                    Spacer()
-                                    Text("$\(item.price, specifier: "%.2f")")
-                                        .fontWeight(.medium)
-                                }
-                                .padding()
-                                .overlay(
-                                    Rectangle()
-                                        .frame(height: 1)
-                                        .foregroundColor(.gray.opacity(0.2)),
-                                    alignment: .bottom
-                                )
-                            }
-                            
-                            // Subtotal
-                            HStack {
-                                Text("Subtotal")
-                                    .fontWeight(.medium)
-                                Spacer()
-                                Text("$\(person.items.reduce(0) { $0.currencyAdd($1.price) }, specifier: "%.2f")")
-                                    .fontWeight(.medium)
-                            }
-                            .padding()
-                            .background(Color.gray.opacity(0.05))
-                        }
-                        .cornerRadius(12)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-                        )
-                        .padding(.horizontal)
-                    }
-                }
-                
-                // Update Bill Button with loading state
-                Button(action: {
-                    Task {
-                        await updateBill()
-                    }
-                }) {
-                    HStack {
-                        if isUpdating {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                .scaleEffect(0.8)
-                        } else {
-                            Image(systemName: "checkmark.circle.fill")
-                        }
-                        Text(isUpdating ? "Updating Bill..." : "Update Bill")
-                    }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(isUpdating ? Color.gray : Color.blue)
-                    .cornerRadius(12)
-                }
-                .disabled(isUpdating || !session.isReadyForBillCreation)
-                .padding(.horizontal)
-                
-                // Show error if bill update fails
-                if let error = updateError {
-                    HStack {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(.red)
-                        Text(error)
-                            .font(.caption)
-                            .foregroundColor(.red)
-                    }
-                    .padding(.horizontal)
-                    .padding(.top, 8)
-                }
-            }
-            .padding(.top)
-        }
-        .navigationTitle("Update Bill")
-        .navigationBarTitleDisplayMode(.inline)
-        .alert("Bill Update Error", isPresented: $showingError) {
-            Button("OK") {
-                showingError = false
-                updateError = nil
-            }
-        } message: {
-            Text(updateError ?? "Unknown error occurred")
-        }
-    }
-    
-    // MARK: - Bill Update Logic
-    @MainActor
-    private func updateBill() async {
-        guard session.isReadyForBillCreation else {
-            updateError = session.billCreationErrorMessage ?? "Session is not ready for bill update"
-            showingError = true
-            return
-        }
-        
-        isUpdating = true
-        updateError = nil
-        
-        do {
-            
-            // Convert session data back to BillItem and BillParticipant format
-            let updatedItems = session.assignedItems.map { assignedItem in
-                BillItem(
-                    name: assignedItem.name,
-                    price: assignedItem.price,
-                    participantIDs: Array(assignedItem.assignedToParticipants)  // Use Firebase UIDs directly
-                )
-            }
-            
-            let paidByParticipantId: String = {
-                if let paidByID = session.paidByParticipantID {
-
-                    if paidByID == authViewModel.user?.uid { // Current user
-                        return authViewModel.user?.uid ?? ""
-                    } else {
-                        // Use the Firebase UID directly since UIParticipant.id is now Firebase UID
-
-                        // Verify the participant exists in bill participants
-                        if bill.participants.contains(where: { $0.id == paidByID }) {
-                            return paidByID
-                        } else {
-                            return authViewModel.user?.uid ?? ""
-                        }
-                    }
-                } else {
-                    let originalPayer = bill.paidBy
-                    return originalPayer
-                }
-            }()
-            
-            // Update bill using BillService
-            try await billService.updateBill(
-                billId: bill.id,
-                billName: session.billName.isEmpty ? defaultBillName : session.billName,
-                items: updatedItems,
-                participants: bill.participants, // Keep same participants
-                paidByParticipantId: paidByParticipantId,
-                currentUserId: authViewModel.user?.uid ?? "",
-                currentUserEmail: authViewModel.user?.email ?? "",
-                billManager: billManager
-            )
-            
-            
-            // 🔧 CRITICAL DEBUG: Final verification of update results
-            
-            // Force refresh BillManager to ensure UI updates
-            await billManager.refreshBills()
-            
-            // Call the completion handler
-            onDone()
-            
-        } catch {
-            updateError = error.localizedDescription
-            showingError = true
-        }
-        
-        isUpdating = false
-    }
-}
+// MARK: - Bill Edit Summary Screen
+// BillEditSummaryScreen extracted to Views/BillEdit/BillEditSummary.swift
 
 // MARK: - Simple Item Edit Row
 
@@ -1871,7 +1138,7 @@ struct SimpleItemEditRow: View {
                     onDelete()
                 }
                 .font(.caption)
-                .foregroundColor(.red)
+                .foregroundColor(.adaptiveAccentRed)
             }
         }
         .padding()
@@ -1917,7 +1184,7 @@ struct BillRowView: View {
                 if bill.isDeleted {
                     Text("Deleted")
                         .font(.caption)
-                        .foregroundColor(.red)
+                        .foregroundColor(.adaptiveAccentRed)
                         .fontWeight(.medium)
                 }
             }
@@ -1934,11 +1201,11 @@ struct BillRowView: View {
                     if isOwedMoney {
                         Text("You paid")
                             .font(.caption)
-                            .foregroundColor(.green)
+                            .foregroundColor(.adaptiveAccentGreen)
                     } else if owedAmount > 0.01 {
                         Text("You owe $\(owedAmount, specifier: "%.2f")")
                             .font(.caption)
-                            .foregroundColor(.red)
+                            .foregroundColor(.adaptiveAccentRed)
                     } else {
                         Text("Settled")
                             .font(.caption)
@@ -1952,7 +1219,7 @@ struct BillRowView: View {
                         Text("Edit")
                     }
                     .font(.caption2)
-                    .foregroundColor(.blue)
+                    .foregroundColor(.adaptiveAccentBlue)
                 }
             }
             
@@ -2130,7 +1397,7 @@ struct SessionRecoveryBanner: View {
                         Circle()
                             .fill(
                                 LinearGradient(
-                                    colors: [Color.blue.opacity(0.2), Color.blue.opacity(0.1)],
+                                    colors: [Color.adaptiveAccentBlue.opacity(0.2), Color.adaptiveAccentBlue.opacity(0.1)],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )
@@ -2141,7 +1408,7 @@ struct SessionRecoveryBanner: View {
                             .font(.system(size: 24, weight: .medium))
                             .foregroundStyle(
                                 LinearGradient(
-                                    colors: [.blue, .blue.opacity(0.8)],
+                                    colors: [.adaptiveAccentBlue, .adaptiveAccentBlue.opacity(0.8)],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )
@@ -2196,13 +1463,13 @@ struct SessionRecoveryBanner: View {
                         .padding(.vertical, 12)
                         .background(
                             LinearGradient(
-                                colors: [Color.blue, Color.blue.opacity(0.85)],
+                                colors: [Color.adaptiveAccentBlue, Color.adaptiveAccentBlue.opacity(0.85)],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
                         )
                         .cornerRadius(12)
-                        .shadow(color: Color.blue.opacity(0.3), radius: 8, x: 0, y: 4)
+                        .shadow(color: Color.adaptiveAccentBlue.opacity(0.3), radius: 8, x: 0, y: 4)
                     }
                 }
             }
@@ -2243,105 +1510,170 @@ struct SessionRecoveryBanner: View {
     }
 }
 
-#Preview {
+// MARK: - Canvas Preview Configurations
+
+#Preview("Complete App - Light") {
     ContentView()
+        .environmentObject(AuthViewModel())
+        .environmentObject(SessionRecoveryManager())
+        .environmentObject(DeepLinkCoordinator())
+        .preferredColorScheme(.light)
 }
-// MARK: - Deep Link Coordinator (Temporary location - move to Services/DeepLinkCoordinator.swift later)
 
-/**
- # DeepLinkCoordinator
+#Preview("Complete App - Dark") {
+    ContentView()
+        .environmentObject(AuthViewModel())
+        .environmentObject(SessionRecoveryManager())
+        .environmentObject(DeepLinkCoordinator())
+        .preferredColorScheme(.dark)
+}
 
- Centralized deep link handler for navigation from push notifications and external URLs.
- */
-class DeepLinkCoordinator: ObservableObject {
-    @Published var activeDestination: DeepLinkDestination?
-    @Published var pendingDeepLink: URL?
-    @Published var isLoading: Bool = false
-    @Published var errorMessage: String?
-    
-    private let db = Firestore.firestore()
-    
-    func handle(_ url: URL) {
-        
-        guard url.scheme == "splitsmart" else {
-            errorMessage = "Invalid link format"
-            return
-        }
-        
-        let host = url.host ?? ""
-        let pathComponents = url.pathComponents.filter { $0 != "/" }
-        
-        
-        switch host {
-        case "bill":
-            guard let billId = pathComponents.first else {
-                errorMessage = "Invalid bill link - missing ID"
-                return
+#Preview("Home Screen Only - Light") {
+    NavigationView {
+        UIHomeScreen(
+            session: BillSplitSession(),
+            billManager: BillManager(),
+            authViewModel: AuthViewModel(),
+            onCreateNew: {}
+        )
+    }
+    .preferredColorScheme(.light)
+}
+
+#Preview("Home Screen Only - Dark") {
+    NavigationView {
+        UIHomeScreen(
+            session: BillSplitSession(),
+            billManager: BillManager(),
+            authViewModel: AuthViewModel(),
+            onCreateNew: {}
+        )
+    }
+    .preferredColorScheme(.dark)
+}
+
+#Preview("Balance Cards - Light") {
+    VStack(spacing: .spacingLG) {
+        HStack(spacing: .spacingSM) {
+            // "You are owed" card
+            VStack(alignment: .leading, spacing: .spacingXS) {
+                Text("You are owed")
+                    .font(.captionDynamic)
+                    .foregroundColor(.adaptiveMutedGreen)
+
+                Text("$156.50")
+                    .font(.h3Dynamic)
+                    .foregroundColor(.adaptiveMutedGreen)
             }
-            handleBillDeepLink(billId: billId)
-            
-        case "home":
-            activeDestination = .home
-            
-        default:
-            errorMessage = "Unknown link destination"
-        }
-    }
-    
-    func clearDestination() {
-        activeDestination = nil
-        errorMessage = nil
-        isLoading = false
-    }
-    
-    func clearPendingDeepLink() {
-        pendingDeepLink = nil
-    }
-    
-    private func handleBillDeepLink(billId: String) {
-        isLoading = true
-        
-        Task { @MainActor in
-            do {
-                let billDoc = try await db.collection("bills").document(billId).getDocument()
-                
-                guard billDoc.exists else {
-                    isLoading = false
-                    errorMessage = "Bill not found or has been deleted"
-                    return
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.spacingSM)
+            .padding(.vertical, 4)
+            .background(
+                ZStack {
+                    Color.adaptiveDepth1
+                    Color.adaptiveMutedGreen.opacity(0.1)
                 }
-                
-                guard let bill = try? billDoc.data(as: Bill.self) else {
-                    isLoading = false
-                    errorMessage = "Failed to load bill data"
-                    return
-                }
-                
-                isLoading = false
-                activeDestination = .billDetail(bill)
-                
-            } catch {
-                isLoading = false
-                errorMessage = "Network error. Please try again."
+            )
+            .cornerRadius(.cornerRadiusSmall)
+            .shadow(color: Color.black.opacity(0.10), radius: 10, x: 2, y: 4)
+
+            // "You owe" card
+            VStack(alignment: .leading, spacing: .spacingXS) {
+                Text("You owe")
+                    .font(.captionDynamic)
+                    .foregroundColor(.adaptiveMutedRed)
+
+                Text("$42.75")
+                    .font(.h3Dynamic)
+                    .foregroundColor(.adaptiveMutedRed)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.spacingSM)
+            .padding(.vertical, 4)
+            .background(
+                ZStack {
+                    Color.adaptiveDepth1
+                    Color.adaptiveMutedRed.opacity(0.1)
+                }
+            )
+            .cornerRadius(.cornerRadiusSmall)
+            .shadow(color: Color.black.opacity(0.10), radius: 10, x: 2, y: 4)
         }
+        .padding(.horizontal, .paddingScreen)
     }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .background(Color.adaptiveDepth0)
+    .preferredColorScheme(.light)
 }
 
-enum DeepLinkDestination: Equatable, Identifiable {
-    case billDetail(Bill)
-    case home
-    
-    var id: String {
-        switch self {
-        case .billDetail(let bill):
-            return "bill_\(bill.id)"
-        case .home:
-            return "home"
+#Preview("Balance Cards - Dark") {
+    VStack(spacing: .spacingLG) {
+        HStack(spacing: .spacingSM) {
+            // "You are owed" card
+            VStack(alignment: .leading, spacing: .spacingXS) {
+                Text("You are owed")
+                    .font(.captionDynamic)
+                    .foregroundColor(.adaptiveMutedGreen)
+
+                Text("$156.50")
+                    .font(.h3Dynamic)
+                    .foregroundColor(.adaptiveMutedGreen)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.spacingSM)
+            .padding(.vertical, 4)
+            .background(
+                ZStack {
+                    Color.adaptiveDepth1
+                    Color.adaptiveMutedGreen.opacity(0.1)
+                }
+            )
+            .cornerRadius(.cornerRadiusSmall)
+            .shadow(color: Color.black.opacity(0.10), radius: 10, x: 2, y: 4)
+
+            // "You owe" card
+            VStack(alignment: .leading, spacing: .spacingXS) {
+                Text("You owe")
+                    .font(.captionDynamic)
+                    .foregroundColor(.adaptiveMutedRed)
+
+                Text("$42.75")
+                    .font(.h3Dynamic)
+                    .foregroundColor(.adaptiveMutedRed)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.spacingSM)
+            .padding(.vertical, 4)
+            .background(
+                ZStack {
+                    Color.adaptiveDepth1
+                    Color.adaptiveMutedRed.opacity(0.1)
+                }
+            )
+            .cornerRadius(.cornerRadiusSmall)
+            .shadow(color: Color.black.opacity(0.10), radius: 10, x: 2, y: 4)
         }
+        .padding(.horizontal, .paddingScreen)
     }
-    
-    static func == (lhs: DeepLinkDestination, rhs: DeepLinkDestination) -> Bool {
-        lhs.id == rhs.id
-    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .background(Color.adaptiveDepth0)
+    .preferredColorScheme(.dark)
 }
+
+#Preview("Session Recovery Banner") {
+    SessionRecoveryBanner(
+        onRestore: {},
+        onDiscard: {}
+    )
+}
+
+#Preview("Tab Bar") {
+    VStack {
+        Spacer()
+        TabBarView(selectedTab: .constant("home"))
+    }
+    .background(Color.adaptiveDepth0)
+}
+
+// MARK: - Deep Link Coordinator
+// DeepLinkCoordinator and DeepLinkDestination extracted to Services/DeepLinkCoordinator.swift

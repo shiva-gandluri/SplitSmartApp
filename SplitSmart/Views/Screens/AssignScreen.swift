@@ -69,7 +69,7 @@ struct UIAssignScreen: View {
                                     .font(.subheadline)
                                     .fontWeight(.medium)
                                 Text("*")
-                                    .foregroundColor(.red)
+                                    .foregroundColor(.adaptiveAccentRed)
                                     .fontWeight(.bold)
                             }
                             
@@ -86,7 +86,7 @@ struct UIAssignScreen: View {
                                             if session.paidByParticipantID == participant.id {
                                                 Spacer()
                                                 Image(systemName: "checkmark")
-                                                    .foregroundColor(.blue)
+                                                    .foregroundColor(.adaptiveAccentBlue)
                                             }
                                         }
                                     }
@@ -132,7 +132,7 @@ struct UIAssignScreen: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 8)
-                                        .stroke(Color.blue, lineWidth: 2)
+                                        .stroke(Color.adaptiveAccentBlue, lineWidth: 2)
                                 )
                         }
                         .buttonStyle(PlainButtonStyle())
@@ -258,7 +258,7 @@ struct UIAssignScreen: View {
                             }
                         }
                         .padding()
-                        .background(Color.gray.opacity(0.1))
+                        .background(Color.adaptiveDepth1)
                         .cornerRadius(12)
                         .padding(.horizontal)
                     }
@@ -298,7 +298,7 @@ struct UIAssignScreen: View {
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(regexTotalsMatch ? Color.green : Color.gray)
+                            .background(regexTotalsMatch ? Color.adaptiveAccentGreen : Color.gray)
                             .cornerRadius(12)
                         }
                         .disabled(!regexTotalsMatch)
@@ -307,10 +307,10 @@ struct UIAssignScreen: View {
                         if !regexTotalsMatch {
                             HStack {
                                 Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundColor(.red)
+                                    .foregroundColor(.adaptiveAccentRed)
                                 Text("Totals do not match.")
                                     .font(.caption)
-                                    .foregroundColor(.red)
+                                    .foregroundColor(.adaptiveAccentRed)
                             }
                             .padding(.horizontal)
                         }
@@ -403,7 +403,7 @@ struct UIAssignScreen: View {
                             }
                         }
                         .padding()
-                        .background(Color.gray.opacity(0.1))
+                        .background(Color.adaptiveDepth1)
                         .cornerRadius(12)
                         .padding(.horizontal)
                     }
@@ -424,7 +424,7 @@ struct UIAssignScreen: View {
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(canContinue ? Color.blue : Color.gray)
+                            .background(canContinue ? Color.adaptiveAccentBlue : Color.gray)
                             .cornerRadius(12)
                         }
                         .disabled(!canContinue)
@@ -433,28 +433,28 @@ struct UIAssignScreen: View {
                         if !whoePaidSelected {
                             HStack {
                                 Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundColor(.red)
+                                    .foregroundColor(.adaptiveAccentRed)
                                 Text("Please select who paid this bill.")
                                     .font(.caption)
-                                    .foregroundColor(.red)
+                                    .foregroundColor(.adaptiveAccentRed)
                             }
                             .padding(.horizontal)
                         } else if !allItemsAssigned {
                             HStack {
                                 Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundColor(.orange)
+                                    .foregroundColor(.adaptiveAccentOrange)
                                 Text("Please assign all items to participants.")
                                     .font(.caption)
-                                    .foregroundColor(.orange)
+                                    .foregroundColor(.adaptiveAccentOrange)
                             }
                             .padding(.horizontal)
                         } else if !totalComplete {
                             HStack {
                                 Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundColor(.red)
+                                    .foregroundColor(.adaptiveAccentRed)
                                 Text("Assignment total doesn't match bill total.")
                                     .font(.caption)
-                                    .foregroundColor(.red)
+                                    .foregroundColor(.adaptiveAccentRed)
                             }
                             .padding(.horizontal)
                         }
@@ -490,6 +490,7 @@ struct UIAssignScreen: View {
                 }
             }
         }
+        .background(Color.adaptiveDepth0.ignoresSafeArea())
         .onTapGesture {
             hideKeyboard()
         }
@@ -586,15 +587,16 @@ struct UIAssignScreen: View {
     }
     
     private func handleContactsSelected(_ contacts: [CNContact]) {
-        
+
         Task {
             var rejectedContacts: [String] = []
-            
+            var firstNeedsNetworkContact: (name: String, email: String)? = nil
+
             for contact in contacts {
                 let contactName = contact.displayName
                 let email = contact.primaryEmail
                 let phoneNumber = contact.primaryPhoneNumber
-                
+
                 // Use validation method
                 let result = await session.addParticipantWithValidation(
                     name: contactName,
@@ -603,19 +605,31 @@ struct UIAssignScreen: View {
                     authViewModel: authViewModel,
                     contactsManager: contactsManager
                 )
-                
+
                 if result.participant != nil {
+                    // Successfully added
+                } else if result.needsContact {
+                    // User is registered but not in network - save the first one to show modal
+                    if firstNeedsNetworkContact == nil, let email = email {
+                        firstNeedsNetworkContact = (contactName, email)
+                    }
                 } else {
+                    // User not registered at all
                     rejectedContacts.append(contactName)
                 }
             }
-            
+
             await MainActor.run {
-                if !rejectedContacts.isEmpty {
+                // Priority: Show network addition modal if we found registered users not in network
+                if let needsNetwork = firstNeedsNetworkContact {
+                    pendingContactEmail = needsNetwork.email
+                    pendingContactName = needsNetwork.name
+                    showNewContactModal = true
+                } else if !rejectedContacts.isEmpty {
                     validationError = "The following contacts are not registered with SplitSmart and cannot be added:\n\n" + rejectedContacts.joined(separator: "\n")
                     showValidationAlert = true
                 }
-                
+
                 showContactPicker = false
                 showAddParticipantOptions = false
             }
@@ -646,12 +660,13 @@ struct UIAssignScreen: View {
 
                     // Auto-save session after participant change
                     session.autoSaveSession()
+                } else if result.needsContact {
+                    // User is registered but not in your network - show modal to add them
+                    pendingContactEmail = contact.email
+                    pendingContactName = contact.displayName
+                    showNewContactModal = true
                 } else if let error = result.error {
                     validationError = error
-                    showValidationAlert = true
-                } else if result.needsContact {
-                    // This shouldn't happen for saved contacts, but handle gracefully
-                    validationError = "Unable to add contact to bill"
                     showValidationAlert = true
                 }
             }
@@ -659,6 +674,7 @@ struct UIAssignScreen: View {
     }
     
     private func handleExistingContactSelected(_ contact: TransactionContact) {
+        print("🔵 [AssignScreen] handleExistingContactSelected called: \(contact.displayName) (\(contact.email))")
         Task {
             // Use proper validation for existing contacts to ensure strict security
             let result = await session.addParticipantWithValidation(
@@ -669,18 +685,24 @@ struct UIAssignScreen: View {
                 contactsManager: contactsManager
             )
 
+            print("🔵 [AssignScreen] Validation result - participant: \(result.participant?.name ?? "nil"), error: \(result.error ?? "nil"), needsContact: \(result.needsContact)")
+
             await MainActor.run {
                 if result.participant != nil {
+                    print("✅ [AssignScreen] Participant added successfully")
                     newParticipantName = ""
 
                     // Auto-save session after participant change
                     session.autoSaveSession()
-                } else if let error = result.error {
-                    validationError = error
-                    showValidationAlert = true
                 } else if result.needsContact {
-                    // This shouldn't happen for existing contacts, but handle gracefully
-                    validationError = "Unable to add contact to bill"
+                    // User is registered but not in your network - show modal to add them
+                    print("📝 [AssignScreen] Showing NewContactModal - needsContact=true")
+                    pendingContactEmail = contact.email
+                    pendingContactName = contact.displayName
+                    showNewContactModal = true
+                } else if let error = result.error {
+                    print("❌ [AssignScreen] Showing error alert: \(error)")
+                    validationError = error
                     showValidationAlert = true
                 }
             }
@@ -688,6 +710,7 @@ struct UIAssignScreen: View {
     }
     
     private func handleNewContactSubmit(_ searchText: String) {
+        print("🟢 [AssignScreen] handleNewContactSubmit called: \(searchText)")
         // Process new contact like the old handleAddParticipant but with the search text
         newParticipantName = searchText
         handleAddParticipant()
@@ -695,7 +718,8 @@ struct UIAssignScreen: View {
     
     private func handleAddParticipant() {
         let trimmedName = newParticipantName.trimmingCharacters(in: .whitespacesAndNewlines)
-        
+        print("🟡 [AssignScreen] handleAddParticipant called: \(trimmedName)")
+
         if !trimmedName.isEmpty {
             Task {
                 // SECURE: Use proper validation for input detection and sanitization
@@ -766,9 +790,12 @@ struct UIAssignScreen: View {
                     authViewModel: authViewModel,
                     contactsManager: contactsManager
                 )
-                
+
+                print("🟡 [AssignScreen] handleAddParticipant validation result - participant: \(result.participant?.name ?? "nil"), error: \(result.error ?? "nil"), needsContact: \(result.needsContact)")
+
                 await MainActor.run {
                     if result.participant != nil {
+                        print("✅ [AssignScreen] handleAddParticipant - Participant added successfully")
                         newParticipantName = ""
                         showAddParticipantOptions = false
 
@@ -776,11 +803,13 @@ struct UIAssignScreen: View {
                         session.autoSaveSession()
                     } else if result.needsContact {
                         // Show new contact modal for unregistered email
+                        print("📝 [AssignScreen] handleAddParticipant - Showing NewContactModal - needsContact=true")
                         pendingContactEmail = email ?? ""
                         pendingContactName = participantName
                         showNewContactModal = true
                         showAddParticipantOptions = false
                     } else {
+                        print("❌ [AssignScreen] handleAddParticipant - Showing error alert: \(result.error ?? "Unknown error")")
                         self.validationError = result.error ?? "Unable to add participant"
                         showValidationAlert = true
                     }

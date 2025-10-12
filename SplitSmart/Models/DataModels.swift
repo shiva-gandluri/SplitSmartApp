@@ -4841,8 +4841,11 @@ class BillSplitSession: ObservableObject {
     
     func addParticipantWithValidation(name: String, email: String? = nil, phoneNumber: String? = nil, authViewModel: AuthViewModel, contactsManager: ContactsManager? = nil, firebaseUID: String? = nil) async -> (participant: UIParticipant?, error: String?, needsContact: Bool) {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        guard !trimmedName.isEmpty else { 
+
+        print("🔍 [DataModels] addParticipantWithValidation START - name: \(trimmedName), email: \(email ?? "nil"), phone: \(phoneNumber ?? "nil")")
+
+        guard !trimmedName.isEmpty else {
+            print("❌ [DataModels] Empty name")
             return (nil, "Name cannot be empty", false)
         }
         
@@ -4882,7 +4885,10 @@ class BillSplitSession: ObservableObject {
 
             let isOnboarded = await authViewModel.isUserOnboarded(email: email, phoneNumber: phoneNumber)
 
+            print("🔍 [DataModels] Onboarding check - isOnboarded: \(isOnboarded)")
+
             if !isOnboarded {
+                print("❌ [DataModels] User not onboarded")
                 return (nil, "User not found. Only registered SplitSmart users can be added to bills", false)
             }
 
@@ -4915,16 +4921,21 @@ class BillSplitSession: ObservableObject {
         if let email = email, let contactsManager = contactsManager {
             let emailValidation = AuthViewModel.validateEmail(email)
             if emailValidation.isValid, let validEmail = emailValidation.sanitized {
+                print("🔍 [DataModels] Checking transaction contacts for: \(validEmail)")
+                print("🔍 [DataModels] Total transaction contacts: \(contactsManager.transactionContacts.count)")
+
                 // Check if this email is already in user's transaction contacts
-                let existingTransactionContact = contactsManager.transactionContacts.first { 
-                    $0.email.lowercased() == validEmail.lowercased() 
+                let existingTransactionContact = contactsManager.transactionContacts.first {
+                    $0.email.lowercased() == validEmail.lowercased()
                 }
-                
+
                 if existingTransactionContact == nil {
                     // Email not in transaction history but is registered - show "add to your network" modal
+                    print("📝 [DataModels] Email NOT in transaction contacts - returning needsContact=true")
                     return (nil, "Add \(validEmail) to your SplitSmart network", true)
                 } else {
                     // Email found in transaction history - proceed with normal flow
+                    print("✅ [DataModels] Email found in transaction contacts: \(existingTransactionContact!.displayName)")
                 }
             }
         }
@@ -4945,6 +4956,8 @@ class BillSplitSession: ObservableObject {
         await MainActor.run {
             participants.append(newParticipant)
         }
+
+        print("✅ [DataModels] Participant added successfully: \(newParticipant.name)")
         return (newParticipant, nil, false)
     }
     

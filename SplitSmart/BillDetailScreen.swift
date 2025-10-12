@@ -84,6 +84,7 @@ struct BillDetailScreen: View {
             }
             .padding(.vertical)
         }
+        .background(Color.adaptiveDepth0.ignoresSafeArea())
         .navigationTitle(bill.isDeleted ? "Deleted Bill" : "Bill Details")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingEditView) {
@@ -141,7 +142,7 @@ struct BillDetailScreen: View {
                 Spacer()
             }
             .padding()
-            .background(Color.red)
+            .background(Color.adaptiveAccentRed)
             .cornerRadius(12)
 
             Text("This is a read-only view for your records. You cannot edit or restore this bill.")
@@ -167,11 +168,11 @@ struct BillDetailScreen: View {
                     if bill.isDeleted {
                         HStack {
                             Image(systemName: "trash.slash")
-                                .foregroundColor(.red)
+                                .foregroundColor(.adaptiveAccentRed)
                             Text("DELETED")
                                 .font(.caption)
                                 .fontWeight(.bold)
-                                .foregroundColor(.red)
+                                .foregroundColor(.adaptiveAccentRed)
                         }
                     }
                 }
@@ -191,7 +192,7 @@ struct BillDetailScreen: View {
                 Text("$\(billTotal, specifier: "%.2f")")
                     .font(.title2)
                     .fontWeight(.bold)
-                    .foregroundColor(.blue)
+                    .foregroundColor(.adaptiveAccentBlue)
             }
             
             // Creator Info
@@ -203,7 +204,7 @@ struct BillDetailScreen: View {
                     
                     HStack(spacing: 8) {
                         Circle()
-                            .fill(Color.blue)
+                            .fill(Color.adaptiveAccentBlue)
                             .frame(width: 24, height: 24)
                             .overlay(
                                 Image(systemName: "person.fill")
@@ -227,7 +228,7 @@ struct BillDetailScreen: View {
                     
                     HStack(spacing: 8) {
                         Circle()
-                            .fill(Color.green)
+                            .fill(Color.adaptiveAccentGreen)
                             .frame(width: 24, height: 24)
                             .overlay(
                                 Image(systemName: "creditcard.fill")
@@ -243,11 +244,11 @@ struct BillDetailScreen: View {
             }
         }
         .padding()
-        .background(Color(.systemBackground))
+        .background(Color.adaptiveDepth1)
         .cornerRadius(12)
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.blue.opacity(0.2), lineWidth: 1)
+                .stroke(Color.adaptiveAccentBlue.opacity(0.2), lineWidth: 1)
         )
         .padding(.horizontal)
     }
@@ -265,15 +266,15 @@ struct BillDetailScreen: View {
                 // All settled up
                 VStack(spacing: 8) {
                     Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
+                        .foregroundColor(.adaptiveAccentGreen)
                         .font(.title2)
                     Text("All settled up!")
                         .fontWeight(.medium)
-                        .foregroundColor(.green)
+                        .foregroundColor(.adaptiveAccentGreen)
                 }
                 .frame(maxWidth: .infinity)
                 .padding()
-                .background(Color.green.opacity(0.1))
+                .background(Color.adaptiveAccentGreen.opacity(0.1))
                 .cornerRadius(12)
                 .padding(.horizontal)
             } else {
@@ -287,7 +288,7 @@ struct BillDetailScreen: View {
                             // Debtor
                             HStack(spacing: 8) {
                                 Circle()
-                                    .fill(Color.red)
+                                    .fill(Color.adaptiveAccentRed)
                                     .frame(width: 32, height: 32)
                                     .overlay(
                                         Image(systemName: "person.fill")
@@ -305,7 +306,7 @@ struct BillDetailScreen: View {
                             // Payer
                             HStack(spacing: 8) {
                                 Circle()
-                                    .fill(Color.green)
+                                    .fill(Color.adaptiveAccentGreen)
                                     .frame(width: 32, height: 32)
                                     .overlay(
                                         Image(systemName: "person.fill")
@@ -321,14 +322,14 @@ struct BillDetailScreen: View {
                             // Amount
                             Text("$\(amount, specifier: "%.2f")")
                                 .fontWeight(.bold)
-                                .foregroundColor(.red)
+                                .foregroundColor(.adaptiveAccentRed)
                         }
                         .padding()
-                        .background(Color(.systemBackground))
+                        .background(Color.adaptiveDepth1)
                         .cornerRadius(12)
                         .overlay(
                             RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.red.opacity(0.2), lineWidth: 1)
+                                .stroke(Color.adaptiveAccentRed.opacity(0.2), lineWidth: 1)
                         )
                         .padding(.horizontal)
                     }
@@ -362,7 +363,7 @@ struct BillDetailScreen: View {
                             .fontWeight(.bold)
                     }
                     .padding()
-                    .background(Color(.systemGray6))
+                    .background(Color.adaptiveDepth2)
                     .cornerRadius(8)
                 }
             }
@@ -382,14 +383,14 @@ struct BillDetailScreen: View {
                     Text("Edit Bill")
                         .fontWeight(.semibold)
                 }
-                .foregroundColor(.blue)
+                .foregroundColor(.adaptiveAccentBlue)
                 .frame(maxWidth: .infinity)
                 .padding()
-                .background(Color.blue.opacity(0.1))
+                .background(Color.adaptiveAccentBlue.opacity(0.1))
                 .cornerRadius(12)
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+                        .stroke(Color.adaptiveAccentBlue.opacity(0.3), lineWidth: 1)
                 )
             }
 
@@ -411,7 +412,7 @@ struct BillDetailScreen: View {
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
                 .padding()
-                .background(isDeleting ? Color.gray : Color.red)
+                .background(isDeleting ? Color.gray : Color.adaptiveAccentRed)
                 .cornerRadius(12)
             }
             .disabled(isDeleting)

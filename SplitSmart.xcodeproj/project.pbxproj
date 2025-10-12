@@ -12,6 +12,24 @@
 		066A90062E923A5E00298F33 /* BillDetailScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066A90052E923A5E00298F33 /* BillDetailScreen.swift */; };
 		066A90092E9261C500298F33 /* BillEditSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066A90072E9261C500298F33 /* BillEditSession.swift */; };
 		066A900A2E9261C500298F33 /* BillEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066A90082E9261C500298F33 /* BillEditView.swift */; };
+		066A90302E93B1E500298F33 /* PHASE_3A_COMPLETE.md in Resources */ = {isa = PBXBuildFile; fileRef = 066A90282E93B1E500298F33 /* PHASE_3A_COMPLETE.md */; };
+		066A90312E93B1E500298F33 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 066A90292E93B1E500298F33 /* README.md */; };
+		066A90322E93B1E500298F33 /* VALIDATION_REPORT.md in Resources */ = {isa = PBXBuildFile; fileRef = 066A902E2E93B1E500298F33 /* VALIDATION_REPORT.md */; };
+		066A90332E93B1E500298F33 /* ASSETS_SETUP.md in Resources */ = {isa = PBXBuildFile; fileRef = 066A901E2E93B1E500298F33 /* ASSETS_SETUP.md */; };
+		066A90342E93B1E500298F33 /* ButtonStyles.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066A90202E93B1E500298F33 /* ButtonStyles.swift */; };
+		066A90352E93B1E500298F33 /* BodyText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066A901F2E93B1E500298F33 /* BodyText.swift */; };
+		066A90362E93B1E500298F33 /* Font+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066A90262E93B1E500298F33 /* Font+Extensions.swift */; };
+		066A90372E93B1E500298F33 /* Color+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066A90232E93B1E500298F33 /* Color+Extensions.swift */; };
+		066A90382E93B1E500298F33 /* SectionHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066A902B2E93B1E500298F33 /* SectionHeader.swift */; };
+		066A90392E93B1E500298F33 /* CGFloat+Spacing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066A90222E93B1E500298F33 /* CGFloat+Spacing.swift */; };
+		066A903A2E93B1E500298F33 /* StyledToggle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066A902D2E93B1E500298F33 /* StyledToggle.swift */; };
+		066A903B2E93B1E500298F33 /* CustomListRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066A90242E93B1E500298F33 /* CustomListRow.swift */; };
+		066A903C2E93B1E500298F33 /* CustomModal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066A90252E93B1E500298F33 /* CustomModal.swift */; };
+		066A903D2E93B1E500298F33 /* Animation+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066A901D2E93B1E500298F33 /* Animation+Extensions.swift */; };
+		066A903E2E93B1E500298F33 /* HeadingText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066A90272E93B1E500298F33 /* HeadingText.swift */; };
+		066A903F2E93B1E500298F33 /* CardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066A90212E93B1E500298F33 /* CardView.swift */; };
+		066A90402E93B1E500298F33 /* ScreenContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066A902A2E93B1E500298F33 /* ScreenContainer.swift */; };
+		066A90412E93B1E500298F33 /* StyledTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066A902C2E93B1E500298F33 /* StyledTextField.swift */; };
 		1111111111111111111111111111111A /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD /* GoogleService-Info.plist */; };
 		1111111111111111111111111111111C /* DataModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1111111111111111111111111111111D /* DataModels.swift */; };
 		1111111111111111111111111111111E /* ScanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1111111111111111111111111111111F /* ScanView.swift */; };
@@ -28,6 +46,10 @@
 		EEE166656769437CA8F9D9D7 /* UIComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D9DE7B031454050B7E077CB /* UIComponents.swift */; };
 		EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE /* AuthViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB /* AuthViewModel.swift */; };
 		FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC /* AuthView.swift */; };
+		866E190AA23249329559DAC9 /* DeepLinkCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E8B6814D3AC4E92BF4E6701 /* DeepLinkCoordinator.swift */; };
+		F467984207B44791A6A0AA0A /* BillEditFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 639B4401E6EC40C396D47223 /* BillEditFlow.swift */; };
+		9E950CDD3986438987447084 /* BillEditConfirmation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6CC60336A2A42BEA3B12ECE /* BillEditConfirmation.swift */; };
+		D95F752301234F49BA4D57BC /* BillEditSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FC8EFF30436426C93D57885 /* BillEditSummary.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -37,6 +59,24 @@
 		066A90052E923A5E00298F33 /* BillDetailScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BillDetailScreen.swift; sourceTree = "<group>"; };
 		066A90072E9261C500298F33 /* BillEditSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BillEditSession.swift; sourceTree = "<group>"; };
 		066A90082E9261C500298F33 /* BillEditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BillEditView.swift; sourceTree = "<group>"; };
+		066A901D2E93B1E500298F33 /* Animation+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Animation+Extensions.swift"; sourceTree = "<group>"; };
+		066A901E2E93B1E500298F33 /* ASSETS_SETUP.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = ASSETS_SETUP.md; sourceTree = "<group>"; };
+		066A901F2E93B1E500298F33 /* BodyText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BodyText.swift; sourceTree = "<group>"; };
+		066A90202E93B1E500298F33 /* ButtonStyles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ButtonStyles.swift; sourceTree = "<group>"; };
+		066A90212E93B1E500298F33 /* CardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardView.swift; sourceTree = "<group>"; };
+		066A90222E93B1E500298F33 /* CGFloat+Spacing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CGFloat+Spacing.swift"; sourceTree = "<group>"; };
+		066A90232E93B1E500298F33 /* Color+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Color+Extensions.swift"; sourceTree = "<group>"; };
+		066A90242E93B1E500298F33 /* CustomListRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomListRow.swift; sourceTree = "<group>"; };
+		066A90252E93B1E500298F33 /* CustomModal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomModal.swift; sourceTree = "<group>"; };
+		066A90262E93B1E500298F33 /* Font+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Font+Extensions.swift"; sourceTree = "<group>"; };
+		066A90272E93B1E500298F33 /* HeadingText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeadingText.swift; sourceTree = "<group>"; };
+		066A90282E93B1E500298F33 /* PHASE_3A_COMPLETE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = PHASE_3A_COMPLETE.md; sourceTree = "<group>"; };
+		066A90292E93B1E500298F33 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		066A902A2E93B1E500298F33 /* ScreenContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenContainer.swift; sourceTree = "<group>"; };
+		066A902B2E93B1E500298F33 /* SectionHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SectionHeader.swift; sourceTree = "<group>"; };
+		066A902C2E93B1E500298F33 /* StyledTextField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StyledTextField.swift; sourceTree = "<group>"; };
+		066A902D2E93B1E500298F33 /* StyledToggle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StyledToggle.swift; sourceTree = "<group>"; };
+		066A902E2E93B1E500298F33 /* VALIDATION_REPORT.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = VALIDATION_REPORT.md; sourceTree = "<group>"; };
 		1111111111111111111111111111111D /* DataModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DataModels.swift; path = Models/DataModels.swift; sourceTree = "<group>"; };
 		1111111111111111111111111111111F /* ScanView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ScanView.swift; path = Views/ScanView.swift; sourceTree = "<group>"; };
 		12A247C155DBFC137AF9BF03 /* SplitSmartApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SplitSmartApp.swift; sourceTree = "<group>"; };
@@ -50,6 +90,10 @@
 		C2E4EE30ABFC4A7A9ED41DFF /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC /* AuthView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AuthView.swift; path = Views/AuthView.swift; sourceTree = "<group>"; };
 		DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD /* GoogleService-Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
+		2E8B6814D3AC4E92BF4E6701 /* DeepLinkCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DeepLinkCoordinator.swift"; sourceTree = "<group>"; };
+		639B4401E6EC40C396D47223 /* BillEditFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BillEditFlow.swift"; sourceTree = "<group>"; };
+		B6CC60336A2A42BEA3B12ECE /* BillEditConfirmation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BillEditConfirmation.swift"; sourceTree = "<group>"; };
+		9FC8EFF30436426C93D57885 /* BillEditSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BillEditSummary.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -67,6 +111,31 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		066A902F2E93B1E500298F33 /* DesignSystem */ = {
+			isa = PBXGroup;
+			children = (
+				066A901D2E93B1E500298F33 /* Animation+Extensions.swift */,
+				066A901E2E93B1E500298F33 /* ASSETS_SETUP.md */,
+				066A901F2E93B1E500298F33 /* BodyText.swift */,
+				066A90202E93B1E500298F33 /* ButtonStyles.swift */,
+				066A90212E93B1E500298F33 /* CardView.swift */,
+				066A90222E93B1E500298F33 /* CGFloat+Spacing.swift */,
+				066A90232E93B1E500298F33 /* Color+Extensions.swift */,
+				066A90242E93B1E500298F33 /* CustomListRow.swift */,
+				066A90252E93B1E500298F33 /* CustomModal.swift */,
+				066A90262E93B1E500298F33 /* Font+Extensions.swift */,
+				066A90272E93B1E500298F33 /* HeadingText.swift */,
+				066A90282E93B1E500298F33 /* PHASE_3A_COMPLETE.md */,
+				066A90292E93B1E500298F33 /* README.md */,
+				066A902A2E93B1E500298F33 /* ScreenContainer.swift */,
+				066A902B2E93B1E500298F33 /* SectionHeader.swift */,
+				066A902C2E93B1E500298F33 /* StyledTextField.swift */,
+				066A902D2E93B1E500298F33 /* StyledToggle.swift */,
+				066A902E2E93B1E500298F33 /* VALIDATION_REPORT.md */,
+			);
+			path = DesignSystem;
+			sourceTree = "<group>";
+		};
 		A1234567890ABCDEF21 = {
 			isa = PBXGroup;
 			children = (
@@ -78,6 +147,9 @@
 		A1234567890ABCDEF22 /* SplitSmart */ = {
 			isa = PBXGroup;
 			children = (
+				066A902F2E93B1E500298F33 /* DesignSystem */,
+				663C9A46A81547958D4273C5 /* Services */,
+				328F3288DE8446999E7A4CE6 /* BillEdit */,
 				066A90072E9261C500298F33 /* BillEditSession.swift */,
 				066A90082E9261C500298F33 /* BillEditView.swift */,
 				066A90052E923A5E00298F33 /* BillDetailScreen.swift */,
@@ -98,6 +170,24 @@
 				DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD /* GoogleService-Info.plist */,
 			);
 			path = SplitSmart;
+			sourceTree = "<group>";
+		};
+		663C9A46A81547958D4273C5 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				2E8B6814D3AC4E92BF4E6701 /* DeepLinkCoordinator.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		328F3288DE8446999E7A4CE6 /* BillEdit */ = {
+			isa = PBXGroup;
+			children = (
+				639B4401E6EC40C396D47223 /* BillEditFlow.swift */,
+				B6CC60336A2A42BEA3B12ECE /* BillEditConfirmation.swift */,
+				9FC8EFF30436426C93D57885 /* BillEditSummary.swift */,
+			);
+			path = Views/BillEdit;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -169,6 +259,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				1111111111111111111111111111111A /* GoogleService-Info.plist in Resources */,
+				066A90302E93B1E500298F33 /* PHASE_3A_COMPLETE.md in Resources */,
+				066A90312E93B1E500298F33 /* README.md in Resources */,
+				066A90322E93B1E500298F33 /* VALIDATION_REPORT.md in Resources */,
+				066A90332E93B1E500298F33 /* ASSETS_SETUP.md in Resources */,
 				3333333333333333333333333333333A /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -187,6 +281,20 @@
 				782AA4F1F7B1E6C2840B32F3 /* HistoryView.swift in Sources */,
 				EEE166656769437CA8F9D9D7 /* UIComponents.swift in Sources */,
 				DFE93912CF972B4CBC2AD5A8 /* SplitSmartApp.swift in Sources */,
+				066A90342E93B1E500298F33 /* ButtonStyles.swift in Sources */,
+				066A90352E93B1E500298F33 /* BodyText.swift in Sources */,
+				066A90362E93B1E500298F33 /* Font+Extensions.swift in Sources */,
+				066A90372E93B1E500298F33 /* Color+Extensions.swift in Sources */,
+				066A90382E93B1E500298F33 /* SectionHeader.swift in Sources */,
+				066A90392E93B1E500298F33 /* CGFloat+Spacing.swift in Sources */,
+				066A903A2E93B1E500298F33 /* StyledToggle.swift in Sources */,
+				066A903B2E93B1E500298F33 /* CustomListRow.swift in Sources */,
+				066A903C2E93B1E500298F33 /* CustomModal.swift in Sources */,
+				066A903D2E93B1E500298F33 /* Animation+Extensions.swift in Sources */,
+				066A903E2E93B1E500298F33 /* HeadingText.swift in Sources */,
+				066A903F2E93B1E500298F33 /* CardView.swift in Sources */,
+				066A90402E93B1E500298F33 /* ScreenContainer.swift in Sources */,
+				066A90412E93B1E500298F33 /* StyledTextField.swift in Sources */,
 				EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE /* AuthViewModel.swift in Sources */,
 				066A8FF92E8F875D00298F33 /* SessionRecoveryManager.swift in Sources */,
 				066A8FFA2E8F875D00298F33 /* SessionPersistenceManager.swift in Sources */,
@@ -195,6 +303,10 @@
 				1111111111111111111111111111111C /* DataModels.swift in Sources */,
 				1111111111111111111111111111111E /* ScanView.swift in Sources */,
 				2222222222222222222222222222222A /* TabButton.swift in Sources */,
+				866E190AA23249329559DAC9 /* DeepLinkCoordinator.swift in Sources */,
+				F467984207B44791A6A0AA0A /* BillEditFlow.swift in Sources */,
+				9E950CDD3986438987447084 /* BillEditConfirmation.swift in Sources */,
+				D95F752301234F49BA4D57BC /* BillEditSummary.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

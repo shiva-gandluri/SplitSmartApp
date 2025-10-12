@@ -147,99 +147,101 @@ struct ParticipantSearchView: View {
     }
     
     var body: some View {
-        VStack(spacing: 0) {
-            // Compact Search Bar
-            HStack(spacing: 12) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(.secondary)
-                    .font(.system(size: 16))
-                
-                TextField("Add Participants", text: $searchText)
-                    .font(.subheadline)
-                    .focused($isTextFieldFocused)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .onSubmit {
-                        if !searchText.isEmpty && filteredContacts.isEmpty && isValidEmailOrPhone {
-                            onNewContactSubmit(searchText)
-                        }
-                    }
-                
-                if !searchText.isEmpty {
-                    Button(action: {
-                        searchText = ""
-                    }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.secondary)
-                            .font(.system(size: 16))
+        // Compact Search Bar
+        HStack(spacing: 12) {
+            Image(systemName: "magnifyingglass")
+                .foregroundColor(.secondary)
+                .font(.system(size: 16))
+
+            TextField("Add Participants", text: $searchText)
+                .font(.system(size: 16, weight: .regular))
+                .focused($isTextFieldFocused)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .onSubmit {
+                    if !searchText.isEmpty && filteredContacts.isEmpty && isValidEmailOrPhone {
+                        onNewContactSubmit(searchText)
                     }
                 }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .background(Color(.systemGray6))
-            .cornerRadius(12)
-            
-            // Compact Dropdown Results
+
             if !searchText.isEmpty {
-                VStack(spacing: 0) {
-                    if !filteredContacts.isEmpty {
-                        // Show top 3 contacts in dropdown
-                        LazyVStack(spacing: 0) {
-                            ForEach(Array(filteredContacts.prefix(3))) { contact in
-                                ContactResultRow(contact: contact) {
-                                    onContactSelected(contact)
-                                }
-                                .background(Color(.systemBackground))
-                                
-                                if contact.id != filteredContacts.prefix(3).last?.id {
-                                    Divider()
-                                        .padding(.leading, 56) // Align with contact text
-                                }
-                            }
-                        }
-                        .background(Color(.systemBackground))
-                        .cornerRadius(8)
-                        .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
-                    } else if isValidEmailOrPhone {
-                        // New contact option in compact dropdown
-                        Button(action: {
-                            onNewContactSubmit(searchText)
-                        }) {
-                            HStack(spacing: 12) {
-                                Image(systemName: "person.badge.plus")
-                                    .foregroundColor(.blue)
-                                    .font(.system(size: 20))
-                                    .frame(width: 40, height: 40)
-                                    .background(Color.blue.opacity(0.1))
-                                    .cornerRadius(20)
-                                
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Add \(searchText)")
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                        .foregroundColor(.primary)
-                                    
-                                    Text("New contact")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                                
-                                Spacer()
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                            .background(Color(.systemBackground))
-                            .cornerRadius(8)
-                            .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
-                        }
-                        .buttonStyle(PlainButtonStyle())
-                    }
+                Button(action: {
+                    searchText = ""
+                }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.secondary)
+                        .font(.system(size: 16))
                 }
-                .padding(.top, 8)
-                .zIndex(1000) // Ensure dropdown appears on top
             }
         }
+        .padding(.spacingMD)
+        .background(Color.adaptiveDepth2)
+        .cornerRadius(.cornerRadiusMedium)
+        .overlay(
+            // Dropdown overlay that appears on top
+            VStack {
+                if !searchText.isEmpty {
+                    VStack(spacing: 0) {
+                        if !filteredContacts.isEmpty {
+                            // Show top 3 contacts in dropdown
+                            LazyVStack(spacing: 0) {
+                                ForEach(Array(filteredContacts.prefix(3))) { contact in
+                                    ContactResultRow(contact: contact) {
+                                        onContactSelected(contact)
+                                    }
+                                    .background(Color(.systemBackground))
+
+                                    if contact.id != filteredContacts.prefix(3).last?.id {
+                                        Divider()
+                                            .padding(.leading, 56) // Align with contact text
+                                    }
+                                }
+                            }
+                            .background(Color(.systemBackground))
+                            .cornerRadius(8)
+                            .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
+                        } else if isValidEmailOrPhone {
+                            // New contact option in compact dropdown
+                            Button(action: {
+                                onNewContactSubmit(searchText)
+                            }) {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "person.badge.plus")
+                                        .foregroundColor(.adaptiveAccentBlue)
+                                        .font(.system(size: 20))
+                                        .frame(width: 40, height: 40)
+                                        .background(Color.adaptiveAccentBlue.opacity(0.1))
+                                        .cornerRadius(20)
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Add \(searchText)")
+                                            .font(.subheadline)
+                                            .fontWeight(.medium)
+                                            .foregroundColor(.primary)
+
+                                        Text("New contact")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
+                                .background(Color(.systemBackground))
+                                .cornerRadius(8)
+                                .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                    }
+                    .padding(.horizontal, .paddingScreen)
+                    .padding(.top, 60) // Position below search bar
+                }
+            }
+            , alignment: .topLeading
+        )
+        .zIndex(1000) // Ensure entire component with overlay appears on top
         .onAppear {
             isTextFieldFocused = true
         }
@@ -256,12 +258,12 @@ struct ContactResultRow: View {
             HStack(spacing: 16) {
                 // Avatar
                 Circle()
-                    .fill(Color.blue.opacity(0.1))
+                    .fill(Color.adaptiveAccentBlue.opacity(0.1))
                     .frame(width: 44, height: 44)
                     .overlay(
                         Text(String(contact.displayName.prefix(1).uppercased()))
                             .font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(.blue)
+                            .foregroundColor(.adaptiveAccentBlue)
                     )
                 
                 // Contact Info
@@ -321,12 +323,12 @@ struct NewContactModal: View {
                     // Icon and description
                     VStack(spacing: 16) {
                         Circle()
-                            .fill(Color.blue.opacity(0.1))
+                            .fill(Color.adaptiveAccentBlue.opacity(0.1))
                             .frame(width: 80, height: 80)
                             .overlay(
                                 Image(systemName: "person.badge.plus")
                                     .font(.system(size: 32))
-                                    .foregroundColor(.blue)
+                                    .foregroundColor(.adaptiveAccentBlue)
                             )
                         
                         VStack(spacing: 8) {
@@ -353,7 +355,7 @@ struct NewContactModal: View {
                                 
                                 Text("*")
                                     .font(.subheadline)
-                                    .foregroundColor(.red)
+                                    .foregroundColor(.adaptiveAccentRed)
                             }
                             
                             TextField("Enter full name", text: $fullName)
@@ -414,12 +416,12 @@ struct NewContactModal: View {
                         if let errorMessage = validationError {
                             HStack {
                                 Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundColor(.red)
+                                    .foregroundColor(.adaptiveAccentRed)
                                     .font(.system(size: 14))
                                 
                                 Text(errorMessage)
                                     .font(.caption)
-                                    .foregroundColor(.red)
+                                    .foregroundColor(.adaptiveAccentRed)
                                 
                                 Spacer()
                             }
@@ -567,79 +569,83 @@ struct UIAssignScreen: View {
                     .fill(paidByParticipant.color)
                     .frame(width: 20, height: 20)
                 Text(paidByParticipant.name)
-                    .foregroundColor(.primary)
+                    .foregroundColor(.adaptiveTextPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             } else {
                 Text("Select who paid")
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.adaptiveTextSecondary)
             }
             Spacer()
             Image(systemName: "chevron.down")
-                .foregroundColor(.secondary)
-                .font(.caption)
+                .foregroundColor(.adaptiveTextSecondary)
+                .font(.captionText)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color(.systemGray6))
-        .cornerRadius(8)
+        .padding(14)
+        .background(Color.adaptiveDepth2)
+        .cornerRadius(.cornerRadiusMedium)
     }
 
     // Extract header section
     @ViewBuilder
     private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: .spacingXS) {
             Text("Assign Items")
-                .font(.title2)
-                .fontWeight(.bold)
+                .font(.h3Dynamic)
+                .foregroundColor(.adaptiveTextPrimary)
 
-            Text("Drag items to assign them to participants")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
+            Text("Add participants & Assign items")
+                .font(.smallDynamic)
+                .foregroundColor(.adaptiveTextSecondary)
+        }
+    }
 
-            // Who Paid Selection (Mandatory)
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Who paid this bill?")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                    Text("*")
-                        .foregroundColor(.red)
-                        .fontWeight(.bold)
-                }
+    private var whoPaidSection: some View {
+        HStack(spacing: 12) {
+            HStack(spacing: 4) {
+                Text("Who paid this bill?")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.adaptiveTextPrimary)
+                Text("*")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.adaptiveAccentRed)
+            }
 
-                Menu {
-                    ForEach(session.participants) { participant in
-                        Button(action: {
-                            session.paidByParticipantID = participant.id
-                        }) {
-                            HStack {
-                                Circle()
-                                    .fill(participant.color)
-                                    .frame(width: 16, height: 16)
-                                Text(participant.name)
-                                if session.paidByParticipantID == participant.id {
-                                    Spacer()
-                                    Image(systemName: "checkmark")
-                                        .foregroundColor(.blue)
-                                }
+            Spacer()
+
+            Menu {
+                ForEach(session.participants) { participant in
+                    Button(action: {
+                        session.paidByParticipantID = participant.id
+                    }) {
+                        HStack {
+                            Circle()
+                                .fill(participant.color)
+                                .frame(width: 14, height: 14)
+                            Text(participant.name)
+                            if session.paidByParticipantID == participant.id {
+                                Spacer()
+                                Image(systemName: "checkmark")
+                                    .foregroundColor(.adaptiveAccentBlue)
                             }
                         }
                     }
-                } label: {
-                    paidByMenuLabel
                 }
-                .onTapGesture {
-                    // Debug log when Menu is tapped
-                    for participant in session.participants {
-                    }
+            } label: {
+                paidByMenuLabel
+            }
+            .frame(width: 180)
+            .onTapGesture {
+                // Debug log when Menu is tapped
+                for participant in session.participants {
                 }
             }
-            .padding(.top, 12)
         }
     }
     
     var body: some View {
         ScrollView {
-            VStack(spacing: 24) {
+            VStack(spacing: 40) {
                 headerWithImagePreview
                 participantManagementSection
                 regexItemsSection
@@ -683,14 +689,14 @@ struct UIAssignScreen: View {
     // MARK: - View Components
 
     private var headerWithImagePreview: some View {
-        HStack {
+        HStack(alignment: .top) {
             headerSection
             Spacer()
             if let image = session.capturedReceiptImage {
                 receiptThumbnail(image: image)
             }
         }
-        .padding(.horizontal)
+        .padding(.horizontal, .paddingScreen)
     }
 
     private func receiptThumbnail(image: UIImage) -> some View {
@@ -702,14 +708,14 @@ struct UIAssignScreen: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.blue, lineWidth: 2)
+                        .stroke(Color.adaptiveAccentBlue, lineWidth: 2)
                 )
         }
         .buttonStyle(PlainButtonStyle())
     }
 
     private var participantManagementSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
             ParticipantSearchView(
                 searchText: $newParticipantName,
                 transactionContacts: contactsManager.transactionContacts,
@@ -717,23 +723,25 @@ struct UIAssignScreen: View {
                 onNewContactSubmit: handleNewContactSubmit,
                 onCancel: {}
             )
-            .padding(.horizontal)
+            .padding(.horizontal, .paddingScreen)
 
             participantChips
         }
     }
 
     private var participantChips: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: 12) {
-            ForEach(session.participants) { participant in
-                ParticipantChip(
-                    participant: participant,
-                    canDelete: participant.name != "You",
-                    onDelete: { session.removeParticipant(participant) }
-                )
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                ForEach(session.participants) { participant in
+                    ParticipantChip(
+                        participant: participant,
+                        canDelete: participant.name != "You",
+                        onDelete: { session.removeParticipant(participant) }
+                    )
+                }
             }
+            .padding(.horizontal, .paddingScreen)
         }
-        .padding(.horizontal)
     }
 
     private var regexItemsSection: some View {
@@ -744,15 +752,11 @@ struct UIAssignScreen: View {
     }
 
     private var regexSectionHeader: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Receipt Items (based on Regex)")
-                .font(.body)
-                .fontWeight(.medium)
-            Text("Mathematical approach using regex patterns")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-        .padding(.horizontal)
+        Text("Receipt Items (based on Regex)")
+            .font(.system(size: 20, weight: .semibold))
+            .foregroundColor(.adaptiveTextPrimary)
+            .padding(.horizontal, .paddingScreen)
+            .padding(.bottom, .spacingMD)
     }
 
     private var regexItemsList: some View {
@@ -773,15 +777,11 @@ struct UIAssignScreen: View {
     }
 
     private var llmSectionHeader: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Receipt Items (based on Apple Intelligence)")
-                .font(.body)
-                .fontWeight(.medium)
-            Text("AI-powered approach using Apple's Natural Language framework")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-        .padding(.horizontal)
+        Text("Receipt Items (based on Apple Intelligence)")
+            .font(.system(size: 20, weight: .semibold))
+            .foregroundColor(.adaptiveTextPrimary)
+            .padding(.horizontal, .paddingScreen)
+            .padding(.bottom, .spacingMD)
     }
 
     private var llmItemsList: some View {
@@ -795,15 +795,15 @@ struct UIAssignScreen: View {
     }
 
     private func processingIndicator(message: String) -> some View {
-        VStack(spacing: 12) {
+        VStack(spacing: .spacingMD) {
             ProgressView()
                 .scaleEffect(1.2)
             Text(message)
-                .font(.body)
-                .foregroundColor(.secondary)
+                .font(.bodyDynamic)
+                .foregroundColor(.adaptiveTextSecondary)
         }
-        .padding(.vertical, 20)
-        .padding(.horizontal)
+        .padding(.vertical, .spacingLG)
+        .padding(.horizontal, .paddingScreen)
     }
 
     private var itemAssignmentList: some View {
@@ -818,7 +818,7 @@ struct UIAssignScreen: View {
                     participants: session.participants,
                     onItemUpdate: session.updateItemAssignments
                 )
-                .padding(.horizontal)
+                .padding(.horizontal, .paddingScreen)
             }
         }
     }
@@ -826,20 +826,26 @@ struct UIAssignScreen: View {
     private var assignmentSummarySection: some View {
         Group {
             if !session.assignedItems.isEmpty {
-                VStack(spacing: 8) {
-                    summaryDetails
-                    continueButtonSection
+                VStack(spacing: 24) {
+                    whoPaidSection
+                        .padding(.horizontal, .paddingScreen)
+
+                    VStack(spacing: 8) {
+                        summaryDetails
+                        continueButtonSection
+                    }
                 }
             }
         }
     }
 
     private var summaryDetails: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: .spacingMD) {
             Text("Assignment Summary")
-                .font(.body)
+                .font(.bodyDynamic)
                 .fontWeight(.medium)
-                .padding(.horizontal)
+                .foregroundColor(.adaptiveTextPrimary)
+                .padding(.horizontal, .paddingScreen)
 
             summaryRows
         }
@@ -852,7 +858,7 @@ struct UIAssignScreen: View {
             total + (item.assignedToParticipants.isEmpty ? 0 : item.price)
         }
 
-        return VStack(spacing: 8) {
+        return VStack(spacing: .spacingSM) {
             summaryRow(label: "Receipt Total", value: String(format: "$%.2f", session.confirmedTotal), valueColor: nil)
             summaryRow(
                 label: "Assigned Total",
@@ -865,21 +871,22 @@ struct UIAssignScreen: View {
                 valueColor: assignedItems == totalItems ? .green : .orange
             )
         }
-        .padding()
-        .background(Color.gray.opacity(0.1))
-        .cornerRadius(12)
-        .padding(.horizontal)
+        .padding(.paddingCard)
+        .background(Color.adaptiveDepth1)
+        .cornerRadius(.cornerRadiusMedium)
+        .padding(.horizontal, .paddingScreen)
     }
 
     private func summaryRow(label: String, value: String, valueColor: Color?) -> some View {
         HStack {
             Text(label)
-                .font(.body)
+                .font(.bodyDynamic)
+                .foregroundColor(.adaptiveTextPrimary)
             Spacer()
             Text(value)
-                .font(.body)
+                .font(.bodyDynamic)
                 .fontWeight(.bold)
-                .foregroundColor(valueColor)
+                .foregroundColor(valueColor ?? .adaptiveTextPrimary)
         }
     }
 
@@ -906,16 +913,17 @@ struct UIAssignScreen: View {
         Button(action: onContinue) {
             HStack {
                 Text("Continue to Summary")
+                    .font(.buttonText)
                 Image(systemName: "arrow.right")
             }
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
-            .padding()
-            .background(enabled ? Color.blue : Color.gray)
-            .cornerRadius(12)
+            .padding(.spacingMD)
+            .background(enabled ? Color.adaptiveAccentBlue : Color.gray)
+            .cornerRadius(.cornerRadiusMedium)
         }
         .disabled(!enabled)
-        .padding(.horizontal)
+        .padding(.horizontal, .paddingScreen)
     }
 
     private func validationMessages(whoPaidSelected: Bool, allItemsAssigned: Bool, totalComplete: Bool) -> some View {
@@ -935,10 +943,10 @@ struct UIAssignScreen: View {
             Image(systemName: icon)
                 .foregroundColor(color)
             Text(text)
-                .font(.caption)
+                .font(.captionDynamic)
                 .foregroundColor(color)
         }
-        .padding(.horizontal)
+        .padding(.horizontal, .paddingScreen)
     }
 
     @ToolbarContentBuilder
@@ -1387,42 +1395,37 @@ struct ParticipantChip: View {
     let participant: UIParticipant
     let canDelete: Bool
     let onDelete: () -> Void
-    
+
     @State private var showDeleteConfirmation = false
-    
+
     var body: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(participant.color)
-                .frame(width: 32, height: 32)
-                .overlay(
-                    Image(systemName: "person.fill")
-                        .foregroundColor(.white)
-                        .font(.caption)
-                )
-            
-            Text(participant.name)
-                .font(.body)
-                .fontWeight(.medium)
-                .lineLimit(1)
-            
-            Spacer()
-            
-            if canDelete {
-                Button(action: {
-                    showDeleteConfirmation = true
-                }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.red.opacity(0.8))
-                        .font(.title3)
+        Button(action: {}) {
+            HStack(spacing: 6) {
+                Text(participant.name)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .lineLimit(1)
+
+                if canDelete {
+                    Button(action: {
+                        showDeleteConfirmation = true
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.caption2)
+                            .foregroundColor(.white)
+                    }
+                    .buttonStyle(PlainButtonStyle())
                 }
             }
+            .padding(.horizontal, canDelete ? 10 : 14)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 18)
+                    .fill(participant.color)
+            )
+            .foregroundColor(.white)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color(.systemBackground))
-        .cornerRadius(20)
-        .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
+        .buttonStyle(PlainButtonStyle())
         .alert("Remove Participant", isPresented: $showDeleteConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Remove", role: .destructive) {
@@ -1565,11 +1568,11 @@ struct UIItemAssignCard: View {
                 .padding(.bottom)
             }
         }
-        .background(assignedParticipant != nil ? Color.gray.opacity(0.05) : Color(.systemBackground))
+        .background(assignedParticipant != nil ? Color.adaptiveDepth1.opacity(0.5) : Color.adaptiveDepth0)
         .cornerRadius(12)
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(assignedParticipant != nil ? Color.gray.opacity(0.3) : Color.gray.opacity(0.2), lineWidth: 1)
+                .stroke(assignedParticipant != nil ? Color.adaptiveTextTertiary.opacity(0.3) : Color.adaptiveTextTertiary.opacity(0.2), lineWidth: 1)
         )
     }
 }
@@ -1651,8 +1654,8 @@ struct RegexItemCard: View {
                     .fontWeight(.bold)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Color.orange.opacity(0.2))
-                    .foregroundColor(.orange)
+                    .background(Color.adaptiveAccentOrange.opacity(0.2))
+                    .foregroundColor(.adaptiveAccentOrange)
                     .cornerRadius(4)
             }
             .padding()
@@ -1759,8 +1762,8 @@ struct EditableRegexItemCard: View {
                     .fontWeight(.bold)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Color.orange.opacity(0.2))
-                    .foregroundColor(.orange)
+                    .background(Color.adaptiveAccentOrange.opacity(0.2))
+                    .foregroundColor(.adaptiveAccentOrange)
                     .cornerRadius(4)
             }
             .padding()
@@ -1851,8 +1854,8 @@ struct LLMItemCard: View {
                     .fontWeight(.bold)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Color.blue.opacity(0.2))
-                    .foregroundColor(.blue)
+                    .background(Color.adaptiveAccentBlue.opacity(0.2))
+                    .foregroundColor(.adaptiveAccentBlue)
                     .cornerRadius(4)
             }
             .padding()
@@ -1897,54 +1900,60 @@ struct UISummaryScreen: View {
                 .overlay(
                     Image(systemName: "person.fill")
                         .foregroundColor(.white)
-                        .font(.caption)
+                        .font(.captionText)
                 )
             Text("Bill paid by \(paidByParticipant.name)")
                 .fontWeight(.medium)
-                .foregroundColor(.blue)
+                .foregroundColor(.adaptiveAccentBlue)
         } else {
             Text("Bill paid by Unknown")
                 .fontWeight(.medium)
-                .foregroundColor(.red)
+                .foregroundColor(.adaptiveAccentRed)
         }
     }
 
     // Extract bill name editing section
     @ViewBuilder
     private var billNameSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: .spacingMD) {
             HStack {
                 Text("Bill Name")
-                    .font(.headline)
+                    .font(.h4Dynamic)
                     .fontWeight(.semibold)
+                    .foregroundColor(.adaptiveTextPrimary)
                 Spacer()
                 Text("Optional")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                    .font(.captionDynamic)
+                    .foregroundColor(.adaptiveTextSecondary)
             }
 
             TextField("Enter bill name (e.g., \"Dinner at Olive Garden\")", text: Binding(
                 get: { session.billName },
                 set: { session.billName = $0 }
             ))
-            .textFieldStyle(RoundedBorderTextFieldStyle())
+            .font(.bodyText)
+            .foregroundColor(.adaptiveTextPrimary)
+            .padding(.spacingMD)
+            .background(Color.adaptiveDepth1)
+            .cornerRadius(.cornerRadiusSmall)
             .autocorrectionDisabled()
 
             Text("Leave empty to use default: \"\(defaultBillName)\"")
-                .font(.caption)
-                .foregroundColor(.secondary)
+                .font(.captionDynamic)
+                .foregroundColor(.adaptiveTextSecondary)
         }
-        .padding(.horizontal)
+        .padding(.horizontal, .paddingScreen)
     }
 
     // Extract complex "Who Owes Whom" section
     @ViewBuilder
     private var whoOwesWhomSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: .spacingMD) {
             Text("Who Owes Whom")
-                .font(.body)
+                .font(.bodyDynamic)
                 .fontWeight(.medium)
-                .padding(.horizontal)
+                .foregroundColor(.adaptiveTextPrimary)
+                .padding(.horizontal, .paddingScreen)
 
             if let paidByID = session.paidByParticipantID,
                let paidByParticipant = session.participants.first(where: { $0.id == paidByID }) {
@@ -1993,55 +2002,57 @@ struct UISummaryScreen: View {
                             VStack(alignment: .trailing, spacing: 2) {
                                 Text("$\(amountOwed, specifier: "%.2f")")
                                     .fontWeight(.bold)
-                                    .foregroundColor(.red)
+                                    .foregroundColor(.adaptiveAccentRed)
                                 Text("owes")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
                         }
-                        .padding()
-                        .background(Color(.systemBackground))
-                        .cornerRadius(12)
+                        .padding(.paddingCard)
+                        .background(Color.adaptiveDepth1)
+                        .cornerRadius(.cornerRadiusMedium)
                         .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.red.opacity(0.2), lineWidth: 1)
+                            RoundedRectangle(cornerRadius: .cornerRadiusMedium)
+                                .stroke(Color.adaptiveAccentRed.opacity(0.2), lineWidth: 1)
                         )
-                        .padding(.horizontal)
+                        .padding(.horizontal, .paddingScreen)
                     }
                 }
 
                 // Show "No debts" message if everyone paid their share
                 if session.individualDebts.allSatisfy({ $0.value <= 0.01 }) {
-                    VStack(spacing: 8) {
+                    VStack(spacing: .spacingSM) {
                         Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
-                            .font(.title2)
+                            .foregroundColor(.adaptiveAccentGreen)
+                            .font(.h3)
                         Text("Everyone paid their share!")
+                            .font(.bodyDynamic)
                             .fontWeight(.medium)
-                            .foregroundColor(.green)
+                            .foregroundColor(.adaptiveAccentGreen)
                     }
                     .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.green.opacity(0.1))
-                    .cornerRadius(12)
-                    .padding(.horizontal)
+                    .padding(.paddingCard)
+                    .background(Color.adaptiveAccentGreen.opacity(0.1))
+                    .cornerRadius(.cornerRadiusMedium)
+                    .padding(.horizontal, .paddingScreen)
                 }
             } else {
                 // Error state - no payer selected
-                VStack(spacing: 8) {
+                VStack(spacing: .spacingSM) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.red)
-                        .font(.title2)
+                        .foregroundColor(.adaptiveAccentRed)
+                        .font(.h3)
                     Text("Error: No payer selected")
+                        .font(.bodyDynamic)
                         .fontWeight(.medium)
-                        .foregroundColor(.red)
+                        .foregroundColor(.adaptiveAccentRed)
                 }
                 .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color.red.opacity(0.1))
-                .cornerRadius(12)
-                .padding(.horizontal)
+                .padding(.paddingCard)
+                .background(Color.adaptiveAccentRed.opacity(0.1))
+                .cornerRadius(.cornerRadiusMedium)
+                .padding(.horizontal, .paddingScreen)
             }
         }
     }
@@ -2049,11 +2060,12 @@ struct UISummaryScreen: View {
     // Extract detailed breakdown section to reduce nesting
     @ViewBuilder
     private var detailedBreakdownSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: .spacingMD) {
             Text("Detailed breakdown")
-                .font(.body)
+                .font(.bodyDynamic)
                 .fontWeight(.medium)
-                .padding(.horizontal)
+                .foregroundColor(.adaptiveTextPrimary)
+                .padding(.horizontal, .paddingScreen)
 
             ForEach(session.breakdownSummaries) { person in
                 personBreakdownCard(for: person)
@@ -2076,12 +2088,12 @@ struct UISummaryScreen: View {
             // Subtotal
             personSubtotalRow(for: person)
         }
-        .cornerRadius(12)
+        .cornerRadius(.cornerRadiusMedium)
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+            RoundedRectangle(cornerRadius: .cornerRadiusMedium)
+                .stroke(Color.adaptiveTextPrimary.opacity(0.1), lineWidth: 1)
         )
-        .padding(.horizontal)
+        .padding(.horizontal, .paddingScreen)
     }
 
     @ViewBuilder
@@ -2094,37 +2106,43 @@ struct UISummaryScreen: View {
                     Group {
                         if person.name == "Shared" {
                             Text("S")
-                                .font(.caption)
+                                .font(.captionText)
                                 .fontWeight(.bold)
                                 .foregroundColor(.white)
                         } else {
                             Image(systemName: "person.fill")
                                 .foregroundColor(.white)
-                                .font(.caption2)
+                                .font(.captionText)
                         }
                     }
                 )
             Text(person.name)
+                .font(.bodyDynamic)
                 .fontWeight(.medium)
+                .foregroundColor(.adaptiveTextPrimary)
             Spacer()
         }
-        .padding()
-        .background(Color.gray.opacity(0.05))
+        .padding(.paddingCard)
+        .background(Color.adaptiveDepth1)
     }
 
     @ViewBuilder
     private func itemRow(name: String, price: Double) -> some View {
         HStack {
             Text(name)
+                .font(.bodyDynamic)
+                .foregroundColor(.adaptiveTextPrimary)
             Spacer()
             Text("$\(price, specifier: "%.2f")")
+                .font(.bodyDynamic)
                 .fontWeight(.medium)
+                .foregroundColor(.adaptiveTextPrimary)
         }
-        .padding()
+        .padding(.paddingCard)
         .overlay(
             Rectangle()
                 .frame(height: 1)
-                .foregroundColor(.gray.opacity(0.2)),
+                .foregroundColor(.adaptiveTextPrimary.opacity(0.1)),
             alignment: .bottom
         )
     }
@@ -2133,62 +2151,71 @@ struct UISummaryScreen: View {
     private func personSubtotalRow(for person: UIBreakdown) -> some View {
         HStack {
             Text("Subtotal")
+                .font(.bodyDynamic)
                 .fontWeight(.medium)
+                .foregroundColor(.adaptiveTextPrimary)
             Spacer()
             Text("$\(person.items.reduce(0) { $0.currencyAdd($1.price) }, specifier: "%.2f")")
+                .font(.bodyDynamic)
                 .fontWeight(.medium)
+                .foregroundColor(.adaptiveTextPrimary)
         }
-        .padding()
-        .background(Color.gray.opacity(0.05))
+        .padding(.paddingCard)
+        .background(Color.adaptiveDepth1)
     }
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 24) {
-                VStack(alignment: .leading, spacing: 8) {
+            VStack(spacing: .spacingLG) {
+                VStack(alignment: .leading, spacing: .spacingSM) {
                     Text("Summary")
-                        .font(.title2)
-                        .fontWeight(.bold)
+                        .font(.h3Dynamic)
+                        .foregroundColor(.adaptiveTextPrimary)
                     Text("Receipt • \(Date().formatted(date: .abbreviated, time: .omitted))")
-                        .foregroundColor(.secondary)
+                        .font(.smallDynamic)
+                        .foregroundColor(.adaptiveTextSecondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal)
+                .padding(.horizontal, .paddingScreen)
                 
                 // Bill name editing section
                 billNameSection
                 
                 // Bill paid by section
-                VStack(spacing: 12) {
+                VStack(spacing: .spacingMD) {
                     HStack {
                         paidBySection
                         Spacer()
                     }
-                    
+
                     HStack {
                         Text("Total amount:")
+                            .font(.bodyDynamic)
                         Spacer()
                         Text("$\(session.totalAmount, specifier: "%.2f")")
+                            .font(.bodyDynamic)
                             .fontWeight(.bold)
                     }
-                    .foregroundColor(.blue)
-                    
+                    .foregroundColor(.adaptiveAccentBlue)
+
                     HStack {
                         Text("Date & Time:")
+                            .font(.bodyDynamic)
                         Spacer()
                         Text("\(Date().formatted(date: .abbreviated, time: .shortened))")
+                            .font(.bodyDynamic)
                             .fontWeight(.medium)
                     }
-                    .foregroundColor(.blue)
+                    .foregroundColor(.adaptiveAccentBlue)
                 }
-                .padding()
-                .background(Color.blue.opacity(0.1))
-                .cornerRadius(12)
+                .padding(.paddingCard)
+                .background(Color.adaptiveAccentBlue.opacity(0.1))
+                .cornerRadius(.cornerRadiusMedium)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: .cornerRadiusMedium)
+                        .stroke(Color.adaptiveAccentBlue.opacity(0.3), lineWidth: 1)
                 )
-                .padding(.horizontal)
+                .padding(.horizontal, .paddingScreen)
                 
                 // Who Owes Whom section - Individual debts (not net amounts)
                 whoOwesWhomSection
@@ -2211,27 +2238,28 @@ struct UISummaryScreen: View {
                             Image(systemName: "plus.circle.fill")
                         }
                         Text(isCreatingBill ? "Creating Bill..." : "Add Bill")
+                            .font(.buttonText)
                     }
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(isCreatingBill ? Color.gray : Color.blue)
-                    .cornerRadius(12)
+                    .padding(.spacingMD)
+                    .background(isCreatingBill ? Color.gray : Color.adaptiveAccentBlue)
+                    .cornerRadius(.cornerRadiusMedium)
                 }
                 .disabled(isCreatingBill || !session.isReadyForBillCreation)
-                .padding(.horizontal)
+                .padding(.horizontal, .paddingScreen)
                 
                 // Show error if bill creation fails
                 if let error = billCreationError {
                     HStack {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(.red)
+                            .foregroundColor(.adaptiveAccentRed)
                         Text(error)
-                            .font(.caption)
-                            .foregroundColor(.red)
+                            .font(.captionDynamic)
+                            .foregroundColor(.adaptiveAccentRed)
                     }
-                    .padding(.horizontal)
-                    .padding(.top, 8)
+                    .padding(.horizontal, .paddingScreen)
+                    .padding(.top, .spacingSM)
                 }
             }
             .padding(.top)
@@ -2318,6 +2346,9 @@ struct UIProfileScreen: View {
     var body: some View {
         NavigationView {
             ZStack(alignment: .bottom) {
+                // Background color
+                Color.adaptiveDepth0.ignoresSafeArea()
+
                 ScrollView {
                     VStack(spacing: 24) {
                         headerSection
@@ -2357,27 +2388,28 @@ struct UIProfileScreen: View {
 
     private var headerSection: some View {
         Text("Profile")
-            .font(.title2)
-            .fontWeight(.bold)
+            .font(.h3Dynamic)
+            .foregroundColor(.adaptiveTextPrimary)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal)
+            .padding(.horizontal, .paddingScreen)
     }
 
     private var userInfoSection: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: .spacingMD) {
             userAvatar
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: .spacingXS) {
                 Text(authViewModel.user?.displayName ?? "User")
-                    .font(.title3)
-                    .fontWeight(.bold)
+                    .font(.h4Dynamic)
+                    .foregroundColor(.adaptiveTextPrimary)
                 Text(authViewModel.user?.email ?? "No email")
-                    .foregroundColor(.secondary)
+                    .font(.bodyDynamic)
+                    .foregroundColor(.adaptiveTextSecondary)
             }
 
             Spacer()
         }
-        .padding(.horizontal)
+        .padding(.horizontal, .paddingScreen)
     }
 
     private var userAvatar: some View {
@@ -2387,11 +2419,11 @@ struct UIProfileScreen: View {
                 .aspectRatio(contentMode: .fill)
         } placeholder: {
             Circle()
-                .fill(Color.gray.opacity(0.3))
+                .fill(Color.adaptiveDepth2)
                 .overlay(
                     Image(systemName: "person.fill")
-                        .font(.title2)
-                        .foregroundColor(.white)
+                        .font(.h3)
+                        .foregroundColor(.adaptiveTextSecondary)
                 )
         }
         .frame(width: 64, height: 64)
@@ -2399,28 +2431,29 @@ struct UIProfileScreen: View {
     }
 
     private var menuItemsSection: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: .spacingSM) {
             NavigationLink(destination: NotificationsSettingsView().environmentObject(authViewModel)) {
                 HStack {
-                    HStack(spacing: 12) {
+                    HStack(spacing: .spacingMD) {
                         Image(systemName: "bell")
                             .font(.system(size: 18))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.adaptiveTextSecondary)
                             .frame(width: 24)
 
                         Text("Notifications")
-                            .foregroundColor(.primary)
+                            .font(.bodyDynamic)
+                            .foregroundColor(.adaptiveTextPrimary)
                     }
 
                     Spacer()
 
                     Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(.captionText)
+                        .foregroundColor(.adaptiveTextSecondary)
                 }
-                .padding()
-                .background(Color(.systemBackground))
-                .cornerRadius(12)
+                .padding(.paddingCard)
+                .background(Color.adaptiveDepth1)
+                .cornerRadius(.cornerRadiusMedium)
                 .shadow(color: .black.opacity(0.05), radius: 1, x: 0, y: 1)
             }
 
@@ -2430,29 +2463,30 @@ struct UIProfileScreen: View {
             )
             .environmentObject(authViewModel)) {
                 HStack {
-                    HStack(spacing: 12) {
+                    HStack(spacing: .spacingMD) {
                         Image(systemName: "questionmark.circle")
                             .font(.system(size: 18))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.adaptiveTextSecondary)
                             .frame(width: 24)
 
                         Text("Help & Support")
-                            .foregroundColor(.primary)
+                            .font(.bodyDynamic)
+                            .foregroundColor(.adaptiveTextPrimary)
                     }
 
                     Spacer()
 
                     Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(.captionText)
+                        .foregroundColor(.adaptiveTextSecondary)
                 }
-                .padding()
-                .background(Color(.systemBackground))
-                .cornerRadius(12)
+                .padding(.paddingCard)
+                .background(Color.adaptiveDepth1)
+                .cornerRadius(.cornerRadiusMedium)
                 .shadow(color: .black.opacity(0.05), radius: 1, x: 0, y: 1)
             }
         }
-        .padding(.horizontal)
+        .padding(.horizontal, .paddingScreen)
     }
 
 
@@ -2467,7 +2501,7 @@ struct UIProfileScreen: View {
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
-            .background(Color.gray.opacity(0.8))
+            .background(Color.adaptiveTextTertiary.opacity(0.8))
             .cornerRadius(12)
         }
         .padding(.horizontal)
@@ -2476,10 +2510,8 @@ struct UIProfileScreen: View {
     private var appInfoSection: some View {
         Text("SplitSmart v1.0.0")
             .font(.caption)
-            .foregroundColor(.secondary)
-            .padding(.bottom, 100)
-            .frame(maxWidth: .infinity)
-            .background(Color(.systemBackground))
+            .foregroundColor(.adaptiveTextSecondary)
+            .padding(.bottom, 16)
     }
 
     // MARK: - Helper Methods
@@ -2524,7 +2556,7 @@ struct UIProfileMenuItem: View {
                     .foregroundColor(.secondary)
             }
             .padding()
-            .background(Color(.systemBackground))
+            .background(Color.adaptiveDepth1)
             .cornerRadius(12)
             .shadow(color: .black.opacity(0.05), radius: 1, x: 0, y: 1)
         }
@@ -2548,11 +2580,11 @@ struct HelpSupportView: View {
                         HStack(spacing: 12) {
                             Image(systemName: "trash")
                                 .font(.system(size: 18))
-                                .foregroundColor(.red)
+                                .foregroundColor(.adaptiveAccentRed)
                                 .frame(width: 24)
 
                             Text("Delete Account")
-                                .foregroundColor(.red)
+                                .foregroundColor(.adaptiveAccentRed)
                         }
 
                         Spacer()
@@ -2635,9 +2667,9 @@ struct ParticipantAssignmentRow: View {
                     HStack(spacing: 6) {
                         Text("Everyone")
                             .font(.caption)
-                            .fontWeight(.medium)
+                            .fontWeight(.semibold)
                             .lineLimit(1)
-                        
+
                         if everyoneSelected {
                             Image(systemName: "checkmark.circle.fill")
                                 .font(.caption2)
@@ -2721,9 +2753,9 @@ struct ParticipantButton: View {
             HStack(spacing: 6) { // Increased spacing from 4 to 6
                 Text(participant.name)
                     .font(.caption)
-                    .fontWeight(.medium)
+                    .fontWeight(.semibold)
                     .lineLimit(1)
-                
+
                 if isAssigned && !isDisabled {
                     Button(action: onRemove) {
                         Image(systemName: "xmark.circle.fill")
@@ -2763,45 +2795,71 @@ struct ItemRowWithParticipants: View {
     @Binding var item: UIItem
     let participants: [UIParticipant]
     let onItemUpdate: (UIItem) -> Void
-    
+
     @State private var showingSuccessAnimation = false
     @State private var isEveryoneSelected = false
+    @State private var priceInput: String = ""
+    @FocusState private var isPriceFocused: Bool
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Item details
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 16) {
+            // Item name with orange dot (label-left, value-right layout)
+            HStack(spacing: 12) {
+                HStack(spacing: 6) {
                     Text(item.name)
-                        .font(.body)
-                        .fontWeight(.medium)
-                    
-                    HStack(spacing: 8) {
-                        Text("$\(item.price, specifier: "%.2f")")
-                            .font(.body)
-                            .fontWeight(.bold)
-                            .foregroundColor(.primary)
-                        
-                        if !item.assignedToParticipants.isEmpty {
-                            Text("($\(item.costPerParticipant, specifier: "%.2f") each)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.adaptiveTextPrimary)
+
+                    // Assignment status indicator next to label
+                    Circle()
+                        .fill(item.assignedToParticipants.isEmpty ? Color.orange : Color.adaptiveAccentGreen)
+                        .frame(width: 8, height: 8)
+                        .overlay(
+                            Circle()
+                                .fill(showingSuccessAnimation ? Color.adaptiveAccentGreen.opacity(0.3) : Color.clear)
+                                .scaleEffect(showingSuccessAnimation ? 2.0 : 1.0)
+                                .animation(.easeOut(duration: 0.4), value: showingSuccessAnimation)
+                        )
                 }
-                
+
                 Spacer()
-                
-                // Assignment status indicator
-                Circle()
-                    .fill(item.assignedToParticipants.isEmpty ? Color.orange : Color.green)
-                    .frame(width: 8, height: 8)
-                    .overlay(
-                        Circle()
-                            .fill(showingSuccessAnimation ? Color.green.opacity(0.3) : Color.clear)
-                            .scaleEffect(showingSuccessAnimation ? 2.0 : 1.0)
-                            .animation(.easeOut(duration: 0.4), value: showingSuccessAnimation)
-                    )
+
+                // Price input field on the right
+                HStack(spacing: 4) {
+                    Text("$")
+                        .font(.system(size: 16, weight: .regular))
+                    TextField("0.00", text: $priceInput)
+                        .font(.system(size: 16, weight: .regular))
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 140)
+                        .focused($isPriceFocused)
+                        .onChange(of: priceInput) { newValue in
+                            updatePriceFromInput(newValue)
+                        }
+                }
+                .padding(.spacingMD)
+                .background(
+                    RoundedRectangle(cornerRadius: .cornerRadiusMedium)
+                        .fill(Color.adaptiveDepth2)
+                        .shadow(color: isPriceFocused ? Color.adaptiveAccentBlue.opacity(0.3) : Color.black.opacity(0.05),
+                                radius: isPriceFocused ? 8 : 4, x: 0, y: 2)
+                )
+            }
+
+            // Cost per participant (if assigned)
+            if !item.assignedToParticipants.isEmpty {
+                HStack {
+                    Text("Per person")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.adaptiveTextSecondary)
+
+                    Spacer()
+
+                    Text("$\(item.costPerParticipant, specifier: "%.2f")")
+                        .font(.system(size: 14, weight: .regular))
+                        .foregroundColor(.adaptiveTextSecondary)
+                }
             }
             
             // Horizontal line separator
@@ -2811,11 +2869,11 @@ struct ItemRowWithParticipants: View {
             
             // Participant assignment row
             if !participants.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 0) {
                     Text("Assign to")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    
+
                     // Combined assignment row with Everyone button and participants
                     ParticipantAssignmentRow(
                         item: item,
@@ -2834,12 +2892,13 @@ struct ItemRowWithParticipants: View {
                 }
             }
         }
-        .padding(16)
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
+        .padding(.spacingMD)
+        .background(Color.adaptiveDepth0)
+        .cornerRadius(.cornerRadiusMedium)
+        .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
         .onAppear {
             updateEveryoneButtonState()
+            initializePriceInput()
         }
         .onChange(of: item.assignedToParticipants) {
             updateEveryoneButtonState()
@@ -2889,7 +2948,33 @@ struct ItemRowWithParticipants: View {
     
     private func updateEveryoneButtonState() {
         let allParticipantIds = Set(participants.map { $0.id })
-        isEveryoneSelected = !item.assignedToParticipants.isEmpty && 
+        isEveryoneSelected = !item.assignedToParticipants.isEmpty &&
                                  item.assignedToParticipants == allParticipantIds
+    }
+
+    private func initializePriceInput() {
+        priceInput = String(format: "%.2f", item.price)
+    }
+
+    private func updatePriceFromInput(_ input: String) {
+        // Remove any non-numeric characters except decimal point
+        let filtered = input.filter { "0123456789.".contains($0) }
+
+        // Ensure only one decimal point
+        let components = filtered.components(separatedBy: ".")
+        let cleanedInput: String
+        if components.count > 2 {
+            cleanedInput = components[0] + "." + components[1...].joined()
+        } else {
+            cleanedInput = filtered
+        }
+
+        priceInput = cleanedInput
+
+        // Update item price
+        if let newPrice = Double(cleanedInput), newPrice >= 0 {
+            item.price = newPrice
+            onItemUpdate(item)
+        }
     }
 }

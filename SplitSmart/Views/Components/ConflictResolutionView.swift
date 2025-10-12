@@ -264,11 +264,11 @@ struct ResolutionOptionButton: View {
             .padding()
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isSelected ? Color.blue.opacity(0.1) : Color(.systemGray6))
+                    .fill(isSelected ? Color.adaptiveAccentBlue.opacity(0.1) : Color(.systemGray6))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 1)
+                    .stroke(isSelected ? Color.adaptiveAccentBlue : Color.clear, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -305,7 +305,7 @@ struct BillComparisonView: View {
                     Text("Your Version")
                         .font(.subheadline)
                         .fontWeight(.semibold)
-                        .foregroundColor(.blue)
+                        .foregroundColor(.adaptiveAccentBlue)
                     
                     BillSummaryCard(bill: localBill, conflictingFields: conflictingFields, isLocal: true)
                 }
@@ -314,7 +314,7 @@ struct BillComparisonView: View {
                     Text("Server Version")
                         .font(.subheadline)
                         .fontWeight(.semibold)
-                        .foregroundColor(.green)
+                        .foregroundColor(.adaptiveAccentGreen)
                     
                     BillSummaryCard(bill: serverBill, conflictingFields: conflictingFields, isLocal: false)
                 }
@@ -364,11 +364,11 @@ struct BillSummaryCard: View {
         .padding()
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(isLocal ? Color.blue.opacity(0.05) : Color.green.opacity(0.05))
+                .fill(isLocal ? Color.adaptiveAccentBlue.opacity(0.05) : Color.adaptiveAccentGreen.opacity(0.05))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(isLocal ? Color.blue.opacity(0.3) : Color.green.opacity(0.3), lineWidth: 1)
+                .stroke(isLocal ? Color.adaptiveAccentBlue.opacity(0.3) : Color.adaptiveAccentGreen.opacity(0.3), lineWidth: 1)
         )
     }
 }

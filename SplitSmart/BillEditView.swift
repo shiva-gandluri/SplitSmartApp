@@ -122,7 +122,15 @@ struct BillEditView: View {
                 .fontWeight(.semibold)
             
             TextField("Enter bill name", text: $editSession.billName)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
+                .font(.bodyText)
+                .foregroundColor(.adaptiveTextPrimary)
+                .padding(.spacingMD)
+                .background(Color.adaptiveDepth1)
+                .cornerRadius(.cornerRadiusSmall)
+                .overlay(
+                    RoundedRectangle(cornerRadius: .cornerRadiusSmall)
+                        .stroke(Color.adaptiveTextPrimary.opacity(0.2), lineWidth: 1)
+                )
                 .autocorrectionDisabled()
         }
         .padding(.horizontal)
@@ -137,7 +145,7 @@ struct BillEditView: View {
                 Text("$\(totalAmount, specifier: "%.2f")")
                     .font(.title2)
                     .fontWeight(.bold)
-                    .foregroundColor(.blue)
+                    .foregroundColor(.adaptiveAccentBlue)
             }
             
             Text("Calculated from \(editSession.items.count) items")
@@ -145,7 +153,7 @@ struct BillEditView: View {
                 .foregroundColor(.secondary)
         }
         .padding()
-        .background(Color.blue.opacity(0.1))
+        .background(Color.adaptiveAccentBlue.opacity(0.1))
         .cornerRadius(12)
         .padding(.horizontal)
     }
@@ -165,7 +173,7 @@ struct BillEditView: View {
                         }) {
                             HStack {
                                 Circle()
-                                    .fill(editSession.paidByParticipantId == participant.id ? Color.blue : Color.gray.opacity(0.3))
+                                    .fill(editSession.paidByParticipantId == participant.id ? Color.adaptiveAccentBlue : Color.gray.opacity(0.3))
                                     .frame(width: 24, height: 24)
                                     .overlay(
                                         Image(systemName: editSession.paidByParticipantId == participant.id ? "checkmark" : "person.fill")
@@ -187,7 +195,7 @@ struct BillEditView: View {
                     .cornerRadius(8)
                     .overlay(
                         RoundedRectangle(cornerRadius: 8)
-                            .stroke(editSession.paidByParticipantId == participant.id ? Color.blue : Color.clear, lineWidth: 2)
+                            .stroke(editSession.paidByParticipantId == participant.id ? Color.adaptiveAccentBlue : Color.clear, lineWidth: 2)
                     )
                 }
             }
@@ -250,7 +258,7 @@ struct BillEditView: View {
                 ForEach(editSession.participants) { participant in
                     HStack {
                         Circle()
-                            .fill(Color.blue)
+                            .fill(Color.adaptiveAccentBlue)
                             .frame(width: 32, height: 32)
                             .overlay(
                                 Image(systemName: "person.fill")
@@ -273,7 +281,7 @@ struct BillEditView: View {
                                 .font(.caption)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 2)
-                                .background(Color.blue.opacity(0.2))
+                                .background(Color.adaptiveAccentBlue.opacity(0.2))
                                 .cornerRadius(4)
                         }
                     }
@@ -305,7 +313,7 @@ struct BillEditView: View {
                         Spacer()
                         Text("\"\(bill.billName ?? "")\" → \"\(editSession.billName)\"")
                             .font(.caption)
-                            .foregroundColor(.blue)
+                            .foregroundColor(.adaptiveAccentBlue)
                     }
                 }
                 
@@ -315,7 +323,7 @@ struct BillEditView: View {
                         Spacer()
                         Text("$\(bill.items.reduce(0, { $0 + $1.price }), specifier: "%.2f") → $\(totalAmount, specifier: "%.2f")")
                             .font(.caption)
-                            .foregroundColor(.blue)
+                            .foregroundColor(.adaptiveAccentBlue)
                     }
                 }
                 
@@ -325,12 +333,12 @@ struct BillEditView: View {
                         Spacer()
                         Text("\(bill.items.count) → \(editSession.items.count)")
                             .font(.caption)
-                            .foregroundColor(.blue)
+                            .foregroundColor(.adaptiveAccentBlue)
                     }
                 }
             }
             .padding()
-            .background(Color.blue.opacity(0.1))
+            .background(Color.adaptiveAccentBlue.opacity(0.1))
             .cornerRadius(8)
             .padding(.horizontal)
             
@@ -458,7 +466,7 @@ struct ItemEditRow: View {
                     onDelete()
                 }
                 .font(.caption)
-                .foregroundColor(.red)
+                .foregroundColor(.adaptiveAccentRed)
             }
         }
         .padding()

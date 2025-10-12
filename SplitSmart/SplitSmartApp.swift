@@ -491,7 +491,7 @@ struct LoadingView: View {
             // Gradient background similar to AuthView
             LinearGradient(
                 gradient: Gradient(colors: [
-                    Color.blue.opacity(0.1),
+                    Color.adaptiveAccentBlue.opacity(0.1),
                     Color.purple.opacity(0.05),
                     Color(.systemBackground)
                 ]),
@@ -510,7 +510,7 @@ struct LoadingView: View {
                         Circle()
                             .fill(
                                 LinearGradient(
-                                    gradient: Gradient(colors: [Color.blue, Color.blue.opacity(0.7)]),
+                                    gradient: Gradient(colors: [Color.blue, Color.adaptiveAccentBlue.opacity(0.7)]),
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )

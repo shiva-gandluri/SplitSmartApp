@@ -216,6 +216,7 @@ struct ParticipantSearchView: View {
                     .autocorrectionDisabled()
                     .onSubmit {
                         if !searchText.isEmpty && filteredContacts.isEmpty && isValidEmailOrPhone {
+                            print("🟢 [ParticipantSearchView] onSubmit - New contact: \(searchText)")
                             onNewContactSubmit(searchText)
                         }
                     }
@@ -243,6 +244,7 @@ struct ParticipantSearchView: View {
                         LazyVStack(spacing: 0) {
                             ForEach(Array(filteredContacts.prefix(3))) { contact in
                                 ContactResultRow(contact: contact) {
+                                    print("🔵 [ParticipantSearchView] Existing contact selected: \(contact.displayName) (\(contact.email))")
                                     onContactSelected(contact)
                                 }
                                 .background(Color(.systemBackground))
@@ -259,14 +261,15 @@ struct ParticipantSearchView: View {
                     } else if isValidEmailOrPhone {
                         // New contact option in compact dropdown
                         Button(action: {
+                            print("🟢 [ParticipantSearchView] New contact submit: \(searchText)")
                             onNewContactSubmit(searchText)
                         }) {
                             HStack(spacing: 12) {
                                 Image(systemName: "person.badge.plus")
-                                    .foregroundColor(.blue)
+                                    .foregroundColor(.adaptiveAccentBlue)
                                     .font(.system(size: 20))
                                     .frame(width: 40, height: 40)
-                                    .background(Color.blue.opacity(0.1))
+                                    .background(Color.adaptiveAccentBlue.opacity(0.1))
                                     .cornerRadius(20)
                                 
                                 VStack(alignment: .leading, spacing: 2) {
@@ -321,12 +324,12 @@ struct ContactResultRow: View {
             HStack(spacing: 16) {
                 // Avatar
                 Circle()
-                    .fill(Color.blue.opacity(0.1))
+                    .fill(Color.adaptiveAccentBlue.opacity(0.1))
                     .frame(width: 44, height: 44)
                     .overlay(
                         Text(String(contact.displayName.prefix(1).uppercased()))
                             .font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(.blue)
+                            .foregroundColor(.adaptiveAccentBlue)
                     )
                 
                 // Contact Info

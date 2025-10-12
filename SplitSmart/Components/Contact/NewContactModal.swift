@@ -39,12 +39,12 @@ struct NewContactModal: View {
                     // Icon and description
                     VStack(spacing: 16) {
                         Circle()
-                            .fill(Color.blue.opacity(0.1))
+                            .fill(Color.adaptiveAccentBlue.opacity(0.1))
                             .frame(width: 80, height: 80)
                             .overlay(
                                 Image(systemName: "person.badge.plus")
                                     .font(.system(size: 32))
-                                    .foregroundColor(.blue)
+                                    .foregroundColor(.adaptiveAccentBlue)
                             )
                         
                         VStack(spacing: 8) {
@@ -71,7 +71,7 @@ struct NewContactModal: View {
                                 
                                 Text("*")
                                     .font(.subheadline)
-                                    .foregroundColor(.red)
+                                    .foregroundColor(.adaptiveAccentRed)
                             }
                             
                             TextField("Enter full name", text: $fullName)
@@ -132,12 +132,12 @@ struct NewContactModal: View {
                         if let errorMessage = validationError {
                             HStack {
                                 Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundColor(.red)
+                                    .foregroundColor(.adaptiveAccentRed)
                                     .font(.system(size: 14))
                                 
                                 Text(errorMessage)
                                     .font(.caption)
-                                    .foregroundColor(.red)
+                                    .foregroundColor(.adaptiveAccentRed)
                                 
                                 Spacer()
                             }

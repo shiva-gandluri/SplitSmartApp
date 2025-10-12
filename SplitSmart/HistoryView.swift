@@ -52,6 +52,7 @@ struct HistoryView: View {
     var body: some View {
         NavigationView {
             mainContent
+                .background(Color.adaptiveDepth0.ignoresSafeArea())
         }
     }
 
@@ -88,40 +89,34 @@ struct HistoryView: View {
     // MARK: - View Components
 
     private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: .spacingSM) {
             HStack {
                 Text("History")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                Spacer()
-                activityCountBadge
+                    .font(.h3Dynamic)
+                    .foregroundColor(.adaptiveTextPrimary)
             }
-
-            Text("All your bill activities")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
         }
-        .padding(.horizontal)
-        .padding(.top)
+        .padding(.top, .spacingMD)
+        .padding(.horizontal, .paddingScreen)
     }
 
     @ViewBuilder
     private var activityCountBadge: some View {
         if !billManager.billActivities.isEmpty {
             Text("\(filteredActivities.count)")
-                .font(.caption)
+                .font(.captionDynamic)
                 .fontWeight(.medium)
                 .foregroundColor(.white)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.blue)
+                .padding(.horizontal, .spacingSM)
+                .padding(.vertical, .spacingXS)
+                .background(Color.adaptiveAccentBlue)
                 .clipShape(Capsule())
         }
     }
 
     private var filterTabsSection: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 12) {
+            HStack(spacing: .spacingMD) {
                 ForEach(ActivityFilter.allCases, id: \.rawValue) { filter in
                     FilterTab(
                         title: filter.rawValue,
@@ -133,9 +128,9 @@ struct HistoryView: View {
                     }
                 }
             }
-            .padding(.horizontal)
+            .padding(.horizontal, .paddingScreen)
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, .spacingSM)
     }
 
     @ViewBuilder
@@ -165,13 +160,30 @@ struct HistoryView: View {
 
     private var activityListView: some View {
         List {
-            ForEach(groupedActivities.keys.sorted(by: >), id: \.self) { date in
+            ForEach(sortedDateKeys(), id: \.self) { date in
                 activitySection(for: date)
             }
         }
         .listStyle(PlainListStyle())
+        .scrollContentBackground(.hidden)
+        .background(Color.adaptiveDepth0)
         .refreshable {
             await refreshActivities()
+        }
+    }
+
+    // Sort date strings by converting them to Date objects for proper chronological ordering
+    private func sortedDateKeys() -> [String] {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+
+        return groupedActivities.keys.sorted { dateString1, dateString2 in
+            guard let date1 = formatter.date(from: dateString1),
+                  let date2 = formatter.date(from: dateString2) else {
+                return dateString1 > dateString2 // Fallback to string comparison if parsing fails
+            }
+            return date1 > date2 // Newest first
         }
     }
 
@@ -195,6 +207,7 @@ struct HistoryView: View {
             deleteButton(for: activity)
         }
         .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+        .listRowBackground(Color.adaptiveDepth0)
     }
 
     /// Fetches bill by ID (including deleted bills) and shows detail screen
@@ -232,14 +245,14 @@ struct HistoryView: View {
         if let errorMessage = billManager.errorMessage {
             VStack {
                 Text("Error loading activities")
-                    .font(.headline)
-                    .foregroundColor(.red)
+                    .font(.h4Dynamic)
+                    .foregroundColor(.adaptiveAccentRed)
                 Text(errorMessage)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                    .font(.captionDynamic)
+                    .foregroundColor(.adaptiveTextSecondary)
                     .multilineTextAlignment(.center)
             }
-            .padding()
+            .padding(.paddingCard)
         }
     }
 
@@ -276,7 +289,6 @@ struct HistoryView: View {
         }
     }
     
-    // Group activities by date for better organization
     private var groupedActivities: [String: [BillActivity]] {
         Dictionary(grouping: filteredActivities) { activity in
             formatDateForGrouping(activity.timestamp)
@@ -356,32 +368,32 @@ struct FilterTab: View {
     let isSelected: Bool
     let count: Int
     let action: () -> Void
-    
+
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 6) {
+            HStack(spacing: .spacingXS) {
                 Image(systemName: icon)
-                    .font(.caption)
+                    .font(.captionText)
                 Text(title)
-                    .font(.caption)
+                    .font(.captionDynamic)
                     .fontWeight(.medium)
                 if count > 0 {
                     Text("\(count)")
-                        .font(.caption2)
+                        .font(.captionText)
                         .fontWeight(.medium)
-                        .foregroundColor(isSelected ? .white : .secondary)
-                        .padding(.horizontal, 6)
+                        .foregroundColor(isSelected ? .white : .adaptiveTextSecondary)
+                        .padding(.horizontal, .spacingXS)
                         .padding(.vertical, 2)
-                        .background(isSelected ? Color.white.opacity(0.3) : Color.gray.opacity(0.2))
+                        .background(isSelected ? Color.white.opacity(0.3) : Color.adaptiveDepth2)
                         .clipShape(Capsule())
                 }
             }
-            .foregroundColor(isSelected ? .white : .primary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .foregroundColor(isSelected ? .white : .adaptiveTextPrimary)
+            .padding(.horizontal, .spacingMD)
+            .padding(.vertical, .spacingSM)
             .background(
                 RoundedRectangle(cornerRadius: 20)
-                    .fill(isSelected ? Color.blue : Color.gray.opacity(0.1))
+                    .fill(isSelected ? Color.adaptiveAccentBlue : Color.adaptiveDepth1)
             )
         }
     }
@@ -389,13 +401,13 @@ struct FilterTab: View {
 
 struct DateSectionHeader: View {
     let date: String
-    
+
     var body: some View {
         Text(date)
-            .font(.subheadline)
+            .font(.smallDynamic)
             .fontWeight(.semibold)
-            .foregroundColor(.primary)
-            .padding(.vertical, 4)
+            .foregroundColor(.adaptiveTextPrimary)
+            .padding(.vertical, .spacingXS)
     }
 }
 
@@ -404,36 +416,36 @@ struct BillActivityRow: View {
     let onTap: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: .spacingMD) {
             // Activity Icon
             Image(systemName: activity.activityType.systemIconName)
-                .font(.title2)
+                .font(.h3)
                 .foregroundColor(activity.activityType.iconColor)
                 .frame(width: 24, height: 24)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: .spacingXS) {
                 // Activity Description
                 Text(activity.displayText)
-                    .font(.body)
+                    .font(.bodyDynamic)
                     .fontWeight(.medium)
-                    .foregroundColor(.primary)
+                    .foregroundColor(.adaptiveTextPrimary)
                     .multilineTextAlignment(.leading)
 
                 // Amount and Time
                 HStack {
                     Text(activity.formattedAmount)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(.captionDynamic)
+                        .foregroundColor(.adaptiveTextSecondary)
 
                     Spacer()
 
                     Text(formatTime(activity.timestamp))
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(.captionDynamic)
+                        .foregroundColor(.adaptiveTextSecondary)
                 }
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, .spacingXS)
         .contentShape(Rectangle())
         .onTapGesture(perform: onTap)
     }
@@ -447,24 +459,24 @@ struct BillActivityRow: View {
 
 struct EmptyHistoryView: View {
     let filter: HistoryView.ActivityFilter
-    
+
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: .spacingMD) {
             Image(systemName: emptyStateIcon)
                 .font(.system(size: 60))
-                .foregroundColor(.secondary)
-            
-            VStack(spacing: 8) {
+                .foregroundColor(.adaptiveTextSecondary)
+
+            VStack(spacing: .spacingSM) {
                 Text(emptyStateTitle)
-                    .font(.title2)
+                    .font(.h3Dynamic)
                     .fontWeight(.medium)
-                    .foregroundColor(.primary)
-                
+                    .foregroundColor(.adaptiveTextPrimary)
+
                 Text(emptyStateMessage)
-                    .font(.body)
-                    .foregroundColor(.secondary)
+                    .font(.bodyDynamic)
+                    .foregroundColor(.adaptiveTextSecondary)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
+                    .padding(.horizontal, .paddingSection)
             }
         }
     }

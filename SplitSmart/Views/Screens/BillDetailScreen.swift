@@ -128,163 +128,170 @@ struct BillDetailScreen: View {
     // MARK: - View Components
 
     private var deletedBillBanner: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 12) {
+        VStack(spacing: .spacingMD) {
+            HStack(spacing: .spacingMD) {
                 Image(systemName: "trash.slash.fill")
-                    .font(.title2)
+                    .font(.h3)
                     .foregroundColor(.white)
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXS) {
                     Text("This bill has been deleted")
-                        .font(.headline)
+                        .font(.h4Dynamic)
                         .foregroundColor(.white)
 
                     if let deletedByName = currentBill.deletedByDisplayName,
                        let deletedAt = currentBill.deletedAt {
                         Text("Deleted by \(deletedByName) on \(deletedAt.dateValue().formatted(date: .abbreviated, time: .shortened))")
-                            .font(.caption)
+                            .font(.captionDynamic)
                             .foregroundColor(.white.opacity(0.9))
                     }
                 }
 
                 Spacer()
             }
-            .padding()
-            .background(Color.red)
-            .cornerRadius(12)
+            .padding(.paddingCard)
+            .background(Color.adaptiveAccentRed)
+            .cornerRadius(.cornerRadiusMedium)
 
             Text("This is a read-only view for your records. You cannot edit or restore this bill.")
-                .font(.footnote)
-                .foregroundColor(.secondary)
+                .font(.smallDynamic)
+                .foregroundColor(.adaptiveTextSecondary)
                 .multilineTextAlignment(.center)
         }
-        .padding(.horizontal)
+        .padding(.horizontal, .paddingScreen)
     }
 
     private var headerSection: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: .spacingMD) {
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXS) {
                     Text(currentBill.billName ?? "Bill #\(currentBill.id.prefix(8))")
-                        .font(.title2)
-                        .fontWeight(.bold)
+                        .font(.h3Dynamic)
+                        .foregroundColor(.adaptiveTextPrimary)
 
                     Text("Created on \(currentBill.date.dateValue().formatted(date: .abbreviated, time: .shortened))")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .font(.smallDynamic)
+                        .foregroundColor(.adaptiveTextSecondary)
 
                     if currentBill.isDeleted {
                         HStack {
                             Image(systemName: "trash.slash")
-                                .foregroundColor(.red)
+                                .foregroundColor(.adaptiveAccentRed)
                             Text("DELETED")
-                                .font(.caption)
+                                .font(.captionDynamic)
                                 .fontWeight(.bold)
-                                .foregroundColor(.red)
+                                .foregroundColor(.adaptiveAccentRed)
                         }
                     }
                 }
                 Spacer()
             }
-            .padding(.horizontal)
+            .padding(.horizontal, .paddingScreen)
         }
     }
     
     private var billOverviewSection: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: .spacingMD) {
             // Total Amount
             HStack {
                 Text("Total Amount:")
-                    .font(.headline)
+                    .font(.h4Dynamic)
+                    .foregroundColor(.adaptiveTextPrimary)
                 Spacer()
                 Text("$\(billTotal, specifier: "%.2f")")
-                    .font(.title2)
+                    .font(.h3Dynamic)
                     .fontWeight(.bold)
-                    .foregroundColor(.blue)
+                    .foregroundColor(.adaptiveAccentBlue)
             }
-            
+
             // Creator Info
             if let creator = creator {
                 HStack {
                     Text("Created by:")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    
-                    HStack(spacing: 8) {
+                        .font(.smallDynamic)
+                        .foregroundColor(.adaptiveTextSecondary)
+
+                    HStack(spacing: .spacingSM) {
                         Circle()
-                            .fill(Color.blue)
+                            .fill(Color.adaptiveAccentBlue)
                             .frame(width: 24, height: 24)
                             .overlay(
                                 Image(systemName: "person.fill")
-                                    .font(.caption)
+                                    .font(.captionText)
                                     .foregroundColor(.white)
                             )
                         Text(creator.displayName)
+                            .font(.bodyDynamic)
                             .fontWeight(.medium)
+                            .foregroundColor(.adaptiveTextPrimary)
                     }
-                    
+
                     Spacer()
                 }
             }
-            
+
             // Payer Info
             if let payer = payer {
                 HStack {
                     Text("Paid by:")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    
-                    HStack(spacing: 8) {
+                        .font(.smallDynamic)
+                        .foregroundColor(.adaptiveTextSecondary)
+
+                    HStack(spacing: .spacingSM) {
                         Circle()
-                            .fill(Color.green)
+                            .fill(Color.adaptiveAccentGreen)
                             .frame(width: 24, height: 24)
                             .overlay(
                                 Image(systemName: "creditcard.fill")
-                                    .font(.caption)
+                                    .font(.captionText)
                                     .foregroundColor(.white)
                             )
                         Text(payer.displayName)
+                            .font(.bodyDynamic)
                             .fontWeight(.medium)
+                            .foregroundColor(.adaptiveTextPrimary)
                     }
-                    
+
                     Spacer()
                 }
             }
         }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
+        .padding(.paddingCard)
+        .background(Color.adaptiveDepth1)
+        .cornerRadius(.cornerRadiusMedium)
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.blue.opacity(0.2), lineWidth: 1)
+            RoundedRectangle(cornerRadius: .cornerRadiusMedium)
+                .stroke(Color.adaptiveAccentBlue.opacity(0.2), lineWidth: 1)
         )
-        .padding(.horizontal)
+        .padding(.horizontal, .paddingScreen)
     }
     
     private var participantsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: .spacingMD) {
             Text("Who Owes What")
-                .font(.headline)
+                .font(.h4Dynamic)
                 .fontWeight(.semibold)
-                .padding(.horizontal)
+                .foregroundColor(.adaptiveTextPrimary)
+                .padding(.horizontal, .paddingScreen)
             
             let owedAmounts = BillCalculator.calculateOwedAmounts(bill: currentBill)
             
             if owedAmounts.isEmpty || owedAmounts.allSatisfy({ $0.value <= 0.01 }) {
                 // All settled up
-                VStack(spacing: 8) {
+                VStack(spacing: .spacingSM) {
                     Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
-                        .font(.title2)
+                        .foregroundColor(.adaptiveAccentGreen)
+                        .font(.h3)
                     Text("All settled up!")
+                        .font(.bodyDynamic)
                         .fontWeight(.medium)
-                        .foregroundColor(.green)
+                        .foregroundColor(.adaptiveAccentGreen)
                 }
                 .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color.green.opacity(0.1))
-                .cornerRadius(12)
-                .padding(.horizontal)
+                .padding(.paddingCard)
+                .background(Color.adaptiveAccentGreen.opacity(0.1))
+                .cornerRadius(.cornerRadiusMedium)
+                .padding(.horizontal, .paddingScreen)
             } else {
                 // Show debts
                 ForEach(owedAmounts.sorted(by: { $0.key < $1.key }), id: \.key) { participantId, amount in
@@ -296,7 +303,7 @@ struct BillDetailScreen: View {
                             // Debtor
                             HStack(spacing: 8) {
                                 Circle()
-                                    .fill(Color.red)
+                                    .fill(Color.adaptiveAccentRed)
                                     .frame(width: 32, height: 32)
                                     .overlay(
                                         Image(systemName: "person.fill")
@@ -314,7 +321,7 @@ struct BillDetailScreen: View {
                             // Payer
                             HStack(spacing: 8) {
                                 Circle()
-                                    .fill(Color.green)
+                                    .fill(Color.adaptiveAccentGreen)
                                     .frame(width: 32, height: 32)
                                     .overlay(
                                         Image(systemName: "person.fill")
@@ -330,16 +337,16 @@ struct BillDetailScreen: View {
                             // Amount
                             Text("$\(amount, specifier: "%.2f")")
                                 .fontWeight(.bold)
-                                .foregroundColor(.red)
+                                .foregroundColor(.adaptiveAccentRed)
                         }
-                        .padding()
-                        .background(Color(.systemBackground))
-                        .cornerRadius(12)
+                        .padding(.paddingCard)
+                        .background(Color.adaptiveDepth1)
+                        .cornerRadius(.cornerRadiusMedium)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.red.opacity(0.2), lineWidth: 1)
+                            RoundedRectangle(cornerRadius: .cornerRadiusMedium)
+                                .stroke(Color.adaptiveAccentRed.opacity(0.2), lineWidth: 1)
                         )
-                        .padding(.horizontal)
+                        .padding(.horizontal, .paddingScreen)
                     }
                 }
             }
@@ -347,61 +354,45 @@ struct BillDetailScreen: View {
     }
     
     private var itemsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: .spacingMD) {
             Text("Items (\(currentBill.items.count))")
-                .font(.headline)
+                .font(.h4Dynamic)
                 .fontWeight(.semibold)
-                .padding(.horizontal)
+                .foregroundColor(.adaptiveTextPrimary)
+                .padding(.horizontal, .paddingScreen)
 
-            LazyVStack(spacing: 8) {
+            LazyVStack(spacing: .spacingSM) {
                 ForEach(currentBill.items) { item in
                     HStack {
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: .spacingXS) {
                             Text(item.name)
+                                .font(.bodyDynamic)
                                 .fontWeight(.medium)
-                            
+                                .foregroundColor(.adaptiveTextPrimary)
+
                             Text("Split among \(item.participantIDs.count) people")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                                .font(.captionDynamic)
+                                .foregroundColor(.adaptiveTextSecondary)
                         }
-                        
+
                         Spacer()
-                        
+
                         Text("$\(item.price, specifier: "%.2f")")
+                            .font(.bodyDynamic)
                             .fontWeight(.bold)
+                            .foregroundColor(.adaptiveTextPrimary)
                     }
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(8)
+                    .padding(.paddingCard)
+                    .background(Color.adaptiveDepth1)
+                    .cornerRadius(.cornerRadiusSmall)
                 }
             }
-            .padding(.horizontal)
+            .padding(.horizontal, .paddingScreen)
         }
     }
     
     private var actionButtons: some View {
-        VStack(spacing: 12) {
-            // TODO: Edit Button disabled until BillEditSession is in target
-            // Button(action: {
-            //     editSession.loadBill(bill)
-            //     showingEditView = true
-            // }) {
-            //     HStack {
-            //         Image(systemName: "pencil")
-            //         Text("Edit Bill")
-            //             .fontWeight(.semibold)
-            //     }
-            //     .foregroundColor(.blue)
-            //     .frame(maxWidth: .infinity)
-            //     .padding()
-            //     .background(Color.blue.opacity(0.1))
-            //     .cornerRadius(12)
-            //     .overlay(
-            //         RoundedRectangle(cornerRadius: 12)
-            //             .stroke(Color.blue.opacity(0.3), lineWidth: 1)
-            //     )
-            // }
-            
+        VStack(spacing: .spacingMD) {
             // Edit Button
             Button(action: {
                 editSession.loadBill(currentBill)
@@ -410,16 +401,17 @@ struct BillDetailScreen: View {
                 HStack {
                     Image(systemName: "pencil")
                     Text("Edit Bill")
+                        .font(.buttonText)
                         .fontWeight(.semibold)
                 }
-                .foregroundColor(.blue)
+                .foregroundColor(.adaptiveAccentBlue)
                 .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color.blue.opacity(0.1))
-                .cornerRadius(12)
+                .padding(.spacingMD)
+                .background(Color.adaptiveAccentBlue.opacity(0.1))
+                .cornerRadius(.cornerRadiusMedium)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: .cornerRadiusMedium)
+                        .stroke(Color.adaptiveAccentBlue.opacity(0.3), lineWidth: 1)
                 )
             }
 
@@ -436,17 +428,18 @@ struct BillDetailScreen: View {
                         Image(systemName: "trash")
                     }
                     Text(isDeleting ? "Deleting..." : "Delete Bill")
+                        .font(.buttonText)
                         .fontWeight(.semibold)
                 }
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
-                .padding()
-                .background(isDeleting ? Color.gray : Color.red)
-                .cornerRadius(12)
+                .padding(.spacingMD)
+                .background(isDeleting ? Color.gray : Color.adaptiveAccentRed)
+                .cornerRadius(.cornerRadiusMedium)
             }
             .disabled(isDeleting)
         }
-        .padding(.horizontal)
+        .padding(.horizontal, .paddingScreen)
     }
     
     // MARK: - Actions
