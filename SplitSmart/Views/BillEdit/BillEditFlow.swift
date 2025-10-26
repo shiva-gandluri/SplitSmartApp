@@ -19,60 +19,86 @@ struct BillEditFlow: View {
     @State private var currentStep = "confirm" // confirm -> assign -> summary
 
     var body: some View {
-        NavigationView {
+        ZStack {
+            Color.adaptiveDepth0.ignoresSafeArea()
             Group {
                 switch currentStep {
                 case "confirm":
-                    BillEditConfirmationView(
-                        bill: bill,
-                        session: editSession,
-                        onContinue: {
-                            currentStep = "assign"
-                        }
-                    )
-                case "assign":
-                    UIAssignScreen(
-                        session: editSession,
-                        contactsManager: contactsManager,
-                        onContinue: {
-                            editSession.completeAssignment()
-                            currentStep = "summary"
-                        }
-                    )
-                    .environmentObject(authViewModel)
-                case "summary":
-                    BillEditSummaryScreen(
-                        bill: bill,
-                        session: editSession,
-                        onDone: {
-                            editSession.completeSession()
-                            dismiss()
-                        },
-                        contactsManager: contactsManager,
-                        authViewModel: authViewModel,
-                        billManager: billManager
-                    )
-                default:
-                    BillEditConfirmationView(
-                        bill: bill,
-                        session: editSession,
-                        onContinue: {
-                            currentStep = "assign"
-                        }
-                    )
+                BillEditConfirmationView(
+                    bill: bill,
+                    session: editSession,
+                    onContinue: {
+                        currentStep = "assign"
+                    }
+                )
+                .navigationBarBackButtonHidden(true)
+            case "assign":
+                UIAssignScreen(
+                    session: editSession,
+                    contactsManager: contactsManager,
+                    onContinue: {
+                        editSession.completeAssignment()
+                        currentStep = "summary"
+                    }
+                )
+                .environmentObject(authViewModel)
+                .navigationBarBackButtonHidden(true)
+            case "summary":
+                UISummaryScreen(
+                    session: editSession,
+                    onDone: {
+                        editSession.completeSession()
+                        dismiss()
+                    },
+                    contactsManager: contactsManager,
+                    authViewModel: authViewModel,
+                    billManager: billManager,
+                    existingBill: bill
+                )
+                .navigationBarBackButtonHidden(true)
+            default:
+                BillEditConfirmationView(
+                    bill: bill,
+                    session: editSession,
+                    onContinue: {
+                        currentStep = "assign"
+                    }
+                )
+                .navigationBarBackButtonHidden(true)
+            }
+            }
+        }
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button(action: {
+                    navigateBack()
+                }) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 20, weight: .semibold))
                 }
             }
-            .navigationBarBackButtonHidden(true)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
+
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("Cancel") {
+                    dismiss()
                 }
             }
         }
         .onAppear {
             loadBillIntoSession()
+        }
+    }
+
+    private func navigateBack() {
+        switch currentStep {
+        case "confirm":
+            dismiss() // Return to Bill Details screen
+        case "assign":
+            currentStep = "confirm"
+        case "summary":
+            currentStep = "assign"
+        default:
+            dismiss()
         }
     }
 
@@ -107,7 +133,7 @@ struct BillEditFlow: View {
         // Add current user as "You" first
         if let currentUserId = authViewModel.user?.uid,
            let currentUser = bill.participants.first(where: { $0.id == currentUserId }) {
-            uiParticipants.append(UIParticipant(id: currentUserId, name: "You", color: .blue))
+            uiParticipants.append(UIParticipant(id: currentUserId, name: "You", color: .blue, photoURL: currentUser.photoURL))
         }
 
         // Add other participants with Firebase UIDs
@@ -116,7 +142,8 @@ struct BillEditFlow: View {
                 uiParticipants.append(UIParticipant(
                     id: participant.id,  // Use Firebase UID directly
                     name: participant.displayName,
-                    color: .blue  // Use assignedColor computed property for consistent colors
+                    color: .blue,  // Use assignedColor computed property for consistent colors
+                    photoURL: participant.photoURL
                 ))
             }
         }

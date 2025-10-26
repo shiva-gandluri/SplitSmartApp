@@ -5,6 +5,7 @@ import Foundation
 
 struct HistoryView: View {
     @ObservedObject var billManager: BillManager
+    @ObservedObject var contactsManager: ContactsManager
     @EnvironmentObject var authViewModel: AuthViewModel
     @State private var selectedFilter: ActivityFilter = .all
     @State private var showingBillNotFoundAlert = false
@@ -16,10 +17,10 @@ struct HistoryView: View {
 
     enum ActivityFilter: String, CaseIterable {
         case all = "All"
-        case created = "Created"
-        case edited = "Edited" 
+        case created = "New Bills"
+        case edited = "Edited"
         case deleted = "Deleted"
-        
+
         var icon: String {
             switch self {
             case .all: return "list.bullet"
@@ -50,9 +51,20 @@ struct HistoryView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             mainContent
                 .background(Color.adaptiveDepth0.ignoresSafeArea())
+                .overlay {
+                    if isLoadingBill {
+                        ZStack {
+                            Color.black.opacity(0.3)
+                                .ignoresSafeArea()
+                            ProgressView()
+                                .scaleEffect(1.5)
+                                .tint(.white)
+                        }
+                    }
+                }
         }
     }
 
@@ -64,18 +76,13 @@ struct HistoryView: View {
             errorSection
         }
         .navigationBarHidden(true)
-        .sheet(item: $selectedBill) { bill in
-            NavigationView {
-                BillDetailScreen(
-                    bill: bill,
-                    billManager: billManager,
-                    authViewModel: authViewModel
-                )
-            }
-            .onAppear {
-                if let deletedBy = bill.deletedBy {
-                }
-            }
+        .navigationDestination(item: $selectedBill) { bill in
+            BillDetailScreen(
+                bill: bill,
+                billManager: billManager,
+                authViewModel: authViewModel,
+                contactsManager: contactsManager
+            )
         }
         .alert("Bill Not Found", isPresented: $showingBillNotFoundAlert, actions: {
             Button("OK", role: .cancel) {}
@@ -208,15 +215,23 @@ struct HistoryView: View {
         }
         .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
         .listRowBackground(Color.adaptiveDepth0)
+        .listRowSeparator(.hidden)
     }
 
     /// Fetches bill by ID (including deleted bills) and shows detail screen
     private func fetchAndShowBill(billId: String) async {
+        // First check local cache for instant response
+        if let cachedBill = billManager.userBills.first(where: { $0.id == billId }) {
+            await MainActor.run {
+                selectedBill = cachedBill
+            }
+            return
+        }
+
+        // If not in cache, fetch from Firestore with loading indicator
         isLoadingBill = true
 
         if let bill = await billManager.getBillById(billId) {
-            if let deletedBy = bill.deletedBy {
-            }
             await MainActor.run {
                 selectedBill = bill
                 isLoadingBill = false
@@ -377,16 +392,6 @@ struct FilterTab: View {
                 Text(title)
                     .font(.captionDynamic)
                     .fontWeight(.medium)
-                if count > 0 {
-                    Text("\(count)")
-                        .font(.captionText)
-                        .fontWeight(.medium)
-                        .foregroundColor(isSelected ? .white : .adaptiveTextSecondary)
-                        .padding(.horizontal, .spacingXS)
-                        .padding(.vertical, 2)
-                        .background(isSelected ? Color.white.opacity(0.3) : Color.adaptiveDepth2)
-                        .clipShape(Capsule())
-                }
             }
             .foregroundColor(isSelected ? .white : .adaptiveTextPrimary)
             .padding(.horizontal, .spacingMD)
@@ -423,26 +428,27 @@ struct BillActivityRow: View {
                 .foregroundColor(activity.activityType.iconColor)
                 .frame(width: 24, height: 24)
 
-            VStack(alignment: .leading, spacing: .spacingXS) {
-                // Activity Description
-                Text(activity.displayText)
-                    .font(.bodyDynamic)
-                    .fontWeight(.medium)
-                    .foregroundColor(.adaptiveTextPrimary)
-                    .multilineTextAlignment(.leading)
-
-                // Amount and Time
+            VStack(alignment: .leading, spacing: .spacing2XS) {
+                // Top row: Bill name and Amount
                 HStack {
-                    Text(activity.formattedAmount)
-                        .font(.captionDynamic)
-                        .foregroundColor(.adaptiveTextSecondary)
+                    Text(activity.billName)
+                        .font(.bodyDynamic)
+                        .fontWeight(.medium)
+                        .foregroundColor(.adaptiveTextPrimary)
+                        .lineLimit(1)
 
                     Spacer()
 
-                    Text(formatTime(activity.timestamp))
-                        .font(.captionDynamic)
-                        .foregroundColor(.adaptiveTextSecondary)
+                    Text(activity.formattedAmount)
+                        .font(.bodyDynamic)
+                        .fontWeight(.medium)
+                        .foregroundColor(.adaptiveTextPrimary)
                 }
+
+                // Bottom row: Activity info with time
+                Text("\(activity.actorName) \(activity.activityType.displayName.lowercased()) at \(formatTime(activity.timestamp))")
+                    .font(.smallDynamic)
+                    .foregroundColor(.adaptiveTextSecondary)
             }
         }
         .padding(.vertical, .spacingXS)
@@ -517,6 +523,6 @@ struct EmptyHistoryView: View {
 // Using canonical implementation from Views/Screens/BillDetailScreen.swift
 
 #Preview {
-    HistoryView(billManager: BillManager())
+    HistoryView(billManager: BillManager(), contactsManager: ContactsManager())
         .environmentObject(AuthViewModel())
 }

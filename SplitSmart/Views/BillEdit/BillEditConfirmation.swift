@@ -37,195 +37,184 @@ struct BillEditConfirmationView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-                // Header with back button
-                HStack {
-                    Button(action: {
-                        presentationMode.wrappedValue.dismiss()
-                    }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "chevron.left")
-                                .font(.system(size: 16, weight: .semibold))
-                            Text("Back")
-                                .font(.system(size: 16, weight: .regular))
-                        }
-                        .foregroundColor(.adaptiveAccentBlue)
-                    }
-
-                    Spacer()
-                }
-                .padding(.horizontal)
-                .padding(.top, 8)
-
+                // Header
                 Text("Verify Bill Details")
-                    .font(.title2)
-                    .fontWeight(.bold)
+                    .font(.h3Dynamic)
+                    .foregroundColor(.adaptiveTextPrimary)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal)
+                    .padding(.horizontal, .paddingScreen)
 
                 Text("Review and adjust the bill details before proceeding to assign items.")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .font(.smallDynamic)
+                    .foregroundColor(.adaptiveTextSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal)
+                    .padding(.horizontal, .paddingScreen)
 
-                // Items Summary
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Items (\(session.scannedItems.count))")
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .padding(.horizontal)
-
-                    LazyVStack(spacing: 8) {
-                        ForEach(session.scannedItems.indices, id: \.self) { index in
-                            HStack {
-                                TextField("Item name", text: .constant(session.scannedItems[index].name))
-                                    .fontWeight(.medium)
-                                    .disabled(true)
-                                    .foregroundColor(.primary)
-
-                                Spacer()
-
-                                Text("$\(session.scannedItems[index].price, specifier: "%.2f")")
-                                    .fontWeight(.bold)
-                            }
-                            .padding()
-                            .background(Color(.systemGray6))
-                            .cornerRadius(8)
-                        }
-                    }
-                    .padding(.horizontal)
-                }
-
-                // Bill Details Section
-                VStack(spacing: 0) {
+                // Bill Details Form - Clean layout matching OCR Confirmation
+                VStack(spacing: 16) {
                     // Subtotal (calculated, read-only)
-                    HStack {
-                        Text("Subtotal")
-                            .font(.body)
-                            .foregroundColor(.adaptiveTextPrimary)
+                    HStack(spacing: 12) {
+                        // Label on left
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Subtotal")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(.adaptiveTextPrimary)
+                                .lineLimit(1)
+                        }
+
                         Spacer()
+
+                        // Read-only value on right
                         Text("$\(calculatedSubtotal, specifier: "%.2f")")
-                            .font(.body)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.adaptiveTextPrimary)
+                            .font(.system(size: 16, weight: .regular))
+                            .foregroundColor(.adaptiveTextSecondary)
                     }
-                    .padding(.horizontal)
-                    .padding(.vertical, 16)
+                    .padding(.horizontal, .paddingScreen)
 
-                    // Divider
-                    Rectangle()
-                        .fill(Color.adaptiveTextTertiary.opacity(0.2))
-                        .frame(height: 1)
-                        .padding(.horizontal)
+                    // Number of Items Field
+                    HStack(spacing: 12) {
+                        // Label on left
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 4) {
+                                Text("Number of Items")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.adaptiveTextPrimary)
+                                    .lineLimit(1)
+                                Text("*")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(.adaptiveAccentRed)
+                            }
+                        }
 
-                    // Number of Items
-                    HStack {
-                        Text("Number of Items")
-                            .font(.body)
-                            .foregroundColor(.adaptiveTextPrimary)
                         Spacer()
+
+                        // Input field on right - same size as others
                         TextField("\(session.scannedItems.count)", text: $editedItemCount)
                             .keyboardType(.numberPad)
+                            .font(.system(size: 16, weight: .regular))
+                            .foregroundColor(.adaptiveTextPrimary)
                             .multilineTextAlignment(.trailing)
-                            .frame(width: 60)
-                            .font(.body)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.adaptiveTextPrimary)
+                            .frame(width: 140)
+                            .padding(.spacingMD)
+                            .background(
+                                RoundedRectangle(cornerRadius: .cornerRadiusMedium)
+                                    .fill(Color.adaptiveDepth3)
+                                    .shadow(color: Color.black.opacity(0.08), radius: 8, x: 0, y: 3)
+                                    .shadow(color: Color.black.opacity(0.04), radius: 2, x: 0, y: 1)
+                            )
                     }
-                    .padding(.horizontal)
-                    .padding(.vertical, 16)
+                    .padding(.horizontal, .paddingScreen)
 
-                    // Divider
-                    Rectangle()
-                        .fill(Color.adaptiveTextTertiary.opacity(0.2))
-                        .frame(height: 1)
-                        .padding(.horizontal)
+                    // Tax Amount Field
+                    HStack(spacing: 12) {
+                        // Label on left
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Tax Amount")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(.adaptiveTextPrimary)
+                                .lineLimit(1)
+                        }
 
-                    // Tax Amount
-                    HStack {
-                        Text("Tax Amount")
-                            .font(.body)
-                            .foregroundColor(.adaptiveTextPrimary)
                         Spacer()
-                        HStack(spacing: 2) {
+
+                        // Input field on right
+                        HStack(spacing: 4) {
                             Text("$")
-                                .font(.body)
-                                .fontWeight(.semibold)
+                                .font(.system(size: 16, weight: .regular))
                                 .foregroundColor(.adaptiveTextPrimary)
                             TextField("0.00", text: $editedTax)
                                 .keyboardType(.decimalPad)
-                                .multilineTextAlignment(.trailing)
-                                .frame(width: 80)
-                                .font(.body)
-                                .fontWeight(.semibold)
+                                .font(.system(size: 16, weight: .regular))
                                 .foregroundColor(.adaptiveTextPrimary)
+                                .multilineTextAlignment(.trailing)
                         }
+                        .frame(width: 140)
+                        .padding(.spacingMD)
+                        .background(
+                            RoundedRectangle(cornerRadius: .cornerRadiusMedium)
+                                .fill(Color.adaptiveDepth3)
+                                .shadow(color: Color.black.opacity(0.08), radius: 8, x: 0, y: 3)
+                                .shadow(color: Color.black.opacity(0.04), radius: 2, x: 0, y: 1)
+                        )
                     }
-                    .padding(.horizontal)
-                    .padding(.vertical, 16)
+                    .padding(.horizontal, .paddingScreen)
 
-                    // Divider
-                    Rectangle()
-                        .fill(Color.adaptiveTextTertiary.opacity(0.2))
-                        .frame(height: 1)
-                        .padding(.horizontal)
+                    // Tip Amount Field
+                    HStack(spacing: 12) {
+                        // Label on left
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Tip Amount")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(.adaptiveTextPrimary)
+                                .lineLimit(1)
+                        }
 
-                    // Tip Amount
-                    HStack {
-                        Text("Tip Amount")
-                            .font(.body)
-                            .foregroundColor(.adaptiveTextPrimary)
                         Spacer()
-                        HStack(spacing: 2) {
+
+                        // Input field on right
+                        HStack(spacing: 4) {
                             Text("$")
-                                .font(.body)
-                                .fontWeight(.semibold)
+                                .font(.system(size: 16, weight: .regular))
                                 .foregroundColor(.adaptiveTextPrimary)
                             TextField("0.00", text: $editedTip)
                                 .keyboardType(.decimalPad)
-                                .multilineTextAlignment(.trailing)
-                                .frame(width: 80)
-                                .font(.body)
-                                .fontWeight(.semibold)
+                                .font(.system(size: 16, weight: .regular))
                                 .foregroundColor(.adaptiveTextPrimary)
+                                .multilineTextAlignment(.trailing)
                         }
+                        .frame(width: 140)
+                        .padding(.spacingMD)
+                        .background(
+                            RoundedRectangle(cornerRadius: .cornerRadiusMedium)
+                                .fill(Color.adaptiveDepth3)
+                                .shadow(color: Color.black.opacity(0.08), radius: 8, x: 0, y: 3)
+                                .shadow(color: Color.black.opacity(0.04), radius: 2, x: 0, y: 1)
+                        )
                     }
-                    .padding(.horizontal)
-                    .padding(.vertical, 16)
+                    .padding(.horizontal, .paddingScreen)
 
-                    // Divider (stronger for total section)
-                    Rectangle()
-                        .fill(Color.adaptiveTextTertiary.opacity(0.4))
-                        .frame(height: 2)
-                        .padding(.horizontal)
+                    // Total Amount Field
+                    HStack(spacing: 12) {
+                        // Label on left
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 4) {
+                                Text("Total Amount")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.adaptiveTextPrimary)
+                                    .lineLimit(1)
+                                Text("*")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(.adaptiveAccentRed)
+                            }
+                        }
 
-                    // Total Amount
-                    HStack {
-                        Text("Total Amount")
-                            .font(.body)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.adaptiveTextPrimary)
                         Spacer()
-                        HStack(spacing: 2) {
+
+                        // Input field on right
+                        HStack(spacing: 4) {
                             Text("$")
-                                .font(.body)
-                                .fontWeight(.bold)
+                                .font(.system(size: 16, weight: .regular))
                                 .foregroundColor(.adaptiveTextPrimary)
                             TextField("\(bill.totalAmount, specifier: "%.2f")", text: $editedTotal)
                                 .keyboardType(.decimalPad)
-                                .multilineTextAlignment(.trailing)
-                                .frame(width: 100)
-                                .font(.body)
-                                .fontWeight(.bold)
+                                .font(.system(size: 16, weight: .regular))
                                 .foregroundColor(.adaptiveTextPrimary)
+                                .multilineTextAlignment(.trailing)
                         }
+                        .frame(width: 140)
+                        .padding(.spacingMD)
+                        .background(
+                            RoundedRectangle(cornerRadius: .cornerRadiusMedium)
+                                .fill(Color.adaptiveDepth3)
+                                .shadow(color: Color.black.opacity(0.08), radius: 8, x: 0, y: 3)
+                                .shadow(color: Color.black.opacity(0.04), radius: 2, x: 0, y: 1)
+                        )
                     }
-                    .padding(.horizontal)
-                    .padding(.vertical, 16)
+                    .padding(.horizontal, .paddingScreen)
+                    .padding(.bottom, .spacingMD)  // Add spacing before validation message/button
                 }
-                .padding(.horizontal)
 
-                // Validation message
+                // Validation message - only show error
                 if !totalsMatch {
                     HStack(spacing: 8) {
                         Image(systemName: "exclamationmark.triangle.fill")
@@ -239,49 +228,51 @@ struct BillEditConfirmationView: View {
                     .background(Color.adaptiveAccentOrange.opacity(0.1))
                     .cornerRadius(8)
                     .padding(.horizontal)
-                } else {
-                    HStack(spacing: 8) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.adaptiveAccentGreen)
-                        Text("Totals match!")
-                            .font(.subheadline)
-                            .foregroundColor(.adaptiveAccentGreen)
-                    }
-                    .padding()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.adaptiveAccentGreen.opacity(0.1))
-                    .cornerRadius(8)
-                    .padding(.horizontal)
                 }
 
                 // Continue Button
-                Button(action: {
-                    // Update session with confirmed values
-                    session.confirmedTax = Double(editedTax) ?? 0.0
-                    session.confirmedTip = Double(editedTip) ?? 0.0
-                    session.confirmedTotal = Double(editedTotal) ?? totalWithTaxAndTip
-                    session.expectedItemCount = Int(editedItemCount) ?? session.scannedItems.count
-                    session.identifiedTotal = session.confirmedTotal
+                if totalsMatch {
+                    Button(action: {
+                        // Update session with confirmed values
+                        session.confirmedTax = Double(editedTax) ?? 0.0
+                        session.confirmedTip = Double(editedTip) ?? 0.0
+                        session.confirmedTotal = Double(editedTotal) ?? totalWithTaxAndTip
+                        session.expectedItemCount = Int(editedItemCount) ?? session.scannedItems.count
+                        session.identifiedTotal = session.confirmedTotal
 
-                    onContinue()
-                }) {
-                    HStack {
-                        Image(systemName: "arrow.right")
-                        Text("Continue to Assign Items")
+                        onContinue()
+                    }) {
+                        HStack {
+                            Image(systemName: "arrow.right")
+                            Text("Continue to Assign Items")
+                        }
                     }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(totalsMatch ? Color.adaptiveAccentBlue : Color.gray)
-                    .cornerRadius(12)
+                    .buttonStyle(PrimaryButtonStyle())
+                    .padding(.horizontal)
+                } else {
+                    Button(action: {}) {
+                        HStack {
+                            Image(systemName: "arrow.right")
+                            Text("Continue to Assign Items")
+                        }
+                    }
+                    .buttonStyle(DisabledPrimaryButtonStyle())
+                    .disabled(true)
+                    .padding(.horizontal)
                 }
-                .disabled(!totalsMatch)
-                .padding(.horizontal)
             }
             .padding(.top)
         }
-        .navigationTitle("Edit Bill")
-        .navigationBarTitleDisplayMode(.inline)
+        .background(Color.adaptiveDepth0)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                }
+                .foregroundColor(.adaptiveAccentBlue)
+            }
+        }
         .onAppear {
             // Initialize editable fields with current values
             editedTax = String(format: "%.2f", session.confirmedTax)

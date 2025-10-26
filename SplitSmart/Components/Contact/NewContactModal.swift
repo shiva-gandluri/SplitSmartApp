@@ -168,6 +168,13 @@ struct NewContactModal: View {
                     }
                     .disabled(!isFormValid || isLoading)
                 }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        hideKeyboard()
+                    }
+                    .foregroundColor(.adaptiveAccentBlue)
+                }
             }
             .onTapGesture {
                 hideKeyboard()

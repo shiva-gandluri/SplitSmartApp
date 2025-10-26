@@ -84,7 +84,7 @@ struct AuthView: View {
                             }
                             .padding(.paddingSection)
                             .background(
-                                RoundedRectangle(cornerRadius: .cornerRadiusMedium)
+                                RoundedRectangle(cornerRadius: .cornerRadiusButton)
                                     .fill(Color.adaptiveDepth1)
                                     .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: 5)
                             )
@@ -97,27 +97,10 @@ struct AuthView: View {
                             }) {
                                 HStack(spacing: .spacingSM) {
                                     Image(systemName: "person.crop.circle.fill")
-                                        .font(.system(size: 20))
-                                        .foregroundColor(.white)
-
                                     Text("Continue with Google")
-                                        .font(.buttonText)
-                                        .foregroundColor(.white)
                                 }
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 56)
-                                .background(
-                                    LinearGradient(
-                                        gradient: Gradient(colors: [.accentColor, .accentColor.opacity(0.8)]),
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    )
-                                )
-                                .cornerRadius(.cornerRadiusMedium)
-                                .shadow(color: .accentColor.opacity(0.3), radius: 8, x: 0, y: 4)
                             }
-                            .scaleEffect(authViewModel.isLoading ? 0.95 : 1.0)
-                            .animation(.buttonPress, value: authViewModel.isLoading)
+                            .buttonStyle(PrimaryButtonStyle())
                         }
 
                         // Error message with design system

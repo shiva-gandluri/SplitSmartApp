@@ -655,19 +655,32 @@ class AuthViewModel: ObservableObject {
                         "createdAt": FieldValue.serverTimestamp(),
                         "lastSignInAt": FieldValue.serverTimestamp()
                     ]
-                    
+
                     // Add phone number if available from Google OAuth
                     if let phoneNumber = authResult.user.phoneNumber {
                         userData["phoneNumber"] = phoneNumber
+                    }
+
+                    // Add photoURL if available from Google OAuth
+                    if let photoURL = authResult.user.photoURL {
+                        userData["photoURL"] = photoURL.absoluteString
                     }
                     
                     let cleanedUserData = userData.compactMapValues { $0 }
                     
                     try await userRef.setData(cleanedUserData, merge: true)
                 } else {
-                    try await userRef.updateData([
+                    // Update existing user record with latest data
+                    var updateData: [String: Any] = [
                         "lastSignInAt": FieldValue.serverTimestamp()
-                    ])
+                    ]
+
+                    // Update photoURL if available from Google OAuth
+                    if let photoURL = authResult.user.photoURL {
+                        updateData["photoURL"] = photoURL.absoluteString
+                    }
+
+                    try await userRef.updateData(updateData)
                 }
             } catch let error as NSError {
                 // Handle specific Firestore errors
@@ -682,10 +695,15 @@ class AuthViewModel: ObservableObject {
                             "lastSignInAt": FieldValue.serverTimestamp(),
                             "createdAt": FieldValue.serverTimestamp()
                         ]
-                        
+
                         // Add phone number if available from Google OAuth
                         if let phoneNumber = authResult.user.phoneNumber {
                             userData["phoneNumber"] = phoneNumber
+                        }
+
+                        // Add photoURL if available from Google OAuth
+                        if let photoURL = authResult.user.photoURL {
+                            userData["photoURL"] = photoURL.absoluteString
                         }
                         
                         let cleanedUserData = userData.compactMapValues { $0 }
@@ -769,13 +787,30 @@ class AuthViewModel: ObservableObject {
                 } else {
                 }
             }
-            
+
+            // Add photoURL if available from Google OAuth
+            if let photoURL = authResult.user.photoURL {
+                participantData["photoURL"] = photoURL.absoluteString
+            }
+
             try await participantRef.setData(participantData, merge: true)
         } else {
-            try await participantRef.updateData([
+            // Update existing participant record with latest data
+            var updateData: [String: Any] = [
                 "lastActiveAt": FieldValue.serverTimestamp(),
                 "isActive": true
-            ])
+            ]
+
+            // Update photoURL if available from Google OAuth
+            if let photoURL = authResult.user.photoURL {
+                updateData["photoURL"] = photoURL.absoluteString
+                print("💾 [AuthViewModel] Updating participant record with photoURL: \(photoURL.absoluteString)")
+            } else {
+                print("⚠️ [AuthViewModel] No photoURL available from Firebase Auth for user: \(authResult.user.uid)")
+            }
+
+            try await participantRef.updateData(updateData)
+            print("✅ [AuthViewModel] Participant record updated successfully for user: \(authResult.user.uid)")
         }
     }
     
@@ -873,7 +908,12 @@ class AuthViewModel: ObservableObject {
                     participantData["phoneNumber"] = sanitizedPhone
                 }
             }
-            
+
+            // Add photoURL if available from Google OAuth
+            if let photoURL = user.photoURL {
+                participantData["photoURL"] = photoURL.absoluteString
+            }
+
             try await participantRef.setData(participantData, merge: true)
             
         } catch {

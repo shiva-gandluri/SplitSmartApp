@@ -301,12 +301,8 @@ struct BillEditSummaryScreen: View {
                         }
                         Text(isUpdating ? "Updating Bill..." : "Update Bill")
                     }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(isUpdating ? Color.gray : Color.adaptiveAccentBlue)
-                    .cornerRadius(12)
                 }
+                .buttonStyle(PrimaryButtonStyle())
                 .disabled(isUpdating || !session.isReadyForBillCreation)
                 .padding(.horizontal)
 

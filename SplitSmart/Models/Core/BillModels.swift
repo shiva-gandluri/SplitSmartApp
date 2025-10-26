@@ -3,7 +3,7 @@ import FirebaseFirestore
 
 // MARK: - Bill Settlement Data Models
 
-struct Bill: Codable, Identifiable {
+struct Bill: Codable, Identifiable, Hashable {
     let id: String
     let paidBy: String // userID who paid
     let paidByDisplayName: String // Snapshot for UI
@@ -129,6 +129,15 @@ struct Bill: Codable, Identifiable {
         } else {
             return items.count == 1 ? items[0].name : "\(items.count) items"
         }
+    }
+
+    // MARK: - Hashable Conformance
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+
+    static func == (lhs: Bill, rhs: Bill) -> Bool {
+        lhs.id == rhs.id
     }
 }
 

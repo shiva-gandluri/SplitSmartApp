@@ -133,18 +133,11 @@ struct ImagePreview: View {
     
     var body: some View {
         VStack(spacing: 24) {
-            // Simplified header
-            Text("Review Photo")
-                .font(.title2)
-                .fontWeight(.bold)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal)
-            
             // Simple reliable image viewer
             ZStack {
                 Rectangle()
                     .fill(Color.gray.opacity(0.1))
-                    .cornerRadius(12)
+                    .cornerRadius(.cornerRadiusButton)
                 
                 Image(uiImage: image)
                     .resizable()
@@ -204,14 +197,8 @@ struct ImagePreview: View {
                         Image(systemName: "camera.rotate")
                         Text("Retake")
                     }
-                    .font(.body)
-                    .fontWeight(.medium)
-                    .foregroundColor(.adaptiveAccentBlue)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Color.adaptiveAccentBlue.opacity(0.1))
-                    .cornerRadius(10)
                 }
+                .buttonStyle(SecondaryButtonStyle())
                 
                 Button(action: {
                     // Capture the current view state as an image
@@ -222,20 +209,14 @@ struct ImagePreview: View {
                         Image(systemName: "arrow.right")
                         Text("Continue")
                     }
-                    .font(.body)
-                    .fontWeight(.medium)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Color.adaptiveAccentBlue)
-                    .cornerRadius(10)
                 }
+                .buttonStyle(PrimaryButtonStyle())
             }
             .padding(.horizontal)
             
             Spacer()
         }
-        .background(Color(.systemBackground))
+        .background(Color.adaptiveDepth0)
     }
     
     // Helper functions for constrained image viewing
@@ -753,7 +734,7 @@ struct ScanInputSection: View {
             ZStack {
                 // Solid background with depth
                 RoundedRectangle(cornerRadius: .cornerRadiusMedium)
-                    .fill(Color.adaptiveDepth2)
+                    .fill(Color.adaptiveDepth1)
                     .frame(height: 400)
 
                 // Subtle border
@@ -800,43 +781,19 @@ struct CameraInputView: View {
                 Button(action: onScan) {
                     HStack(spacing: .spacingSM) {
                         Image(systemName: "camera.fill")
-                            .font(.system(size: 16, weight: .semibold))
                         Text("Take Photo")
-                            .font(.system(size: 16, weight: .semibold))
                     }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .background(Color.adaptiveAccentBlue)
-                    .cornerRadius(.cornerRadiusMedium)
-                    .shadow(color: Color.black.opacity(0.2), radius: 10, x: 0, y: 3)
                 }
-                .buttonStyle(PlainButtonStyle())
+                .buttonStyle(PrimaryButtonStyle())
 
                 // Secondary action: Upload from Gallery - Clean secondary style
                 Button(action: onUpload) {
                     HStack(spacing: .spacingSM) {
                         Image(systemName: "photo.on.rectangle")
-                            .font(.system(size: 16, weight: .medium))
                         Text("Upload from Gallery")
-                            .font(.system(size: 16, weight: .medium))
                     }
-                    .foregroundColor(.adaptiveAccentBlue)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .background(
-                        ZStack {
-                            Color.adaptiveDepth0
-                            Color.adaptiveAccentBlue.opacity(0.12)
-                        }
-                    )
-                    .cornerRadius(.cornerRadiusMedium)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: .cornerRadiusMedium)
-                            .stroke(Color.adaptiveAccentBlue.opacity(0.3), lineWidth: 1)
-                    )
                 }
-                .buttonStyle(PlainButtonStyle())
+                .buttonStyle(SecondaryButtonStyle())
             }
             .padding(.horizontal, .spacingLG)
         }
@@ -929,12 +886,8 @@ struct ReceiptResultSection: View {
                     Text("Continue to Assign Items")
                     Image(systemName: "arrow.right")
                 }
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color.adaptiveAccentBlue)
-                .cornerRadius(12)
             }
+            .buttonStyle(PrimaryButtonStyle())
             .padding(.horizontal)
         }
     }
@@ -953,7 +906,7 @@ struct SuccessMessageView: View {
         }
         .padding()
         .background(Color.adaptiveAccentGreen.opacity(0.1))
-        .cornerRadius(12)
+        .cornerRadius(.cornerRadiusButton)
         .padding(.horizontal)
     }
 }
@@ -982,9 +935,9 @@ struct ReceiptItemsView: View {
             
             ReceiptTotalSection()
         }
-        .cornerRadius(12)
+        .cornerRadius(.cornerRadiusButton)
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: .cornerRadiusButton)
                 .stroke(Color.gray.opacity(0.3), lineWidth: 1)
         )
         .padding(.horizontal)
@@ -1096,7 +1049,7 @@ struct OCRProcessingView: View {
             }
             .padding()
             .background(Color.adaptiveAccentBlue.opacity(0.1))
-            .cornerRadius(12)
+            .cornerRadius(.cornerRadiusButton)
             .padding(.horizontal)
             
             Spacer()
@@ -1352,13 +1305,8 @@ struct OCRItemListView: View {
                         Text("Continue to Split")
                         Image(systemName: "arrow.right")
                     }
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(Color.adaptiveAccentBlue)
-                    .cornerRadius(12)
                 }
+                .buttonStyle(PrimaryButtonStyle())
                 .padding(.horizontal)
                 .disabled(items.isEmpty)
             }
@@ -1543,7 +1491,7 @@ struct OCREmptyStateView: View {
                         }
                         .padding()
                         .background(Color.adaptiveAccentBlue.opacity(0.05))
-                        .cornerRadius(12)
+                        .cornerRadius(.cornerRadiusButton)
                         .padding(.horizontal)
                     }
                 }
@@ -1579,7 +1527,7 @@ struct OCREmptyStateView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
                     .background(Color.adaptiveAccentBlue.opacity(0.1))
-                    .cornerRadius(12)
+                    .cornerRadius(.cornerRadiusButton)
                 }
             }
             .padding(.horizontal)
@@ -1752,8 +1700,9 @@ struct OCRConfirmationView: View {
                                 .padding(.spacingMD)
                                 .background(
                                     RoundedRectangle(cornerRadius: .cornerRadiusMedium)
-                                        .fill(Color.adaptiveDepth2)
-                                        .shadow(color: focusedField == .itemCount ? Color.adaptiveAccentBlue.opacity(0.3) : Color.black.opacity(0.05), radius: focusedField == .itemCount ? 8 : 4, x: 0, y: 2)
+                                        .fill(Color.adaptiveDepth3)
+                                        .shadow(color: focusedField == .itemCount ? Color.adaptiveAccentBlue.opacity(0.3) : Color.black.opacity(0.08), radius: focusedField == .itemCount ? 10 : 8, x: 0, y: focusedField == .itemCount ? 4 : 3)
+                                        .shadow(color: focusedField == .itemCount ? Color.adaptiveAccentBlue.opacity(0.15) : Color.black.opacity(0.04), radius: focusedField == .itemCount ? 4 : 2, x: 0, y: 1)
                                 )
                                 .animation(.easeOut(duration: 0.2), value: focusedField == .itemCount)
                         }
@@ -1790,8 +1739,9 @@ struct OCRConfirmationView: View {
                             .padding(.spacingMD)
                             .background(
                                 RoundedRectangle(cornerRadius: .cornerRadiusMedium)
-                                    .fill(Color.adaptiveDepth2)
-                                    .shadow(color: focusedField == .tax ? Color.adaptiveAccentBlue.opacity(0.3) : Color.black.opacity(0.05), radius: focusedField == .tax ? 8 : 4, x: 0, y: 2)
+                                    .fill(Color.adaptiveDepth3)
+                                    .shadow(color: focusedField == .tax ? Color.adaptiveAccentBlue.opacity(0.3) : Color.black.opacity(0.08), radius: focusedField == .tax ? 10 : 8, x: 0, y: focusedField == .tax ? 4 : 3)
+                                    .shadow(color: focusedField == .tax ? Color.adaptiveAccentBlue.opacity(0.15) : Color.black.opacity(0.04), radius: focusedField == .tax ? 4 : 2, x: 0, y: 1)
                             )
                             .animation(.easeOut(duration: 0.2), value: focusedField == .tax)
                         }
@@ -1828,8 +1778,9 @@ struct OCRConfirmationView: View {
                             .padding(.spacingMD)
                             .background(
                                 RoundedRectangle(cornerRadius: .cornerRadiusMedium)
-                                    .fill(Color.adaptiveDepth2)
-                                    .shadow(color: focusedField == .tip ? Color.adaptiveAccentBlue.opacity(0.3) : Color.black.opacity(0.05), radius: focusedField == .tip ? 8 : 4, x: 0, y: 2)
+                                    .fill(Color.adaptiveDepth3)
+                                    .shadow(color: focusedField == .tip ? Color.adaptiveAccentBlue.opacity(0.3) : Color.black.opacity(0.08), radius: focusedField == .tip ? 10 : 8, x: 0, y: focusedField == .tip ? 4 : 3)
+                                    .shadow(color: focusedField == .tip ? Color.adaptiveAccentBlue.opacity(0.15) : Color.black.opacity(0.04), radius: focusedField == .tip ? 4 : 2, x: 0, y: 1)
                             )
                             .animation(.easeOut(duration: 0.2), value: focusedField == .tip)
                         }
@@ -1878,8 +1829,9 @@ struct OCRConfirmationView: View {
                             .padding(.spacingMD)
                             .background(
                                 RoundedRectangle(cornerRadius: .cornerRadiusMedium)
-                                    .fill(Color.adaptiveDepth2)
-                                    .shadow(color: focusedField == .total ? Color.adaptiveAccentGreen.opacity(0.3) : Color.black.opacity(0.05), radius: focusedField == .total ? 8 : 4, x: 0, y: 2)
+                                    .fill(Color.adaptiveDepth3)
+                                    .shadow(color: focusedField == .total ? Color.adaptiveAccentGreen.opacity(0.3) : Color.black.opacity(0.08), radius: focusedField == .total ? 10 : 8, x: 0, y: focusedField == .total ? 4 : 3)
+                                    .shadow(color: focusedField == .total ? Color.adaptiveAccentGreen.opacity(0.15) : Color.black.opacity(0.04), radius: focusedField == .total ? 4 : 2, x: 0, y: 1)
                             )
                             .animation(.easeOut(duration: 0.2), value: focusedField == .total)
                         }
@@ -1889,23 +1841,30 @@ struct OCRConfirmationView: View {
                 }
 
                 // Action button
-                Button(action: handleConfirm) {
-                    HStack {
-                        Image(systemName: "checkmark")
-                        Text("Continue")
+                if canConfirm {
+                    Button(action: handleConfirm) {
+                        HStack {
+                            Image(systemName: "checkmark")
+                            Text("Continue")
+                        }
                     }
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.spacingMD)
-                    .background(canConfirm ? Color.adaptiveAccentBlue : Color.gray)
-                    .cornerRadius(12)
+                    .buttonStyle(PrimaryButtonStyle())
+                    .padding(.horizontal)
+                } else {
+                    Button(action: {}) {
+                        HStack {
+                            Image(systemName: "checkmark")
+                            Text("Continue")
+                        }
+                    }
+                    .buttonStyle(DisabledPrimaryButtonStyle())
+                    .disabled(true)
+                    .padding(.horizontal)
                 }
-                .disabled(!canConfirm)
-                .padding(.horizontal)
             }
             .padding(.top)
         }
+        .background(Color.adaptiveDepth0)
         .task {
             await analyzeReceiptData()
         }
@@ -2082,7 +2041,7 @@ struct CalculationSummaryView: View {
         }
         .padding()
         .background(Color.adaptiveAccentBlue.opacity(0.05))
-        .cornerRadius(12)
+        .cornerRadius(.cornerRadiusButton)
     }
 }
 
@@ -2095,12 +2054,13 @@ private struct CameraSheetModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .sheet(isPresented: $isPresented) {
+            .fullScreenCover(isPresented: $isPresented) {
                 CameraCapture(
                     isPresented: $isPresented,
                     capturedImage: $capturedImage,
                     sourceType: .camera
                 )
+                .ignoresSafeArea()
                 .onDisappear {
                     if capturedImage != nil {
                         onImageCaptured()
@@ -2117,12 +2077,13 @@ private struct PhotoLibrarySheetModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .sheet(isPresented: $isPresented) {
+            .fullScreenCover(isPresented: $isPresented) {
                 CameraCapture(
                     isPresented: $isPresented,
                     capturedImage: $capturedImage,
                     sourceType: .photoLibrary
                 )
+                .ignoresSafeArea()
                 .onDisappear {
                     if capturedImage != nil {
                         onImageCaptured()

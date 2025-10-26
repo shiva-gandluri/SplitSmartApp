@@ -60,7 +60,7 @@ extension CGFloat {
     // Consistent border radius values
 
     /// Small corner radius - 8px
-    /// Use for: Buttons, small cards, inputs
+    /// Use for: Small cards, inputs
     static let cornerRadiusSmall: CGFloat = 8
 
     /// Medium corner radius - 12px
@@ -70,6 +70,10 @@ extension CGFloat {
     /// Large corner radius - 16px
     /// Use for: Large cards, modals, prominent containers
     static let cornerRadiusLarge: CGFloat = 16
+
+    /// Button corner radius - 24px
+    /// Use for: All buttons to achieve highly rounded appearance
+    static let cornerRadiusButton: CGFloat = 24
 }
 
 // MARK: - EdgeInsets Extensions

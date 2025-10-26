@@ -94,7 +94,7 @@ struct ContentView: View {
                     billManager: billManager
                 )
             case "history":
-                HistoryView(billManager: billManager)
+                HistoryView(billManager: billManager, contactsManager: contactsManager)
                     .environmentObject(authViewModel)
             case "profile":
                 UIProfileScreen()
@@ -408,10 +408,10 @@ struct BillHistoryCard: View {
             }
             .padding(16)
             .background(Color(.systemBackground))
-            .cornerRadius(12)
+            .cornerRadius(.cornerRadiusButton)
             .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: .cornerRadiusButton)
                     .stroke(Color(.systemGray5), lineWidth: 1)
             )
     }
@@ -489,9 +489,9 @@ struct BillDetailView: View {
                 }
                 .padding()
                 .background(Color.adaptiveAccentBlue.opacity(0.1))
-                .cornerRadius(12)
+                .cornerRadius(.cornerRadiusButton)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: .cornerRadiusButton)
                         .stroke(Color.adaptiveAccentBlue.opacity(0.3), lineWidth: 1)
                 )
                 .padding(.horizontal)
@@ -1007,7 +1007,7 @@ struct SimpleBillDetailView: View {
                 }
                 .padding()
                 .background(Color(.systemGray6))
-                .cornerRadius(12)
+                .cornerRadius(.cornerRadiusButton)
 
                 // Action buttons for creators
                 if isCreator && !displayBill.isDeleted {
@@ -1020,7 +1020,7 @@ struct SimpleBillDetailView: View {
                         .foregroundColor(.adaptiveAccentRed)
                         .padding()
                         .background(Color.adaptiveAccentRed.opacity(0.1))
-                        .cornerRadius(12)
+                        .cornerRadius(.cornerRadiusButton)
                 }
             }
             .padding()
@@ -1042,20 +1042,12 @@ struct BillActionButtons: View {
             Button("Edit Bill") {
                 showingEditSheet = true
             }
-            .foregroundColor(.adaptiveAccentBlue)
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(Color.adaptiveAccentBlue.opacity(0.1))
-            .cornerRadius(12)
-            
+            .buttonStyle(SecondaryButtonStyle())
+
             Button("Delete Bill") {
                 showingDeleteAlert = true
             }
-            .foregroundColor(.adaptiveAccentRed)
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(Color.adaptiveAccentRed.opacity(0.1))
-            .cornerRadius(12)
+            .buttonStyle(DestructiveButtonStyle())
         }
         .padding()
         .sheet(isPresented: $showingEditSheet) {
@@ -1443,7 +1435,7 @@ struct SessionRecoveryBanner: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
                             .background(Color(.systemGray6))
-                            .cornerRadius(12)
+                            .cornerRadius(.cornerRadiusButton)
                     }
 
                     // Restore button - primary style
@@ -1468,7 +1460,7 @@ struct SessionRecoveryBanner: View {
                                 endPoint: .bottomTrailing
                             )
                         )
-                        .cornerRadius(12)
+                        .cornerRadius(.cornerRadiusButton)
                         .shadow(color: Color.adaptiveAccentBlue.opacity(0.3), radius: 8, x: 0, y: 4)
                     }
                 }

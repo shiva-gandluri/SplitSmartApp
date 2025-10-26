@@ -83,7 +83,7 @@ struct BillEditView: View {
                         }
                     }
                 }
-                
+
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Save") {
                         Task {
@@ -92,6 +92,14 @@ struct BillEditView: View {
                     }
                     .disabled(!hasValidChanges || isUpdating)
                     .fontWeight(.semibold)
+                }
+
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                    }
+                    .foregroundColor(.adaptiveAccentBlue)
                 }
             }
         }
@@ -154,7 +162,7 @@ struct BillEditView: View {
         }
         .padding()
         .background(Color.adaptiveAccentBlue.opacity(0.1))
-        .cornerRadius(12)
+        .cornerRadius(.cornerRadiusButton)
         .padding(.horizontal)
     }
     

@@ -214,6 +214,7 @@ struct UIParticipant: Identifiable, Hashable {
     let id: String  // Firebase UID for consistency with BillParticipant
     let name: String
     let color: Color
+    let photoURL: String?  // Profile picture URL
 
     // Hash-based color assignment for consistent colors per Firebase UID
     var assignedColor: Color {
@@ -334,6 +335,7 @@ struct UIBreakdown: Identifiable {
     let name: String
     let color: Color
     let items: [UIBreakdownItem]
+    let photoURL: String?  // Profile picture URL
 }
 
 struct UIBreakdownItem {
@@ -348,7 +350,7 @@ import FirebaseAuth
 // TODO: Uncomment after adding FirebaseMessaging dependency in Xcode
 // import FirebaseMessaging
 
-struct Bill: Codable, Identifiable {
+struct Bill: Codable, Identifiable, Hashable {
     let id: String
     let paidBy: String // userID who paid
     let paidByDisplayName: String // Snapshot for UI
@@ -475,6 +477,15 @@ struct Bill: Codable, Identifiable {
             return items.count == 1 ? items[0].name : "\(items.count) items"
         }
     }
+
+    // MARK: - Hashable Conformance
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+
+    static func == (lhs: Bill, rhs: Bill) -> Bool {
+        lhs.id == rhs.id
+    }
 }
 
 struct BillItem: Codable, Identifiable, Equatable {
@@ -496,12 +507,14 @@ struct BillParticipant: Codable, Identifiable, Equatable {
     let displayName: String // Snapshot for UI
     let email: String // Snapshot for notifications
     let isActive: Bool // Track if user still exists
-    
-    init(userID: String, displayName: String, email: String, isActive: Bool = true) {
+    let photoURL: String? // Snapshot of profile picture URL
+
+    init(userID: String, displayName: String, email: String, isActive: Bool = true, photoURL: String? = nil) {
         self.id = userID
         self.displayName = displayName
         self.email = email
         self.isActive = isActive
+        self.photoURL = photoURL
     }
 }
 
@@ -623,30 +636,32 @@ class BillService: ObservableObject {
         let currentUserParticipant = BillParticipant(
             userID: currentUser.uid,
             displayName: currentUser.displayName ?? "You",
-            email: currentUser.email ?? "unknown@example.com"
+            email: currentUser.email ?? "unknown@example.com",
+            photoURL: currentUser.photoURL?.absoluteString
         )
         billParticipants.append(currentUserParticipant)
         
         // Current user participant already has Firebase UID as ID
         
-        // Add other participants from transaction contacts and complete the mapping
+        // Add other participants from session (photoURL already fetched)
         for participant in session.participants where participant.name != "You" {
-            if let contact = contactsManager.transactionContacts.first(where: { 
-                $0.displayName.lowercased() == participant.name.lowercased() 
+            if let contact = contactsManager.transactionContacts.first(where: {
+                $0.displayName.lowercased() == participant.name.lowercased()
             }) {
-                // For now, use a consistent ID based on email for cross-user bill visibility
-                // TODO: Implement proper user lookup by email in Phase 3
-                let participantUserID = contact.contactUserId ?? "email_\(contact.email.lowercased().replacingOccurrences(of: "@", with: "_at_").replacingOccurrences(of: ".", with: "_"))"
-                
+                // CRITICAL: Use the Firebase UID from UIParticipant (fetched during addParticipant)
+                // This ensures participantIds matches the actual Firebase UID for querying
+                let participantUserID = participant.id  // This is the real Firebase UID
+
                 let billParticipant = BillParticipant(
                     userID: participantUserID,
                     displayName: contact.displayName,
-                    email: contact.email
+                    email: contact.email,
+                    photoURL: participant.photoURL  // Use photoURL from UIParticipant
                 )
                 billParticipants.append(billParticipant)
-                
+
                 // Participant ID is already Firebase UID
-                
+
             }
         }
         
@@ -678,6 +693,12 @@ class BillService: ObservableObject {
             ? nil  // Will use computed displayName
             : session.billName.trimmingCharacters(in: .whitespacesAndNewlines)
         
+        // DEBUG: Log billParticipants before creating bill
+        print("🔍 [BILL CREATE] billParticipants count: \(billParticipants.count)")
+        for participant in billParticipants {
+            print("🔍 [BILL CREATE] Participant: \(participant.displayName) (ID: \(participant.id)) photoURL: \(participant.photoURL ?? "nil")")
+        }
+
         // Create temporary bill for debt calculation
         let tempBill = Bill(
             paidBy: paidByParticipant.name == "You" ? currentUser.uid : billParticipants.first(where: { $0.displayName == paidByParticipant.name })?.id ?? "unknown_\(paidByID)",
@@ -690,6 +711,9 @@ class BillService: ObservableObject {
             createdBy: currentUser.uid,
             calculatedTotals: [:] // Temporary empty, will be calculated below
         )
+
+        // DEBUG: Log participantIds that will be used for querying
+        print("🔍 [BILL CREATE] participantIds: \(tempBill.participantIds)")
         
         // 🔧 STANDARDIZATION: Use BillCalculator to ensure Firebase UIDs are used consistently
         let calculatedDebts = BillCalculator.calculateOwedAmounts(bill: tempBill)
@@ -4821,12 +4845,14 @@ class BillSplitSession: ObservableObject {
         let tempParticipant = UIParticipant(
             id: currentUser.uid,
             name: "You",
-            color: .blue
+            color: .blue,
+            photoURL: currentUser.photoURL?.absoluteString
         )
         let currentUserParticipant = UIParticipant(
             id: currentUser.uid,
             name: "You",
-            color: tempParticipant.assignedColor
+            color: tempParticipant.assignedColor,
+            photoURL: currentUser.photoURL?.absoluteString
         )
 
 
@@ -4942,22 +4968,72 @@ class BillSplitSession: ObservableObject {
         
         // Duplicate check already handled above - proceed with creation
 
+        // Fetch photoURL from Firestore participants collection
+        var photoURL: String? = nil
+        let db = Firestore.firestore()
+        do {
+            // First, try participants collection (primary source for public participant data)
+            let participantDoc = try await db.collection("participants").document(validatedFirebaseUID).getDocument()
+            photoURL = participantDoc.data()?["photoURL"] as? String
+            print("📸 [DataModels] Fetched photoURL from participants collection for \(trimmedName) (\(validatedFirebaseUID)): \(photoURL ?? "nil")")
+
+            // If not in participants collection, try users collection as fallback
+            if photoURL == nil {
+                print("🔍 [DataModels] PhotoURL not in participants collection, checking users collection...")
+                let userDoc = try await db.collection("users").document(validatedFirebaseUID).getDocument()
+                photoURL = userDoc.data()?["photoURL"] as? String
+
+                if let foundPhotoURL = photoURL {
+                    print("✅ [DataModels] Found photoURL in users collection: \(foundPhotoURL)")
+
+                    // Update participants collection for future use
+                    try? await db.collection("participants").document(validatedFirebaseUID).updateData([
+                        "photoURL": foundPhotoURL
+                    ])
+                    print("💾 [DataModels] Synced photoURL to participants collection for \(trimmedName)")
+                }
+            }
+
+            // If still not found and this is the current user, get from Firebase Auth
+            if photoURL == nil {
+                print("🔍 [DataModels] PhotoURL not in Firestore, checking Firebase Auth...")
+                if let authPhotoURL = Auth.auth().currentUser?.photoURL?.absoluteString,
+                   Auth.auth().currentUser?.uid == validatedFirebaseUID {
+                    photoURL = authPhotoURL
+                    print("✅ [DataModels] Found photoURL in Firebase Auth for current user: \(authPhotoURL)")
+
+                    // Update both collections for future use
+                    try? await db.collection("participants").document(validatedFirebaseUID).updateData([
+                        "photoURL": authPhotoURL
+                    ])
+                    try? await db.collection("users").document(validatedFirebaseUID).updateData([
+                        "photoURL": authPhotoURL
+                    ])
+                    print("💾 [DataModels] Updated Firestore collections with photoURL for \(trimmedName)")
+                }
+            }
+        } catch {
+            print("❌ [DataModels] Could not fetch photoURL for participant \(trimmedName): \(error.localizedDescription)")
+        }
+
         let tempParticipant = UIParticipant(
             id: validatedFirebaseUID,
             name: trimmedName,
-            color: .blue
+            color: .blue,
+            photoURL: photoURL
         )
         let newParticipant = UIParticipant(
             id: validatedFirebaseUID,
             name: trimmedName,
-            color: tempParticipant.assignedColor
+            color: tempParticipant.assignedColor,
+            photoURL: photoURL
         )
 
         await MainActor.run {
             participants.append(newParticipant)
         }
 
-        print("✅ [DataModels] Participant added successfully: \(newParticipant.name)")
+        print("✅ [DataModels] Participant added successfully: \(newParticipant.name) with photoURL: \(photoURL ?? "nil")")
         return (newParticipant, nil, false)
     }
     
@@ -5225,7 +5301,8 @@ class BillSplitSession: ObservableObject {
                 id: participant.id,
                 name: participant.name,
                 color: participant.color,
-                items: items
+                items: items,
+                photoURL: participant.photoURL
             )
         }
     }
@@ -5285,7 +5362,8 @@ class BillSplitSession: ObservableObject {
                 ParticipantSnapshot(
                     id: participant.id,
                     name: participant.name,
-                    colorHex: participant.color.toHex()
+                    colorHex: participant.color.toHex(),
+                    photoURL: participant.photoURL
                 )
             },
             paidByParticipantID: paidByParticipantID,
@@ -5324,7 +5402,8 @@ class BillSplitSession: ObservableObject {
             UIParticipant(
                 id: participantSnapshot.id,
                 name: participantSnapshot.name,
-                color: Color(hex: participantSnapshot.colorHex)
+                color: Color(hex: participantSnapshot.colorHex),
+                photoURL: participantSnapshot.photoURL
             )
         }
 
@@ -5564,6 +5643,7 @@ struct ParticipantSnapshot: Codable {
     let id: String
     let name: String
     let colorHex: String // Color stored as hex string for Codable
+    let photoURL: String? // Profile picture URL
 }
 
 /// Codable snapshot of UIItem for persistence

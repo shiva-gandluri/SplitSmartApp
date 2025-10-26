@@ -11,17 +11,36 @@ import SwiftUI
 // MARK: - Primary Button Style
 /// Primary action button with accent color background
 /// Use for: Main CTAs, important actions, form submissions
+/// Standard usage: Apply .frame(maxWidth: .infinity) for full-width buttons
 struct PrimaryButtonStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.buttonText)
             .foregroundColor(.white)
-            .padding(.vertical, 12)
-            .padding(.horizontal, 24)
+            .frame(maxWidth: .infinity)
+            .padding()
             .background(Color.adaptiveAccentBlue)
-            .cornerRadius(.cornerRadiusSmall)
+            .cornerRadius(.cornerRadiusButton)
+            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
+            .animation(reduceMotion ? .none : .buttonPress, value: configuration.isPressed)
+            .accessibilityAddTraits(.isButton)
+    }
+}
+
+// MARK: - Disabled Primary Button Style
+/// Disabled state for primary button - gray color with same config
+/// Use for: Disabled primary actions
+struct DisabledPrimaryButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(Color(red: 0.5, green: 0.5, blue: 0.5))
+            .cornerRadius(.cornerRadiusButton)
             .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
             .animation(reduceMotion ? .none : .buttonPress, value: configuration.isPressed)
             .accessibilityAddTraits(.isButton)
@@ -29,23 +48,19 @@ struct PrimaryButtonStyle: ButtonStyle {
 }
 
 // MARK: - Secondary Button Style
-/// Outlined button with depth2 background
+/// Secondary action button with outlined style
 /// Use for: Secondary actions, cancel buttons, alternative choices
+/// Same size, shape, style as Primary - only color differs
 struct SecondaryButtonStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.buttonText)
-            .foregroundColor(.adaptiveTextPrimary)
-            .padding(.vertical, 12)
-            .padding(.horizontal, 24)
-            .background(Color.adaptiveDepth2)
-            .overlay(
-                RoundedRectangle(cornerRadius: .cornerRadiusSmall)
-                    .stroke(Color.adaptiveTextPrimary.opacity(0.3), lineWidth: 1)
-            )
-            .cornerRadius(.cornerRadiusSmall)
+            .foregroundColor(.adaptiveAccentBlue)
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(Color.adaptiveAccentBlue.opacity(0.1))
+            .cornerRadius(.cornerRadiusButton)
             .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
             .animation(reduceMotion ? .none : .buttonPress, value: configuration.isPressed)
             .accessibilityAddTraits(.isButton)
@@ -69,7 +84,7 @@ struct TertiaryButtonStyle: ButtonStyle {
                 Color.adaptiveAccentBlue.opacity(0.1) :
                 Color.clear
             )
-            .cornerRadius(.cornerRadiusSmall)
+            .cornerRadius(.cornerRadiusButton)
             .animation(reduceMotion ? .none : .smoothEaseOut, value: configuration.isPressed)
             .accessibilityAddTraits(.isButton)
     }
@@ -78,17 +93,17 @@ struct TertiaryButtonStyle: ButtonStyle {
 // MARK: - Destructive Button Style
 /// Destructive action button with red accent
 /// Use for: Delete actions, destructive confirmations
+/// Standard usage: Apply .frame(maxWidth: .infinity) for full-width buttons
 struct DestructiveButtonStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.buttonText)
             .foregroundColor(.white)
-            .padding(.vertical, 12)
-            .padding(.horizontal, 24)
+            .frame(maxWidth: .infinity)
+            .padding()
             .background(Color.adaptiveAccentRed)
-            .cornerRadius(.cornerRadiusSmall)
+            .cornerRadius(.cornerRadiusButton)
             .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
             .animation(reduceMotion ? .none : .buttonPress, value: configuration.isPressed)
             .accessibilityAddTraits(.isButton)

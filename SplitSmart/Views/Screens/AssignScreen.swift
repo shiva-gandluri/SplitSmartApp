@@ -413,22 +413,29 @@ struct UIAssignScreen: View {
                         let totalComplete = abs(assignedTotal - session.confirmedTotal) <= 0.01
                         let whoePaidSelected = session.paidByParticipantID != nil
                         let canContinue = session.isReadyForBillCreation && totalComplete
-                        
-                        Button(action: {
-                            onContinue()
-                        }) {
-                            HStack {
-                                Text("Continue to Summary")
-                                Image(systemName: "arrow.right")
+
+                        if canContinue {
+                            Button(action: {
+                                onContinue()
+                            }) {
+                                HStack {
+                                    Text("Continue to Summary")
+                                    Image(systemName: "arrow.right")
+                                }
                             }
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(canContinue ? Color.adaptiveAccentBlue : Color.gray)
-                            .cornerRadius(12)
+                            .buttonStyle(PrimaryButtonStyle())
+                            .padding(.horizontal)
+                        } else {
+                            Button(action: {}) {
+                                HStack {
+                                    Text("Continue to Summary")
+                                    Image(systemName: "arrow.right")
+                                }
+                            }
+                            .buttonStyle(DisabledPrimaryButtonStyle())
+                            .disabled(true)
+                            .padding(.horizontal)
                         }
-                        .disabled(!canContinue)
-                        .padding(.horizontal)
                         
                         if !whoePaidSelected {
                             HStack {

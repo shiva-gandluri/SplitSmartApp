@@ -22,7 +22,7 @@ extension Color {
         Color(UIColor { traitCollection in
             traitCollection.userInterfaceStyle == .dark
                 ? UIColor(red: 0.102, green: 0.102, blue: 0.102, alpha: 1.0)  // Dark: RGB(26,26,26)
-                : UIColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)        // Light: RGB(255,255,255) WHITE
+                : UIColor(red: 0.961, green: 0.961, blue: 0.961, alpha: 1.0)  // Light: RGB(245,245,245) Off-white base
         })
     }
 
@@ -31,7 +31,7 @@ extension Color {
         Color(UIColor { traitCollection in
             traitCollection.userInterfaceStyle == .dark
                 ? UIColor(red: 0.149, green: 0.149, blue: 0.149, alpha: 1.0)  // Dark: RGB(38,38,38)
-                : UIColor(red: 0.969, green: 0.969, blue: 0.969, alpha: 1.0)  // Light: RGB(247,247,247) Very light gray
+                : UIColor(red: 0.973, green: 0.973, blue: 0.973, alpha: 1.0)  // Light: RGB(248,248,248) Lighter
         })
     }
 
@@ -40,7 +40,7 @@ extension Color {
         Color(UIColor { traitCollection in
             traitCollection.userInterfaceStyle == .dark
                 ? UIColor(red: 0.200, green: 0.200, blue: 0.200, alpha: 1.0)  // Dark: RGB(51,51,51)
-                : UIColor(red: 0.941, green: 0.941, blue: 0.941, alpha: 1.0)  // Light: RGB(240,240,240) Light gray
+                : UIColor(red: 0.988, green: 0.988, blue: 0.988, alpha: 1.0)  // Light: RGB(252,252,252) Even lighter
         })
     }
 
@@ -49,7 +49,7 @@ extension Color {
         Color(UIColor { traitCollection in
             traitCollection.userInterfaceStyle == .dark
                 ? UIColor(red: 0.251, green: 0.251, blue: 0.251, alpha: 1.0)  // Dark: RGB(64,64,64)
-                : UIColor(red: 0.898, green: 0.898, blue: 0.898, alpha: 1.0)  // Light: RGB(229,229,229) Medium-light gray
+                : UIColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)        // Light: RGB(255,255,255) Pure white (highest elevation)
         })
     }
 
