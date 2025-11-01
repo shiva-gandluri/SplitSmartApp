@@ -13,13 +13,25 @@ extension CGFloat {
     // All spacing should use these predefined values
     // Based on 4px/8px grid system for visual harmony
 
+    /// 2X Extra Small spacing - 2px
+    /// Use for: Very tight spacing, minimal gaps
+    static let spacing2XS: CGFloat = 2
+
     /// Extra Small spacing - 4px
     /// Use for: Tight element spacing, icon padding
     static let spacingXS: CGFloat = 4
 
+    /// Small-Medium spacing - 6px
+    /// Use for: Icon-to-text spacing, compact element gaps
+    static let spacingXSM: CGFloat = 6
+
     /// Small spacing - 8px
     /// Use for: Label-to-control spacing, compact layouts
     static let spacingSM: CGFloat = 8
+
+    /// Medium-Large spacing - 12px
+    /// Use for: Moderate element separation, form field spacing
+    static let spacingML: CGFloat = 12
 
     /// Medium spacing - 16px (Default)
     /// Use for: Standard padding, element separation
@@ -32,6 +44,10 @@ extension CGFloat {
     /// Extra Large spacing - 32px
     /// Use for: Major section breaks, screen padding
     static let spacingXL: CGFloat = 32
+
+    /// Extra Extra Large spacing - 40px
+    /// Use for: Large content separation, major gaps
+    static let spacingXXL: CGFloat = 40
 
     /// 2X Large spacing - 48px
     /// Use for: Large section separation, feature spacing

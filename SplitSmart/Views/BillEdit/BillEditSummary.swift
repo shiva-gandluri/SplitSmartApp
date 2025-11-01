@@ -32,9 +32,10 @@ struct BillEditSummaryScreen: View {
             VStack(spacing: 24) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Update Summary")
-                        .font(.title2)
+                        .font(.h3Dynamic)
                         .fontWeight(.bold)
                     Text("Bill changes • \(Date().formatted(date: .abbreviated, time: .omitted))")
+                        .font(.smallDynamic)
                         .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -44,11 +45,11 @@ struct BillEditSummaryScreen: View {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Text("Bill Name")
-                            .font(.headline)
+                            .font(.h4Dynamic)
                             .fontWeight(.semibold)
                         Spacer()
                         Text("Optional")
-                            .font(.caption)
+                            .font(.captionDynamic)
                             .foregroundColor(.secondary)
                     }
 
@@ -68,7 +69,7 @@ struct BillEditSummaryScreen: View {
                     .autocorrectionDisabled()
 
                     Text("Leave empty to use default: \"\(defaultBillName)\"")
-                        .font(.caption)
+                        .font(.captionDynamic)
                         .foregroundColor(.secondary)
                 }
                 .padding(.horizontal)
@@ -87,10 +88,12 @@ struct BillEditSummaryScreen: View {
                                         .font(.caption)
                                 )
                             Text("Bill paid by \(paidByParticipant.name)")
+                                .font(.bodyDynamic)
                                 .fontWeight(.medium)
                                 .foregroundColor(.adaptiveAccentBlue)
                         } else {
                             Text("Bill paid by Unknown")
+                                .font(.bodyDynamic)
                                 .fontWeight(.medium)
                                 .foregroundColor(.adaptiveAccentRed)
                         }
@@ -99,16 +102,20 @@ struct BillEditSummaryScreen: View {
 
                     HStack {
                         Text("Total amount:")
+                            .font(.bodyDynamic)
                         Spacer()
                         Text("$\(session.totalAmount, specifier: "%.2f")")
+                            .font(.bodyDynamic)
                             .fontWeight(.bold)
                     }
                     .foregroundColor(.adaptiveAccentBlue)
 
                     HStack {
                         Text("Date & Time:")
+                            .font(.bodyDynamic)
                         Spacer()
                         Text("\(Date().formatted(date: .abbreviated, time: .shortened))")
+                            .font(.bodyDynamic)
                             .fontWeight(.medium)
                     }
                     .foregroundColor(.adaptiveAccentBlue)
@@ -125,7 +132,7 @@ struct BillEditSummaryScreen: View {
                 // Who Owes Whom section
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Who Owes Whom")
-                        .font(.body)
+                        .font(.h4Dynamic)
                         .fontWeight(.medium)
                         .padding(.horizontal)
 
@@ -149,6 +156,7 @@ struct BillEditSummaryScreen: View {
                                                     .font(.caption)
                                             )
                                         Text(debtor.name)
+                                            .font(.bodyDynamic)
                                             .fontWeight(.medium)
                                     }
 
@@ -167,6 +175,7 @@ struct BillEditSummaryScreen: View {
                                                     .font(.caption)
                                             )
                                         Text(paidByParticipant.name)
+                                            .font(.bodyDynamic)
                                             .fontWeight(.medium)
                                     }
 
@@ -175,10 +184,11 @@ struct BillEditSummaryScreen: View {
                                     // Amount owed
                                     VStack(alignment: .trailing, spacing: 2) {
                                         Text("$\(amountOwed, specifier: "%.2f")")
+                                            .font(.bodyDynamic)
                                             .fontWeight(.bold)
                                             .foregroundColor(.adaptiveAccentRed)
                                         Text("owes")
-                                            .font(.caption)
+                                            .font(.captionDynamic)
                                             .foregroundColor(.secondary)
                                     }
                                 }
@@ -199,8 +209,9 @@ struct BillEditSummaryScreen: View {
                             VStack(spacing: 8) {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundColor(.adaptiveAccentGreen)
-                                    .font(.title2)
+                                    .font(.h3Dynamic)
                                 Text("Everyone paid their share!")
+                                    .font(.bodyDynamic)
                                     .fontWeight(.medium)
                                     .foregroundColor(.adaptiveAccentGreen)
                             }
@@ -213,10 +224,10 @@ struct BillEditSummaryScreen: View {
                     }
                 }
 
-                // Detailed breakdown section
+                // Split breakdown section
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Detailed breakdown")
-                        .font(.body)
+                    Text("Split Breakdown")
+                        .font(.h4Dynamic)
                         .fontWeight(.medium)
                         .padding(.horizontal)
 
@@ -242,6 +253,7 @@ struct BillEditSummaryScreen: View {
                                         }
                                     )
                                 Text(person.name)
+                                    .font(.bodyDynamic)
                                     .fontWeight(.medium)
                                 Spacer()
                             }
@@ -252,8 +264,10 @@ struct BillEditSummaryScreen: View {
                             ForEach(person.items, id: \.name) { item in
                                 HStack {
                                     Text(item.name)
+                                        .font(.bodyDynamic)
                                     Spacer()
                                     Text("$\(item.price, specifier: "%.2f")")
+                                        .font(.bodyDynamic)
                                         .fontWeight(.medium)
                                 }
                                 .padding()
@@ -268,9 +282,11 @@ struct BillEditSummaryScreen: View {
                             // Subtotal
                             HStack {
                                 Text("Subtotal")
+                                    .font(.bodyDynamic)
                                     .fontWeight(.medium)
                                 Spacer()
                                 Text("$\(person.items.reduce(0) { $0.currencyAdd($1.price) }, specifier: "%.2f")")
+                                    .font(.bodyDynamic)
                                     .fontWeight(.medium)
                             }
                             .padding()
@@ -300,6 +316,7 @@ struct BillEditSummaryScreen: View {
                             Image(systemName: "checkmark.circle.fill")
                         }
                         Text(isUpdating ? "Updating Bill..." : "Update Bill")
+                            .font(.buttonText)
                     }
                 }
                 .buttonStyle(PrimaryButtonStyle())
@@ -312,7 +329,7 @@ struct BillEditSummaryScreen: View {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundColor(.adaptiveAccentRed)
                         Text(error)
-                            .font(.caption)
+                            .font(.captionDynamic)
                             .foregroundColor(.adaptiveAccentRed)
                     }
                     .padding(.horizontal)

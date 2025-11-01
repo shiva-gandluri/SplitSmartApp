@@ -132,6 +132,10 @@ APIKeys.plist
 *-Info.plist
 Info.plist
 
+# Development Config with API Keys
+SplitSmart/Config/DevelopmentConfig.swift
+**/DevelopmentConfig.swift
+
 # Backup files
 *.backup
 *.bak

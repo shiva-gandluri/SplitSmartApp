@@ -688,17 +688,64 @@ struct UIScanScreen: View {
     }
 
     private func processWithConfirmedData(result: OCRResult, confirmedData: ConfirmedReceiptData) async {
-        // Use mathematical approach to find item combinations
-        let ocrService = OCRService()
-        let processedItems = await ocrService.processWithMathematicalApproach(
-            rawText: result.rawText,
-            confirmedTax: confirmedData.tax,
-            confirmedTip: confirmedData.tip,
-            confirmedTotal: confirmedData.total,
-            expectedItemCount: confirmedData.itemCount
-        )
+        print("🎯 processWithConfirmedData: Building bill from classified receipt")
+
+        // Use classified receipt data if available (from Gemini or legacy classifier)
+        let processedItems: [ReceiptItem]
+        var actualTax = confirmedData.tax
+        var actualTip = confirmedData.tip
+        var gratuity: Double = 0.0
+
+        if let classifiedReceipt = result.classifiedReceipt {
+            print("✅ Using classified receipt with \(classifiedReceipt.foodItems.count) food items")
+
+            // Convert ClassifiedReceiptItem to ReceiptItem for bill creation
+            processedItems = classifiedReceipt.foodItems.map { classifiedItem in
+                ReceiptItem(
+                    name: classifiedItem.name,
+                    price: classifiedItem.price,
+                    confidence: .high,
+                    originalDetectedName: classifiedItem.originalText,
+                    originalDetectedPrice: classifiedItem.price
+                )
+            }
+
+            // Extract tax, tip, and gratuity from classified receipt
+            actualTax = classifiedReceipt.tax?.price ?? confirmedData.tax
+            actualTip = classifiedReceipt.tip?.price ?? confirmedData.tip
+            gratuity = classifiedReceipt.gratuity?.price ?? 0.0
+
+            print("📝 Bill items created:")
+            for (index, item) in processedItems.enumerated() {
+                print("   [\(index+1)] \(item.name) - $\(String(format: "%.2f", item.price))")
+            }
+
+            print("💰 Bill summary:")
+            print("   Subtotal: $\(String(format: "%.2f", classifiedReceipt.subtotal?.price ?? 0))")
+            print("   Tax: $\(String(format: "%.2f", actualTax))")
+            print("   Tip: $\(String(format: "%.2f", actualTip))")
+            if gratuity > 0 {
+                print("   Gratuity: $\(String(format: "%.2f", gratuity)) ⭐")
+            }
+            print("   Total: $\(String(format: "%.2f", confirmedData.total))")
+
+        } else {
+            print("⚠️ No classified receipt available, falling back to mathematical approach")
+            // Fallback to mathematical approach if classification failed
+            let ocrService = OCRService()
+            processedItems = await ocrService.processWithMathematicalApproach(
+                rawText: result.rawText,
+                confirmedTax: confirmedData.tax,
+                confirmedTip: confirmedData.tip,
+                confirmedTotal: confirmedData.total,
+                expectedItemCount: confirmedData.itemCount
+            )
+        }
 
         await MainActor.run {
+            // Combine manual tip with auto-gratuity for total tip amount
+            let totalTip = actualTip + gratuity
+
             session.updateOCRResults(
                 processedItems,
                 rawText: result.rawText,
@@ -706,11 +753,13 @@ struct UIScanScreen: View {
                 identifiedTotal: confirmedData.total,
                 suggestedAmounts: [],
                 image: capturedImage,
-                confirmedTax: confirmedData.tax,
-                confirmedTip: confirmedData.tip,
+                confirmedTax: actualTax,
+                confirmedTip: totalTip,  // Combined tip + gratuity
                 confirmedTotal: confirmedData.total,
                 expectedItemCount: confirmedData.itemCount
             )
+
+            print("✅ Session updated with \(processedItems.count) items, tax: $\(String(format: "%.2f", actualTax)), tip: $\(String(format: "%.2f", totalTip)) (includes $\(String(format: "%.2f", gratuity)) gratuity)")
 
             // Auto-save session after OCR completion
             session.autoSaveSession()
@@ -1711,7 +1760,7 @@ struct OCRConfirmationView: View {
                         HStack(spacing: 12) {
                             // Label on left
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("Tax Amount")
+                                Text("Total Tax")
                                     .font(.system(size: 16, weight: .medium))
                                     .foregroundColor(.adaptiveTextPrimary)
                                 if detectedTax > 0 {
@@ -1750,7 +1799,7 @@ struct OCRConfirmationView: View {
                         HStack(spacing: 12) {
                             // Label on left
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("Tip Amount")
+                                Text("Total Tip")
                                     .font(.system(size: 16, weight: .medium))
                                     .foregroundColor(.adaptiveTextPrimary)
                                 if detectedTip > 0 {
@@ -1893,23 +1942,61 @@ struct OCRConfirmationView: View {
     }
     
     private func analyzeReceiptData() async {
-        // Use OCR service to detect tax, tip, total, and item count
-        let ocrService = OCRService()
-        
-        let analysis = await ocrService.analyzeReceiptForConfirmation(text: result.rawText)
-        
         await MainActor.run {
-            detectedTax = analysis.tax
-            detectedTip = analysis.tip
-            detectedTotal = analysis.total
-            detectedItemCount = analysis.itemCount
-            
+            // Use classified receipt data if available (from Gemini or legacy classifier)
+            if let classifiedReceipt = result.classifiedReceipt {
+                // Extract values from classified receipt
+                detectedTax = classifiedReceipt.tax?.price ?? 0.0
+
+                // ✅ FIX: Combine tip + gratuity for display
+                let manualTip = classifiedReceipt.tip?.price ?? 0.0
+                let autoGratuity = classifiedReceipt.gratuity?.price ?? 0.0
+                detectedTip = manualTip + autoGratuity
+
+                detectedTotal = classifiedReceipt.total?.price ?? 0.0
+                detectedItemCount = classifiedReceipt.foodItems.count
+
+                print("📊 UI: Using classified receipt data:")
+                print("   Food items: \(classifiedReceipt.foodItems.count)")
+                print("   Tax: $\(String(format: "%.2f", detectedTax))")
+                print("   Tip: $\(String(format: "%.2f", manualTip))")
+                if autoGratuity > 0 {
+                    print("   Gratuity: $\(String(format: "%.2f", autoGratuity)) ⭐")
+                    print("   Total Tip (Tip + Gratuity): $\(String(format: "%.2f", detectedTip))")
+                }
+                print("   Total: $\(String(format: "%.2f", detectedTotal))")
+            } else {
+                // Fallback to simple text analysis if classification failed
+                print("⚠️ UI: No classified receipt available, using fallback analysis")
+                let ocrService = OCRService()
+
+                Task {
+                    let analysis = await ocrService.analyzeReceiptForConfirmation(text: result.rawText)
+
+                    await MainActor.run {
+                        detectedTax = analysis.tax
+                        detectedTip = analysis.tip
+                        detectedTotal = analysis.total
+                        detectedItemCount = analysis.itemCount
+
+                        // Pre-populate inputs with detected values
+                        taxInput = detectedTax > 0 ? String(format: "%.2f", detectedTax) : ""
+                        tipInput = detectedTip > 0 ? String(format: "%.2f", detectedTip) : ""
+                        totalInput = detectedTotal > 0 ? String(format: "%.2f", detectedTotal) : ""
+                        itemCountInput = detectedItemCount > 0 ? String(detectedItemCount) : ""
+
+                        isLoading = false
+                    }
+                }
+                return
+            }
+
             // Pre-populate inputs with detected values
             taxInput = detectedTax > 0 ? String(format: "%.2f", detectedTax) : ""
             tipInput = detectedTip > 0 ? String(format: "%.2f", detectedTip) : ""
             totalInput = detectedTotal > 0 ? String(format: "%.2f", detectedTotal) : ""
             itemCountInput = detectedItemCount > 0 ? String(detectedItemCount) : ""
-            
+
             isLoading = false
         }
     }

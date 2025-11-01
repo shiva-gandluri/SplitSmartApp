@@ -10,13 +10,13 @@ import UserNotifications
 class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate { // TODO: Add MessagingDelegate after FirebaseMessaging
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
-        
+
         // TEMPORARILY DISABLED: Firebase App Check until proper setup is complete
         // The iOS app needs to be registered in Firebase Console first
-        
+
         // Configure Firebase as early as possible
         FirebaseApp.configure()
-        
+
         // Configure Firestore settings with modern API
         let db = Firestore.firestore()
         let settings = FirestoreSettings()

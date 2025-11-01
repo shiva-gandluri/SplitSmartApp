@@ -407,7 +407,10 @@ struct UIAssignScreen: View {
                         .cornerRadius(12)
                         .padding(.horizontal)
                     }
-                    
+
+                    // ✅ REMOVED: Bill Breakdown Section
+                    // Tax and Tip are now assignable items in the main list above
+
                     VStack(spacing: 8) {
                         let allItemsAssigned = session.assignedItems.allSatisfy { !$0.assignedToParticipants.isEmpty }
                         let totalComplete = abs(assignedTotal - session.confirmedTotal) <= 0.01

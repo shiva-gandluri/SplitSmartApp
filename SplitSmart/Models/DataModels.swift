@@ -113,7 +113,12 @@ extension Double {
     func currencyAdd(_ other: Double) -> Double {
         return (self + other).currencyRounded
     }
-    
+
+    /// Safely subtracts currency values with proper rounding
+    func currencySubtract(_ other: Double) -> Double {
+        return (self - other).currencyRounded
+    }
+
     /// Safely divides currency value by count with proper rounding
     func currencyDivide(by count: Int) -> Double {
         guard count > 0 else { return 0.0 }
@@ -158,16 +163,17 @@ struct OCRResult {
     let suggestedAmounts: [Double] // Potential item prices for quick selection
     let confidence: Float
     let processingTime: TimeInterval
+    var classifiedReceipt: ClassifiedReceipt? = nil  // NEW: Smart classification results
 }
 
-enum ConfidenceLevel: String {
+enum ConfidenceLevel: String, Codable {
     case high = "high"           // Exact match found in OCR text
     case medium = "medium"       // Part of close combination
     case low = "low"             // Approximated or uncertain
     case placeholder = "placeholder" // User needs to fill in
 }
 
-struct ReceiptItem: Identifiable, Equatable {
+struct ReceiptItem: Identifiable, Equatable, Codable {
     let id = UUID()
     var name: String
     var price: Double
@@ -2279,37 +2285,80 @@ class OCRService: ObservableObject {
             return OCRResult(rawText: "", parsedItems: [], identifiedTotal: nil, suggestedAmounts: [], confidence: 0.0, processingTime: 0)
         }
         
-        
+
         do {
-            // Step 1: Extract text using Vision
+            // Step 1: Extract text observations with spatial data (NEW APPROACH)
             await MainActor.run { progress = 0.3 }
-            let extractedText = try await extractText(from: cgImage)
-            
+            let observations = try await extractTextObservations(from: cgImage)
+
+            // Convert to text for logging and backward compatibility
+            let extractedText = observations
+                .map { $0.topCandidates(1).first?.string ?? "" }
+                .joined(separator: "\n")
+
             if extractedText.isEmpty {
             } else {
             }
-            
-            // Step 2: Parse the extracted text
+
+            // Step 2: Parse using NEW geometric matching
+            await MainActor.run { progress = 0.5 }
+            let (parsedItems, identifiedTotal) = await parseReceiptObservations(observations)
+
+            // Step 3: Classify items using smart classification system
             await MainActor.run { progress = 0.7 }
-            let (parsedItems, identifiedTotal) = await parseReceiptText(extractedText)
-            
-            
-            // Step 3: Calculate confidence and finish
-            await MainActor.run { progress = 0.9 }
-            let confidence = calculateConfidence(text: extractedText, items: parsedItems)
-            let processingTime = Date().timeIntervalSince(startTime)
-            
-            let suggestedAmounts = extractPotentialAmounts(extractedText)
-            
-            let result = OCRResult(
+            let context = ReceiptContext.from(ocrResult: OCRResult(
                 rawText: extractedText,
                 parsedItems: parsedItems,
                 identifiedTotal: identifiedTotal,
+                suggestedAmounts: [],
+                confidence: 0.0,
+                processingTime: 0.0
+            ))
+
+            // Use user's saved classification configuration + engine selection
+            let configManager = ClassificationConfigManager.shared
+            let engine = ClassificationEngine.current
+
+            print("🔧 Using classification engine: \(engine.rawValue)")
+
+            let classifiedReceipt: ClassifiedReceipt
+            if engine == .geminiOnly {
+                // Use new Gemini-only classifier
+                if let apiKey = try? KeychainAPIKeyProvider().getAPIKey() {
+                    let geminiClassifier = GeminiOnlyClassifier(apiKey: apiKey)
+                    classifiedReceipt = await geminiClassifier.classify(parsedItems, context: context)
+                } else {
+                    print("⚠️  No Gemini API key, falling back to legacy classifier")
+                    let classifier = ReceiptClassifier(config: configManager.getCurrentConfig())
+                    classifiedReceipt = await classifier.classify(parsedItems, context: context)
+                }
+            } else {
+                // Use legacy multi-strategy classifier
+                let classifier = ReceiptClassifier(config: configManager.getCurrentConfig())
+                classifiedReceipt = await classifier.classify(parsedItems, context: context)
+            }
+
+            // Step 4: Calculate confidence and finish
+            await MainActor.run { progress = 0.9 }
+            let confidence = calculateConfidence(text: extractedText, items: parsedItems)
+            let processingTime = Date().timeIntervalSince(startTime)
+
+            let suggestedAmounts = extractPotentialAmounts(extractedText)
+
+            // Use total from classification (if available), otherwise fall back to regex detection
+            let finalTotal = classifiedReceipt.total?.price ?? identifiedTotal
+
+            // Build OCR result with classification data
+            let result = OCRResult(
+                rawText: extractedText,
+                parsedItems: parsedItems,
+                identifiedTotal: finalTotal,  // Use classified total
                 suggestedAmounts: suggestedAmounts,
                 confidence: confidence,
-                processingTime: processingTime
+                processingTime: processingTime,
+                classifiedReceipt: classifiedReceipt  // NEW: Include classification
             )
-            
+
             for (index, item) in parsedItems.enumerated() {
             }
             let totalValue = parsedItems.reduce(0) { $0.currencyAdd($1.price) }
@@ -2331,49 +2380,36 @@ class OCRService: ObservableObject {
         }
     }
     
-    private func extractText(from cgImage: CGImage) async throws -> String {
+    // NEW: Extract text observations with spatial data preserved
+    private func extractTextObservations(from cgImage: CGImage) async throws -> [VNRecognizedTextObservation] {
         return try await withCheckedThrowingContinuation { continuation in
             let request = VNRecognizeTextRequest { request, error in
                 if let error = error {
                     continuation.resume(throwing: error)
                     return
                 }
-                
+
                 guard let observations = request.results as? [VNRecognizedTextObservation] else {
-                    continuation.resume(returning: "")
+                    continuation.resume(returning: [])
                     return
                 }
-                
-                
-                // Filter low-confidence observations and improve text extraction
-                let recognizedText = observations
-                    .filter { $0.confidence > 0.2 } // Filter out very low confidence
-                    .compactMap { observation in
-                        // Get top candidate with better confidence handling
-                        let topCandidate = observation.topCandidates(1).first?.string
-                        if let text = topCandidate, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            return text
-                        }
-                        return nil
-                    }
-                    .joined(separator: "\n")
-                
-                
-                continuation.resume(returning: recognizedText)
+
+                // Filter low-confidence observations but KEEP spatial data
+                let filteredObservations = observations.filter { $0.confidence > 0.2 }
+
+                continuation.resume(returning: filteredObservations)
             }
-            
+
             // Optimized Vision Framework settings for receipts
             request.recognitionLevel = .accurate
-            request.usesLanguageCorrection = true // Enable for better accuracy
-            request.recognitionLanguages = ["en-US"] // Focus on English only
-            request.minimumTextHeight = 0.005 // Lower threshold for small receipt text
-            request.automaticallyDetectsLanguage = false // Disable for better performance
-            
-            // Optimize image processing options
+            request.usesLanguageCorrection = true
+            request.recognitionLanguages = ["en-US"]
+            request.minimumTextHeight = 0.005
+            request.automaticallyDetectsLanguage = false
+
             let options: [VNImageOption: Any] = [:]
-            
             let handler = VNImageRequestHandler(cgImage: cgImage, options: options)
-            
+
             do {
                 try handler.perform([request])
             } catch {
@@ -2381,30 +2417,88 @@ class OCRService: ObservableObject {
             }
         }
     }
+
+    // Legacy method for backward compatibility (converts observations to text)
+    private func extractText(from cgImage: CGImage) async throws -> String {
+        let observations = try await extractTextObservations(from: cgImage)
+
+        let recognizedText = observations
+            .compactMap { observation in
+                let topCandidate = observation.topCandidates(1).first?.string
+                if let text = topCandidate, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    return text
+                }
+                return nil
+            }
+            .joined(separator: "\n")
+
+        return recognizedText
+    }
     
+    /// NEW: Parse receipt using geometric matching (spatial data from observations)
+    private func parseReceiptObservations(_ observations: [VNRecognizedTextObservation]) async -> ([ReceiptItem], Double?) {
+        print("\n" + String(repeating: "=", count: 60))
+        print("🔵 === VISION OCR RAW OBSERVATIONS ===")
+        print("🔵 Total observations from Vision Framework: \(observations.count)")
+        print(String(repeating: "=", count: 60))
+
+        // Log all raw observations with their bounding boxes
+        for (index, obs) in observations.enumerated() {
+            let text = obs.topCandidates(1).first?.string ?? ""
+            let confidence = obs.confidence
+            let bbox = obs.boundingBox
+            print("🔵 Raw[\(index)]: '\(text)'")
+            print("   Confidence: \(String(format: "%.2f", confidence))")
+            print("   BoundingBox: X=\(String(format: "%.4f", bbox.minX))-\(String(format: "%.4f", bbox.maxX)), Y=\(String(format: "%.4f", bbox.minY))-\(String(format: "%.4f", bbox.maxY))")
+        }
+        print(String(repeating: "=", count: 60) + "\n")
+
+        print("🔵 OCR: Using NEW geometric matching approach")
+        print("🔵 OCR: Processing \(observations.count) text observations using geometry-based extraction")
+
+        // Use pure geometric matching to extract ALL items (food, tax, tip, total, etc.)
+        // No regex patterns, no keyword matching - just geometry + positions
+        let detectedItems = extractItemsUsingGeometry(
+            observations,
+            maxPrice: nil  // Don't filter by max price - let classification handle it
+        )
+
+        print("\n" + String(repeating: "=", count: 60))
+        print("🔵 === FINAL OCR RESULTS ===")
+        print("🔵 OCR: Geometric matching found \(detectedItems.count) items")
+        for (index, item) in detectedItems.enumerated() {
+            print("🔵 Item[\(index)]: '\(item.name)' - $\(String(format: "%.2f", item.price))")
+        }
+        print(String(repeating: "=", count: 60) + "\n")
+
+        // Return all items - classification system will determine what's what
+        return (detectedItems, nil)
+    }
+
+    /// Legacy text-based parsing (kept for backward compatibility)
     private func parseReceiptText(_ text: String) async -> ([ReceiptItem], Double?) {
-        
+
         // Step 1: Extract total, tax, tip first using regex
         let extractedTotal = extractReceiptTotal(text)
         let (taxAmount, tipAmount) = extractTaxAndTip(text)
-        
+
         // Step 2: Clean text by removing total/tax/tip lines before sending to Apple Intelligence
         let cleanedText = removeFinancialSummaryLines(text: text)
-        
+
         // Step 3: Use Apple Intelligence for item extraction (excluding financial summary)
         let detectedItems = await extractItemsWithAppleIntelligence(
             cleanedText: cleanedText,
             maxPrice: extractedTotal
         )
-        
+
         // Step 4: Add tax and tip as separate items if detected
         let allItems = addFinancialSummaryItems(
             items: detectedItems,
             tax: taxAmount,
             tip: tipAmount
         )
-        
-        
+
+
         return (allItems, extractedTotal)
     }
     
@@ -2446,22 +2540,28 @@ class OCRService: ObservableObject {
         let lines = text.components(separatedBy: .newlines)
         var taxAmount: Double? = nil
         var tipAmount: Double? = nil
-        
+
         for line in lines {
             let cleanLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
             let lowercased = cleanLine.lowercased()
-            
-            // Look for tax patterns
+
+            // Look for tax - simple keyword + dollar amount
             if lowercased.contains("tax") && !lowercased.contains("total") {
-                if let amount = extractAmountWithPattern(line: cleanLine, pattern: "tax[:\\s]*\\$?([0-9]+\\.[0-9]{2})") {
+                // Just extract the last price on the line (most reliable)
+                if let amount = extractPriceFromLine(cleanLine) {
                     taxAmount = amount
+                    print("💰 Tax detected: $\(amount)")
                 }
             }
-            
-            // Look for tip patterns
-            if lowercased.contains("tip") && !lowercased.contains("total") {
-                if let amount = extractAmountWithPattern(line: cleanLine, pattern: "tip[:\\s]*\\$?([0-9]+\\.[0-9]{2})") {
+
+            // Look for tip/gratuity - simple keyword + dollar amount
+            if (lowercased.contains("tip") || lowercased.contains("gratuity")) && !lowercased.contains("total") {
+                // Just extract the last price on the line (most reliable)
+                // This will correctly extract $5.00 from "Tip $5.00" or "Gratuity (18%) $5.00"
+                // But won't incorrectly extract $20 from "Large Party (20.00%)"
+                if let amount = extractPriceFromLine(cleanLine) {
                     tipAmount = amount
+                    print("💰 Tip detected: $\(amount)")
                 }
             }
         }
@@ -3220,13 +3320,13 @@ class OCRService: ObservableObject {
     
     private func extractPriceFromLine(_ line: String) -> Double? {
         let pricePattern = "\\$?([0-9]+\\.[0-9]{2})"
-        
+
         guard let regex = try? NSRegularExpression(pattern: pricePattern, options: []) else {
             return nil
         }
-        
+
         let matches = regex.matches(in: line, options: [], range: NSRange(location: 0, length: line.count))
-        
+
         for match in matches {
             if let range = Range(match.range(at: 1), in: line) {
                 let priceString = String(line[range])
@@ -3235,10 +3335,204 @@ class OCRService: ObservableObject {
                 }
             }
         }
-        
+
         return nil
     }
-    
+
+    // MARK: - Geometric Matching Helpers
+
+    /// Checks if a string matches price format patterns
+    private func isPriceFormat(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // More lenient patterns to catch various receipt formats
+        let pricePatterns = [
+            "\\$?[0-9]+\\.[0-9]{2}",                    // $12.99 or 12.99 (anywhere in string)
+            "\\$?[0-9]{1,3}(,[0-9]{3})+\\.[0-9]{2}",   // $1,234.56 or 1,234.56
+            "\\$[0-9]+\\.[0-9]{2}",                     // $12.99 (strict)
+            "[0-9]+\\.[0-9]{2}$"                        // 12.99 (at end of string)
+        ]
+
+        for pattern in pricePatterns {
+            if let regex = try? NSRegularExpression(pattern: pattern),
+               regex.firstMatch(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed)) != nil {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    /// Extracts numeric price value from a price string
+    private func extractPriceValue(_ text: String) -> Double? {
+        let cleaned = text.replacingOccurrences(of: "$", with: "")
+                         .replacingOccurrences(of: ",", with: "")
+                         .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let value = Double(cleaned) {
+            print("   💵 Extracted price value: '\(text)' → $\(value)")
+            return value
+        } else {
+            print("   ❌ Failed to convert '\(text)' (cleaned: '\(cleaned)') to Double")
+            return nil
+        }
+    }
+
+    /// Checks if a line is likely a tax or tip line (to be excluded from items)
+    private func isTaxOrTipLine(_ text: String) -> Bool {
+        let lowercased = text.lowercased()
+
+        // Exclude tax, tip, gratuity, totals, service charges, and auto-gratuity
+        let excludeKeywords = ["tax", "tip", "gratuity", "total", "subtotal", "balance", "change", "service charge", "auto grat", "large party", "party gratuity"]
+
+        // Check if keyword is present and line is relatively short (not a menu item containing the word)
+        for keyword in excludeKeywords {
+            if lowercased == keyword ||
+               lowercased.hasPrefix(keyword + " ") ||
+               lowercased.hasSuffix(" " + keyword) ||
+               (lowercased.contains(keyword) && lowercased.count < 30) {
+                print("🔴 Tax/Tip filter: '\(text)' excluded (keyword: \(keyword))")
+                return true
+            }
+        }
+
+        return false
+    }
+
+    /// Groups observations by vertical position (Y-coordinate clustering)
+    private func groupObservationsByLine(
+        _ observations: [VNRecognizedTextObservation],
+        yTolerance: CGFloat = 0.02
+    ) -> [[VNRecognizedTextObservation]] {
+        print("\n🔵 === LINE GROUPING START ===")
+        print("🔵 Total observations to group: \(observations.count)")
+        print("🔵 Y-tolerance: \(yTolerance) (2% of receipt height)")
+
+        // Sort by Y position (top to bottom - Vision coordinates are inverted)
+        let sorted = observations.sorted { $0.boundingBox.midY > $1.boundingBox.midY }
+
+        var lines: [[VNRecognizedTextObservation]] = []
+        var currentLine: [VNRecognizedTextObservation] = []
+        var currentY: CGFloat?
+
+        for (index, obs) in sorted.enumerated() {
+            let obsY = obs.boundingBox.midY
+            let text = obs.topCandidates(1).first?.string ?? ""
+
+            print("🔵 Obs[\(index)]: '\(text)' at Y=\(String(format: "%.4f", obsY)) X=\(String(format: "%.4f", obs.boundingBox.minX))-\(String(format: "%.4f", obs.boundingBox.maxX))")
+
+            if let lastY = currentY, abs(obsY - lastY) <= yTolerance {
+                // Same line - within tolerance
+                print("   ↳ Same line as previous (Y diff: \(String(format: "%.4f", abs(obsY - lastY))))")
+                currentLine.append(obs)
+            } else {
+                // New line detected
+                if !currentLine.isEmpty {
+                    let lineTexts = currentLine.map { $0.topCandidates(1).first?.string ?? "" }
+                    print("   ✅ Line \(lines.count) complete: [\(lineTexts.joined(separator: " | "))]")
+                    lines.append(currentLine)
+                }
+                print("   🆕 Starting new line at Y=\(String(format: "%.4f", obsY))")
+                currentLine = [obs]
+                currentY = obsY
+            }
+        }
+
+        // Add last line
+        if !currentLine.isEmpty {
+            let lineTexts = currentLine.map { $0.topCandidates(1).first?.string ?? "" }
+            print("   ✅ Line \(lines.count) complete (last): [\(lineTexts.joined(separator: " | "))]")
+            lines.append(currentLine)
+        }
+
+        print("🔵 === LINE GROUPING COMPLETE: \(lines.count) lines ===\n")
+        return lines
+    }
+
+    /// NEW: Extract items using geometric/spatial matching instead of NL analysis
+    private func extractItemsUsingGeometry(
+        _ observations: [VNRecognizedTextObservation],
+        maxPrice: Double?
+    ) -> [ReceiptItem] {
+        print("\n🟢 === GEOMETRY EXTRACTION START ===")
+        let lines = groupObservationsByLine(observations)
+        var items: [ReceiptItem] = []
+
+        print("🟢 Processing \(lines.count) lines for price extraction\n")
+
+        for (lineIndex, line) in lines.enumerated() {
+            print("🟢 --- Line \(lineIndex) Analysis ---")
+
+            // Sort by horizontal position (left to right)
+            let sorted = line.sorted { $0.boundingBox.minX < $1.boundingBox.minX }
+            let lineText = sorted.map { $0.topCandidates(1).first?.string ?? "" }.joined(separator: " ")
+            print("🟢 Line text: '\(lineText)'")
+
+            // Check each observation for price format
+            print("🟢 Checking \(sorted.count) observations for price patterns:")
+            for (i, obs) in sorted.enumerated() {
+                let text = obs.topCandidates(1).first?.string ?? ""
+                let isPrice = isPriceFormat(text)
+                print("   [\(i)] '\(text)' at X=\(String(format: "%.4f", obs.boundingBox.minX))-\(String(format: "%.4f", obs.boundingBox.maxX)) → \(isPrice ? "✅ PRICE" : "❌ not price")")
+            }
+
+            // Find price on this line (right-aligned, matches price pattern)
+            guard let priceObs = sorted.last(where: { obs in
+                let text = obs.topCandidates(1).first?.string ?? ""
+                return isPriceFormat(text)
+            }) else {
+                print("⚠️  No valid price found on line \(lineIndex), skipping\n")
+                continue
+            }
+
+            guard let priceText = priceObs.topCandidates(1).first?.string,
+                  let price = extractPriceValue(priceText),
+                  price > 0 else {
+                print("⚠️  Price extraction failed for '\(priceObs.topCandidates(1).first?.string ?? "")'\n")
+                continue
+            }
+
+            print("💰 Found price: $\(price) at X=\(String(format: "%.4f", priceObs.boundingBox.minX))")
+
+            // Everything left of price = item name
+            // Reduced margin from 0.05 (5%) to 0.01 (1%) to be more lenient
+            let priceLeftEdge = priceObs.boundingBox.minX + 0.01
+            print("🟢 Looking for name observations with maxX < \(String(format: "%.4f", priceLeftEdge))")
+
+            let nameObservations = sorted.filter {
+                let qualifies = $0.boundingBox.maxX < priceLeftEdge
+                let text = $0.topCandidates(1).first?.string ?? ""
+                print("   '\(text)' maxX=\(String(format: "%.4f", $0.boundingBox.maxX)) → \(qualifies ? "✅ included" : "❌ excluded (overlaps price)")")
+                return qualifies
+            }
+
+            guard !nameObservations.isEmpty else {
+                print("⚠️  No text found before price, skipping line\n")
+                continue
+            }
+
+            let itemName = nameObservations
+                .map { $0.topCandidates(1).first?.string ?? "" }
+                .joined(separator: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+            print("📝 Extracted name: '\(itemName)' (length: \(itemName.count))")
+
+            // Only skip if name is too short (single character)
+            // Let the classification system determine what's tax/tip/total/food
+            guard itemName.count >= 2 else {
+                print("⚠️  Name too short, skipping\n")
+                continue
+            }
+
+            print("✅ EXTRACTED ITEM: '\(itemName)' - $\(price)\n")
+            items.append(ReceiptItem(name: itemName, price: price))
+        }
+
+        print("🟢 === GEOMETRY EXTRACTION COMPLETE: \(items.count) items extracted ===\n")
+        return items
+    }
+
     private func parseItemFromLine(_ line: String) -> ReceiptItem? {
         // Pattern 1: Item name followed by price at end of line
         // Example: "Chicken Sandwich    12.99" or "MILK 1GAL $3.49"
@@ -4813,12 +5107,12 @@ class BillSplitSession: ObservableObject {
         if filteredCount > 0 {
         }
 
-        assignedItems = validItems.enumerated().map { index, receiptItem in
+        var allItems: [UIItem] = validItems.enumerated().map { index, receiptItem in
             UIItem(
                 id: index + 1,
                 name: receiptItem.name,
                 price: receiptItem.price,
-                assignedTo: nil,  // Legacy: Start unassigned
+                assignedTo: nil as String?,  // Legacy: Start unassigned
                 assignedToParticipants: Set<String>(), // New: Start with no participants
                 confidence: receiptItem.confidence,
                 originalDetectedName: receiptItem.originalDetectedName,
@@ -4826,7 +5120,51 @@ class BillSplitSession: ObservableObject {
             )
         }
 
-        
+        // ✅ ADD: Tax, Tip, and Gratuity as assignable items
+        var nextId = validItems.count + 1
+
+        // Add Tax as assignable item
+        if confirmedTax > 0 {
+            allItems.append(UIItem(
+                id: nextId,
+                name: "Tax",
+                price: confirmedTax,
+                assignedTo: nil,
+                assignedToParticipants: Set<String>(),
+                confidence: .high,
+                originalDetectedName: "Tax",
+                originalDetectedPrice: confirmedTax
+            ))
+            nextId += 1
+        }
+
+        // Add Tip as assignable item (already includes gratuity if present)
+        if confirmedTip > 0 {
+            allItems.append(UIItem(
+                id: nextId,
+                name: "Tip",
+                price: confirmedTip,
+                assignedTo: nil,
+                assignedToParticipants: Set<String>(),
+                confidence: .high,
+                originalDetectedName: "Tip",
+                originalDetectedPrice: confirmedTip
+            ))
+            nextId += 1
+        }
+
+        assignedItems = allItems
+
+        print("📝 Created \(allItems.count) assignable items:")
+        print("   - Food items: \(validItems.count)")
+        if confirmedTax > 0 {
+            print("   - Tax: $\(String(format: "%.2f", confirmedTax))")
+        }
+        if confirmedTip > 0 {
+            print("   - Tip: $\(String(format: "%.2f", confirmedTip))")
+        }
+
+
         // Go directly to assignment screen
         sessionState = .assigning
     }
@@ -5423,7 +5761,7 @@ class BillSplitSession: ObservableObject {
                 id: itemSnapshot.id,
                 name: itemSnapshot.name,
                 price: itemSnapshot.price,
-                assignedTo: nil, // Legacy field - not used in restoration
+                assignedTo: nil as String?, // Legacy field - not used in restoration
                 assignedToParticipants: Set(itemSnapshot.assignedToParticipants),
                 confidence: ConfidenceLevel(rawValue: itemSnapshot.confidence) ?? .medium,
                 originalDetectedName: itemSnapshot.originalDetectedName,

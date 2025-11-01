@@ -406,7 +406,7 @@ struct BillHistoryCard: View {
                         .foregroundColor(.secondary)
                 }
             }
-            .padding(16)
+            .padding(.paddingScreen)
             .background(Color(.systemBackground))
             .cornerRadius(.cornerRadiusButton)
             .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
@@ -579,9 +579,9 @@ struct BillDetailView: View {
                     }
                 }
                 
-                // Detailed Breakdown section
+                // Split Breakdown section
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("Detailed Breakdown")
+                    Text("Split Breakdown")
                         .font(.body)
                         .fontWeight(.medium)
                         .padding(.horizontal)

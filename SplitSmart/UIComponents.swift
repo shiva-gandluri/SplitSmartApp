@@ -148,13 +148,13 @@ struct ParticipantSearchView: View {
     
     var body: some View {
         // Compact Search Bar
-        HStack(spacing: 12) {
+        HStack(spacing: .spacingML) {
             Image(systemName: "magnifyingglass")
                 .foregroundColor(.secondary)
-                .font(.system(size: 16))
+                .font(.bodyText)
 
             TextField("Add Participants", text: $searchText)
-                .font(.system(size: 16, weight: .regular))
+                .font(.bodyText)
                 .focused($isTextFieldFocused)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
@@ -170,7 +170,7 @@ struct ParticipantSearchView: View {
                 }) {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundColor(.secondary)
-                        .font(.system(size: 16))
+                        .font(.bodyText)
                 }
             }
         }
@@ -207,22 +207,22 @@ struct ParticipantSearchView: View {
                             Button(action: {
                                 onNewContactSubmit(searchText)
                             }) {
-                                HStack(spacing: 12) {
+                                HStack(spacing: .spacingML) {
                                     Image(systemName: "person.badge.plus")
                                         .foregroundColor(.adaptiveAccentBlue)
-                                        .font(.system(size: 20))
+                                        .font(.h4)
                                         .frame(width: 40, height: 40)
                                         .background(Color.adaptiveAccentBlue.opacity(0.1))
                                         .cornerRadius(20)
 
-                                    VStack(alignment: .leading, spacing: 2) {
+                                    VStack(alignment: .leading, spacing: .spacing2XS) {
                                         Text("Add \(searchText)")
-                                            .font(.subheadline)
+                                            .font(.bodyDynamic)
                                             .fontWeight(.medium)
                                             .foregroundColor(.primary)
 
                                         Text("New contact")
-                                            .font(.caption)
+                                            .font(.captionDynamic)
                                             .foregroundColor(.secondary)
                                     }
 
@@ -257,35 +257,36 @@ struct ContactResultRow: View {
     
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 16) {
+            HStack(spacing: .spacingMD) {
                 // Avatar
                 Circle()
                     .fill(Color.adaptiveAccentBlue.opacity(0.1))
                     .frame(width: 44, height: 44)
                     .overlay(
                         Text(String(contact.displayName.prefix(1).uppercased()))
-                            .font(.system(size: 18, weight: .semibold))
+                            .font(.h4)
+                            .fontWeight(.semibold)
                             .foregroundColor(.adaptiveAccentBlue)
                     )
-                
+
                 // Contact Info
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXS) {
                     Text(contact.displayName)
-                        .font(.subheadline)
+                        .font(.bodyDynamic)
                         .fontWeight(.medium)
                         .foregroundColor(.primary)
-                    
+
                     Text(contact.email)
-                        .font(.caption)
+                        .font(.captionDynamic)
                         .foregroundColor(.secondary)
                 }
-                
+
                 Spacer()
-                
+
                 // Transaction count
                 if contact.totalTransactions > 1 {
                     Text("\(contact.totalTransactions)")
-                        .font(.caption2)
+                        .font(.captionDynamic)
                         .fontWeight(.medium)
                         .foregroundColor(.secondary)
                         .padding(.horizontal, 8)
@@ -321,25 +322,25 @@ struct NewContactModal: View {
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack(spacing: 32) {
+                VStack(spacing: .spacingXL) {
                     // Icon and description
-                    VStack(spacing: 16) {
+                    VStack(spacing: .spacingMD) {
                         Circle()
                             .fill(Color.adaptiveAccentBlue.opacity(0.1))
                             .frame(width: 80, height: 80)
                             .overlay(
                                 Image(systemName: "person.badge.plus")
-                                    .font(.system(size: 32))
+                                    .font(.h2)
                                     .foregroundColor(.adaptiveAccentBlue)
                             )
-                        
-                        VStack(spacing: 8) {
+
+                        VStack(spacing: .spacingSM) {
                             Text("Add to Network")
-                                .font(.title2)
+                                .font(.h3Dynamic)
                                 .fontWeight(.semibold)
-                            
+
                             Text("Save this contact to easily add them to future bills")
-                                .font(.subheadline)
+                                .font(.bodyDynamic)
                                 .foregroundColor(.secondary)
                                 .multilineTextAlignment(.center)
                         }
@@ -347,21 +348,21 @@ struct NewContactModal: View {
                     .padding(.top, 20)
                     
                     // Form
-                    VStack(spacing: 24) {
+                    VStack(spacing: .spacingLG) {
                         // Full Name Field
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: .spacingSM) {
                             HStack {
                                 Text("Full Name")
-                                    .font(.subheadline)
+                                    .font(.inputLabel)
                                     .fontWeight(.medium)
-                                
+
                                 Text("*")
-                                    .font(.subheadline)
+                                    .font(.inputLabel)
                                     .foregroundColor(.adaptiveAccentRed)
                             }
-                            
+
                             TextField("Enter full name", text: $fullName)
-                                .font(.body)
+                                .font(.bodyDynamic)
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 14)
                                 .background(Color.adaptiveDepth3)
@@ -374,25 +375,25 @@ struct NewContactModal: View {
                         }
                         
                         // Email Field (read-only)
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: .spacingSM) {
                             Text("Email")
-                                .font(.subheadline)
+                                .font(.inputLabel)
                                 .fontWeight(.medium)
-                            
+
                             HStack {
                                 Image(systemName: "envelope")
                                     .foregroundColor(.secondary)
-                                    .font(.system(size: 16))
-                                
+                                    .font(.bodyText)
+
                                 Text(prefilledEmail)
-                                    .font(.body)
+                                    .font(.bodyDynamic)
                                     .foregroundColor(.primary)
-                                
+
                                 Spacer()
-                                
+
                                 Image(systemName: "lock.fill")
                                     .foregroundColor(.secondary)
-                                    .font(.system(size: 12))
+                                    .font(.captionText)
                             }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 14)
@@ -401,14 +402,14 @@ struct NewContactModal: View {
                         }
                         
                         // Phone Number Field (optional)
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: .spacingSM) {
                             Text("Phone Number (Optional)")
-                                .font(.subheadline)
+                                .font(.inputLabel)
                                 .fontWeight(.medium)
                                 .foregroundColor(.secondary)
-                            
+
                             TextField("Enter phone number", text: $phoneNumber)
-                                .font(.body)
+                                .font(.bodyDynamic)
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 14)
                                 .background(Color.adaptiveDepth3)
@@ -423,10 +424,10 @@ struct NewContactModal: View {
                             HStack {
                                 Image(systemName: "exclamationmark.triangle.fill")
                                     .foregroundColor(.adaptiveAccentRed)
-                                    .font(.system(size: 14))
-                                
+                                    .font(.smallText)
+
                                 Text(errorMessage)
-                                    .font(.caption)
+                                    .font(.captionDynamic)
                                     .foregroundColor(.adaptiveAccentRed)
                                 
                                 Spacer()
@@ -587,7 +588,7 @@ struct UIAssignScreen: View {
                 .foregroundColor(.adaptiveTextSecondary)
                 .font(.captionText)
         }
-        .padding(14)
+        .padding(.paddingScreen)
         .background(Color.adaptiveDepth3)
         .cornerRadius(.cornerRadiusMedium)
         .shadow(color: Color.black.opacity(0.08), radius: 8, x: 0, y: 3)
@@ -609,13 +610,15 @@ struct UIAssignScreen: View {
     }
 
     private var whoPaidSection: some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 4) {
+        HStack(spacing: .spacingML) {
+            HStack(spacing: .spacingXS) {
                 Text("Who paid this bill?")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.bodyText)
+                    .fontWeight(.medium)
                     .foregroundColor(.adaptiveTextPrimary)
                 Text("*")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.smallText)
+                    .fontWeight(.bold)
                     .foregroundColor(.adaptiveAccentRed)
             }
 
@@ -653,7 +656,7 @@ struct UIAssignScreen: View {
     
     var body: some View {
         ScrollView {
-            VStack(spacing: 40) {
+            VStack(spacing: .spacingXXL) {
                 headerWithImagePreview
                 participantManagementSection
                 regexItemsSection
@@ -723,7 +726,7 @@ struct UIAssignScreen: View {
     }
 
     private var participantManagementSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMD) {
             ParticipantSearchView(
                 searchText: $newParticipantName,
                 transactionContacts: contactsManager.transactionContacts,
@@ -739,7 +742,7 @@ struct UIAssignScreen: View {
 
     private var participantChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 12) {
+            HStack(spacing: .spacingML) {
                 ForEach(session.participants) { participant in
                     ParticipantChip(
                         participant: participant,
@@ -753,7 +756,7 @@ struct UIAssignScreen: View {
     }
 
     private var regexItemsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: .spacingML) {
             regexSectionHeader
             regexItemsList
         }
@@ -761,7 +764,8 @@ struct UIAssignScreen: View {
 
     private var regexSectionHeader: some View {
         Text("Receipt Items (based on Regex)")
-            .font(.system(size: 18, weight: .semibold))
+            .font(.h4Dynamic)
+            .fontWeight(.semibold)
             .foregroundColor(.adaptiveTextPrimary)
             .padding(.horizontal, .paddingScreen)
             .padding(.bottom, 0)
@@ -778,7 +782,7 @@ struct UIAssignScreen: View {
     }
 
     private var llmItemsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: .spacingML) {
             llmSectionHeader
             llmItemsList
         }
@@ -786,7 +790,8 @@ struct UIAssignScreen: View {
 
     private var llmSectionHeader: some View {
         Text("Receipt Items (based on Apple Intelligence)")
-            .font(.system(size: 18, weight: .semibold))
+            .font(.h4Dynamic)
+            .fontWeight(.semibold)
             .foregroundColor(.adaptiveTextPrimary)
             .padding(.horizontal, .paddingScreen)
             .padding(.bottom, 0)
@@ -844,11 +849,11 @@ struct UIAssignScreen: View {
     private var assignmentSummarySection: some View {
         Group {
             if !session.assignedItems.isEmpty {
-                VStack(spacing: 24) {
+                VStack(spacing: .spacingLG) {
                     whoPaidSection
                         .padding(.horizontal, .paddingScreen)
 
-                    VStack(spacing: 8) {
+                    VStack(spacing: .spacingSM) {
                         summaryDetails
                         continueButtonSection
                     }
@@ -919,7 +924,7 @@ struct UIAssignScreen: View {
         let whoPaidSelected = session.paidByParticipantID != nil
         let canContinue = session.isReadyForBillCreation && totalComplete
 
-        return VStack(spacing: 8) {
+        return VStack(spacing: .spacingSM) {
             continueButton(enabled: canContinue)
             validationMessages(
                 whoPaidSelected: whoPaidSelected,
@@ -1415,9 +1420,9 @@ struct ParticipantChip: View {
 
     var body: some View {
         Button(action: {}) {
-            HStack(spacing: 6) {
+            HStack(spacing: .spacingXSM) {
                 Text(participant.name)
-                    .font(.caption)
+                    .font(.captionDynamic)
                     .fontWeight(.semibold)
                     .lineLimit(1)
 
@@ -1426,7 +1431,7 @@ struct ParticipantChip: View {
                         showDeleteConfirmation = true
                     }) {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.caption2)
+                            .font(.captionDynamic)
                             .foregroundColor(.white)
                     }
                     .buttonStyle(PlainButtonStyle())
@@ -1505,9 +1510,9 @@ struct UIItemAssignCard: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .center, spacing: 12) {
+            HStack(alignment: .center, spacing: .spacingML) {
                 // Editable Item Name
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXS) {
                     TextField("Item Name", text: $item.name)
                         .fontWeight(.medium)
                         .focused($isNameFieldFocused)
@@ -1516,13 +1521,13 @@ struct UIItemAssignCard: View {
                         }
                     
                     // Confidence indicator
-                    HStack(spacing: 4) {
+                    HStack(spacing: .spacingXS) {
                         Image(systemName: confidenceIcon)
-                            .font(.caption2)
+                            .font(.captionDynamic)
                             .foregroundColor(confidenceColor)
                         
                         Text(confidenceText)
-                            .font(.caption2)
+                            .font(.captionDynamic)
                             .foregroundColor(confidenceColor)
                     }
                 }
@@ -1530,9 +1535,9 @@ struct UIItemAssignCard: View {
                 Spacer()
                 
                 // Editable Price
-                HStack(spacing: 4) {
+                HStack(spacing: .spacingXS) {
                     Text("$")
-                        .font(.caption)
+                        .font(.captionDynamic)
                         .foregroundColor(.secondary)
                     
                     TextField("Price", value: $item.price, format: .number)
@@ -1545,33 +1550,33 @@ struct UIItemAssignCard: View {
                 }
                 
                 if let assigned = assignedParticipant {
-                    HStack(spacing: 4) {
+                    HStack(spacing: .spacingXS) {
                         Circle()
                             .fill(assigned.color)
                             .frame(width: 20, height: 20)
                             .overlay(
                                 Image(systemName: "person.fill")
                                     .foregroundColor(.white)
-                                    .font(.caption2)
+                                    .font(.captionDynamic)
                             )
                         Text(assigned.name)
-                            .font(.caption)
+                            .font(.captionDynamic)
                     }
                 } else {
                     Text("Unassigned")
-                        .font(.caption)
+                        .font(.captionDynamic)
                         .foregroundColor(.secondary)
                 }
             }
             .padding()
             
             if assignedParticipant == nil {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 8) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: .spacingSM) {
                     ForEach(participants) { participant in
                         Button(participant.name) {
                             item.assignedTo = participant.id
                         }
-                        .font(.caption)
+                        .font(.captionDynamic)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(participant.color)
@@ -1637,21 +1642,21 @@ struct RegexItemCard: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .center, spacing: 12) {
+            HStack(alignment: .center, spacing: .spacingML) {
                 // Item Name (Read-only)
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXS) {
                     Text(item.name)
                         .fontWeight(.medium)
                         .foregroundColor(.primary)
                     
                     // Confidence indicator
-                    HStack(spacing: 4) {
+                    HStack(spacing: .spacingXS) {
                         Image(systemName: confidenceIcon)
-                            .font(.caption2)
+                            .font(.captionDynamic)
                             .foregroundColor(confidenceColor)
                         
                         Text(confidenceText)
-                            .font(.caption2)
+                            .font(.captionDynamic)
                             .foregroundColor(confidenceColor)
                     }
                 }
@@ -1665,7 +1670,7 @@ struct RegexItemCard: View {
                 
                 // Regex badge
                 Text("REGEX")
-                    .font(.caption2)
+                    .font(.captionDynamic)
                     .fontWeight(.bold)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
@@ -1732,9 +1737,9 @@ struct EditableRegexItemCard: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .center, spacing: 12) {
+            HStack(alignment: .center, spacing: .spacingML) {
                 // Editable Item Name
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXS) {
                     TextField("Item Name", text: $item.name)
                         .fontWeight(.medium)
                         .focused($isNameFieldFocused)
@@ -1743,13 +1748,13 @@ struct EditableRegexItemCard: View {
                         }
                     
                     // Confidence indicator
-                    HStack(spacing: 4) {
+                    HStack(spacing: .spacingXS) {
                         Image(systemName: confidenceIcon)
-                            .font(.caption2)
+                            .font(.captionDynamic)
                             .foregroundColor(confidenceColor)
                         
                         Text(confidenceText)
-                            .font(.caption2)
+                            .font(.captionDynamic)
                             .foregroundColor(confidenceColor)
                     }
                 }
@@ -1757,9 +1762,9 @@ struct EditableRegexItemCard: View {
                 Spacer()
                 
                 // Editable Price
-                HStack(spacing: 4) {
+                HStack(spacing: .spacingXS) {
                     Text("$")
-                        .font(.caption)
+                        .font(.captionDynamic)
                         .foregroundColor(.secondary)
                     
                     TextField("Price", value: $item.price, format: .number)
@@ -1773,7 +1778,7 @@ struct EditableRegexItemCard: View {
                 
                 // Regex badge
                 Text("REGEX")
-                    .font(.caption2)
+                    .font(.captionDynamic)
                     .fontWeight(.bold)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
@@ -1837,21 +1842,21 @@ struct LLMItemCard: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .center, spacing: 12) {
+            HStack(alignment: .center, spacing: .spacingML) {
                 // Item Name (Read-only)
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: .spacingXS) {
                     Text(item.name)
                         .fontWeight(.medium)
                         .foregroundColor(.primary)
                     
                     // Confidence indicator
-                    HStack(spacing: 4) {
+                    HStack(spacing: .spacingXS) {
                         Image(systemName: confidenceIcon)
-                            .font(.caption2)
+                            .font(.captionDynamic)
                             .foregroundColor(confidenceColor)
                         
                         Text(confidenceText)
-                            .font(.caption2)
+                            .font(.captionDynamic)
                             .foregroundColor(confidenceColor)
                     }
                 }
@@ -1865,7 +1870,7 @@ struct LLMItemCard: View {
                 
                 // Apple Intelligence badge
                 Text("APPLE AI")
-                    .font(.caption2)
+                    .font(.captionDynamic)
                     .fontWeight(.bold)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
@@ -2005,7 +2010,8 @@ struct UISummaryScreen: View {
     private var whoOwesWhomSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Who Owes Whom")
-                .font(.system(size: 18, weight: .semibold))
+                .font(.h4Dynamic)
+                .fontWeight(.semibold)
                 .foregroundColor(.adaptiveTextPrimary)
                 .padding(.paddingScreen)
 
@@ -2022,16 +2028,17 @@ struct UISummaryScreen: View {
 
                             HStack {
                                 // From person (debtor)
-                                HStack(spacing: 8) {
+                                HStack(spacing: .spacingSM) {
                                     Circle()
                                         .fill(debtor.color)
                                         .frame(width: 32, height: 32)
                                         .overlay(
                                             Image(systemName: "person.fill")
                                                 .foregroundColor(.white)
-                                                .font(.caption)
+                                                .font(.captionDynamic)
                                         )
                                     Text(debtor.name)
+                                        .font(.bodyDynamic)
                                         .fontWeight(.medium)
                                 }
 
@@ -2040,28 +2047,30 @@ struct UISummaryScreen: View {
                                     .padding(.horizontal, 8)
 
                                 // To person (payer)
-                                HStack(spacing: 8) {
+                                HStack(spacing: .spacingSM) {
                                     Circle()
                                         .fill(paidByParticipant.color)
                                         .frame(width: 32, height: 32)
                                         .overlay(
                                             Image(systemName: "person.fill")
                                                 .foregroundColor(.white)
-                                                .font(.caption)
+                                                .font(.captionDynamic)
                                         )
                                     Text(paidByParticipant.name)
+                                        .font(.bodyDynamic)
                                         .fontWeight(.medium)
                                 }
 
                                 Spacer()
 
                                 // Amount owed
-                                VStack(alignment: .trailing, spacing: 2) {
+                                VStack(alignment: .trailing, spacing: .spacing2XS) {
                                     Text("$\(amountOwed, specifier: "%.2f")")
+                                        .font(.bodyDynamic)
                                         .fontWeight(.bold)
                                         .foregroundColor(.adaptiveAccentRed)
                                     Text("owes")
-                                        .font(.caption)
+                                        .font(.captionDynamic)
                                         .foregroundColor(.secondary)
                                 }
                             }
@@ -2106,11 +2115,12 @@ struct UISummaryScreen: View {
     @ViewBuilder
     private var detailedBreakdownSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Detailed breakdown")
+            Text("Split Breakdown")
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundColor(.adaptiveTextPrimary)
-                .padding(.paddingScreen)
-                .padding(.bottom, .spacingSM)
+                .padding(.horizontal, .paddingScreen)
+                .padding(.top, .paddingScreen)
+                .padding(.bottom, .spacingXS)
 
             ForEach(session.breakdownSummaries) { person in
                 collapsiblePersonCard(for: person)
@@ -2122,14 +2132,14 @@ struct UISummaryScreen: View {
         }
     }
 
-    // Collapsible person card with "who owes whom" information
+    // Collapsible person breakdown - no card background
     @ViewBuilder
     private func collapsiblePersonCard(for person: UIBreakdown) -> some View {
         let isExpanded = expandedPersonIds.contains(person.id)
         let totalOwed = person.items.reduce(0.0) { $0.currencyAdd($1.price) }
 
         VStack(spacing: 0) {
-            // Card header with person name, amount, and chevron
+            // Person header with name, amount, and chevron - clickable to expand/collapse
             Button(action: {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     if isExpanded {
@@ -2162,7 +2172,7 @@ struct UISummaryScreen: View {
                                         } else {
                                             Image(systemName: "person.fill")
                                                 .foregroundColor(.white)
-                                                .font(.caption)
+                                                .font(.captionDynamic)
                                         }
                                     }
                                 )
@@ -2181,14 +2191,14 @@ struct UISummaryScreen: View {
                                     } else {
                                         Image(systemName: "person.fill")
                                             .foregroundColor(.white)
-                                            .font(.caption)
+                                            .font(.captionDynamic)
                                     }
                                 }
                             )
                     }
 
                     // Person name with "owes" information
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: .spacing2XS) {
                         Text(person.name)
                             .font(.system(size: 16, weight: .medium))
                             .foregroundColor(.adaptiveTextPrimary)
@@ -2258,18 +2268,14 @@ struct UISummaryScreen: View {
                             .foregroundColor(.adaptiveTextPrimary)
                     }
                     .padding(.paddingScreen)
+                    .padding(.bottom, .spacingMD)
                 }
             }
+
+            // Horizontal divider between people
+            Divider()
+                .padding(.horizontal, .paddingScreen)
         }
-        .background(Color.adaptiveDepth0)
-        .cornerRadius(.cornerRadiusMedium)
-        .overlay(
-            RoundedRectangle(cornerRadius: .cornerRadiusMedium)
-                .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-        )
-        .shadow(color: Color.black.opacity(0.08), radius: 6, x: 0, y: 2)
-        .padding(.horizontal, .paddingScreen)
-        .padding(.bottom, .spacingMD)
     }
 
     @ViewBuilder
@@ -2618,7 +2624,7 @@ struct UIProfileScreen: View {
                 Color.adaptiveDepth0.ignoresSafeArea()
 
                 ScrollView {
-                    VStack(spacing: 24) {
+                    VStack(spacing: .spacingLG) {
                         headerSection
                         userInfoSection
                         menuItemsSection
@@ -2627,7 +2633,7 @@ struct UIProfileScreen: View {
                     .padding(.top)
                 }
 
-                VStack(spacing: 12) {
+                VStack(spacing: .spacingML) {
                     logoutButton
                     appInfoSection
                 }
@@ -2777,7 +2783,7 @@ struct UIProfileScreen: View {
 
     private var appInfoSection: some View {
         Text("SplitSmart v1.0.0")
-            .font(.caption)
+            .font(.captionDynamic)
             .foregroundColor(.adaptiveTextSecondary)
             .padding(.bottom, 16)
     }
@@ -2807,7 +2813,7 @@ struct UIProfileMenuItem: View {
     var body: some View {
         Button(action: {}) {
             HStack {
-                HStack(spacing: 12) {
+                HStack(spacing: .spacingML) {
                     Image(systemName: icon)
                         .font(.system(size: 18))
                         .foregroundColor(.secondary)
@@ -2820,7 +2826,7 @@ struct UIProfileMenuItem: View {
                 Spacer()
 
                 Image(systemName: "chevron.right")
-                    .font(.caption)
+                    .font(.captionDynamic)
                     .foregroundColor(.secondary)
             }
             .padding()
@@ -2845,7 +2851,7 @@ struct HelpSupportView: View {
                     showDeleteAccountConfirmation = true
                 }) {
                     HStack {
-                        HStack(spacing: 12) {
+                        HStack(spacing: .spacingML) {
                             Image(systemName: "trash")
                                 .font(.system(size: 18))
                                 .foregroundColor(.adaptiveAccentRed)
@@ -2858,7 +2864,7 @@ struct HelpSupportView: View {
                         Spacer()
 
                         Image(systemName: "chevron.right")
-                            .font(.caption)
+                            .font(.captionDynamic)
                             .foregroundColor(.secondary)
                     }
                 }
@@ -2926,21 +2932,21 @@ struct ParticipantAssignmentRow: View {
     
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 12) { // Increased spacing from 8 to 12 for better industry standards
+            HStack(spacing: .spacingML) { // Increased spacing from 8 to 12 for better industry standards
                 // Everyone button styled like other participant buttons
                 Button(action: {
                     onEveryoneToggle()
                     triggerFeedback(for: "everyone") // Use "everyone" for everyone button
                 }) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: .spacingXSM) {
                         Text("Everyone")
-                            .font(.caption)
+                            .font(.captionDynamic)
                             .fontWeight(.semibold)
                             .lineLimit(1)
 
                         if everyoneSelected {
                             Image(systemName: "checkmark.circle.fill")
-                                .font(.caption2)
+                                .font(.captionDynamic)
                                 .foregroundColor(.white)
                         }
                     }
@@ -3018,16 +3024,16 @@ struct ParticipantButton: View {
     
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 6) { // Increased spacing from 4 to 6
+            HStack(spacing: .spacingXSM) { // Increased spacing from 4 to 6
                 Text(participant.name)
-                    .font(.caption)
+                    .font(.captionDynamic)
                     .fontWeight(.semibold)
                     .lineLimit(1)
 
                 if isAssigned && !isDisabled {
                     Button(action: onRemove) {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.caption2)
+                            .font(.captionDynamic)
                             .foregroundColor(.white)
                     }
                     .buttonStyle(PlainButtonStyle())
@@ -3071,10 +3077,10 @@ struct ItemRowWithParticipants: View {
     @FocusState private var isPriceFocused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: .spacingMD) {
             // Item name and price (label-left, value-right layout)
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: .spacingML) {
+                VStack(alignment: .leading, spacing: .spacingXSM) {
                     Text(item.name)
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(.adaptiveTextPrimary)
@@ -3090,7 +3096,7 @@ struct ItemRowWithParticipants: View {
                 Spacer()
 
                 // Price input field on the right with $ label
-                HStack(spacing: 4) {
+                HStack(spacing: .spacingXS) {
                     Text("$")
                         .font(.system(size: 16, weight: .regular))
                         .foregroundColor(.adaptiveTextSecondary)
@@ -3132,7 +3138,7 @@ struct ItemRowWithParticipants: View {
 
             // Participant assignment section with collapse/expand
             if !participants.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: .spacingSM) {
                     // Header with collapse/expand
                     Button(action: {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {

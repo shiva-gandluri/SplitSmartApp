@@ -84,51 +84,12 @@ struct BillDetailScreen: View {
                         .foregroundColor(.adaptiveTextPrimary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.paddingScreen)
+                        .padding(.bottom, .spacingSM)
 
-                    // Bill info
-                    VStack(alignment: .leading, spacing: .spacingSM) {
-                        HStack {
-                            Text("Bill name")
-                                .font(.bodyDynamic)
-                                .foregroundColor(.adaptiveTextSecondary)
-                            Spacer()
-                            Text(currentBill.billName ?? "Unnamed Bill")
-                                .font(.bodyDynamic)
-                                .fontWeight(.medium)
-                                .foregroundColor(.adaptiveTextPrimary)
-                        }
-
-                        HStack {
-                            Text("Bill paid by")
-                                .font(.bodyDynamic)
-                                .foregroundColor(.adaptiveTextSecondary)
-                            Spacer()
-                            paidBySection
-                        }
-
-                        HStack {
-                            Text("Total amount")
-                                .font(.bodyDynamic)
-                                .foregroundColor(.adaptiveTextSecondary)
-                            Spacer()
-                            Text("$\(billTotal, specifier: "%.2f")")
-                                .font(.bodyDynamic)
-                                .fontWeight(.medium)
-                                .foregroundColor(.adaptiveTextPrimary)
-                        }
-
-                        HStack {
-                            Text("Date & Time")
-                                .font(.bodyDynamic)
-                                .foregroundColor(.adaptiveTextSecondary)
-                            Spacer()
-                            Text("\(currentBill.date.dateValue().formatted(date: .abbreviated, time: .shortened))")
-                                .font(.bodyDynamic)
-                                .fontWeight(.medium)
-                                .foregroundColor(.adaptiveTextPrimary)
-                        }
-                    }
-                    .padding(.paddingScreen)
+                    // Receipt-style Card
+                    receiptStyleCard
+                        .padding(.horizontal, .paddingScreen)
+                        .padding(.bottom, .paddingScreen)
                 }
                 .background(Color.adaptiveDepth0)
 
@@ -208,60 +169,258 @@ struct BillDetailScreen: View {
         .padding(.horizontal, .paddingScreen)
     }
 
+    // MARK: - Reusable Card Components
+
     @ViewBuilder
-    private var paidBySection: some View {
-        if let payer = payer {
-            HStack(spacing: .spacingSM) {
-                // Profile picture or fallback avatar
-                if let photoURLString = payer.photoURL, let photoURL = URL(string: photoURLString) {
-                    AsyncImage(url: photoURL) { image in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: 24, height: 24)
-                            .clipShape(Circle())
-                    } placeholder: {
-                        Circle()
-                            .fill(Color.adaptiveTextSecondary.opacity(0.2))
-                            .frame(width: 24, height: 24)
-                            .overlay(
-                                Image(systemName: "person.fill")
-                                    .foregroundColor(.adaptiveTextSecondary)
-                                    .font(.captionText)
-                            )
-                    }
-                } else {
-                    Circle()
-                        .fill(Color.adaptiveTextSecondary.opacity(0.2))
-                        .frame(width: 24, height: 24)
-                        .overlay(
-                            Image(systemName: "person.fill")
-                                .foregroundColor(.adaptiveTextSecondary)
-                                .font(.captionText)
-                        )
+    private var billInfoCard: some View {
+        VStack(alignment: .leading, spacing: .spacingXS) {
+            Text(currentBill.billName ?? "Unnamed Bill")
+                .font(.h4Dynamic)
+                .fontWeight(.semibold)
+                .foregroundColor(.adaptiveTextPrimary)
+                .minimumScaleFactor(0.8)
+                .lineLimit(2)
+
+            Text("Created on \(currentBill.date.dateValue().formatted(date: .abbreviated, time: .omitted))")
+                .font(.bodyDynamic)
+                .foregroundColor(.adaptiveTextSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.spacingMD)
+        .background(Color.adaptiveDepth2)
+        .cornerRadius(.cornerRadiusMedium)
+        .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
+    }
+
+    @ViewBuilder
+    private func infoCard(label: String, icon: String? = nil, iconView: AnyView? = nil, value: String, valueFontSize: CGFloat = 18) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Label with icon
+            HStack(spacing: .spacingXS) {
+                if let iconView = iconView {
+                    iconView
+                } else if let icon = icon {
+                    Image(systemName: icon)
+                        .font(.system(size: 24))
+                        .foregroundColor(.adaptiveTextTertiary)
                 }
 
-                Text(payer.displayName)
-                    .font(.bodyDynamic)
-                    .fontWeight(.medium)
-                    .foregroundColor(.adaptiveTextPrimary)
+                Text(label)
+                    .font(.system(size: 16))
+                    .foregroundColor(.adaptiveTextSecondary)
+            }
+
+            Spacer()
+
+            // Value
+            Text(value)
+                .font(.system(size: valueFontSize, weight: .semibold))
+                .foregroundColor(.adaptiveTextPrimary)
+                .minimumScaleFactor(0.8)
+                .lineLimit(1)
+        }
+        .padding(.spacingMD)
+        .frame(height: 120)
+        .background(Color.adaptiveDepth2)
+        .cornerRadius(.cornerRadiusMedium)
+        .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
+    }
+
+    @ViewBuilder
+    private var paidByAvatar: some View {
+        if let payer = payer, let photoURLString = payer.photoURL, let photoURL = URL(string: photoURLString) {
+            AsyncImage(url: photoURL) { image in
+                image
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 24, height: 24)
+                    .clipShape(Circle())
+            } placeholder: {
+                Circle()
+                    .fill(Color.adaptiveTextSecondary.opacity(0.2))
+                    .frame(width: 24, height: 24)
+                    .overlay(
+                        Image(systemName: "person.fill")
+                            .foregroundColor(.adaptiveTextSecondary)
+                            .font(.system(size: 12))
+                    )
             }
         } else {
-            Text("Unknown")
-                .font(.bodyDynamic)
-                .fontWeight(.medium)
-                .foregroundColor(.adaptiveAccentRed)
+            Circle()
+                .fill(Color.adaptiveTextSecondary.opacity(0.2))
+                .frame(width: 24, height: 24)
+                .overlay(
+                    Image(systemName: "person.fill")
+                        .foregroundColor(.adaptiveTextSecondary)
+                        .font(.system(size: 12))
+                )
+        }
+    }
+
+    @ViewBuilder
+    private var receiptStyleCard: some View {
+        ZStack(alignment: .bottomLeading) {
+            // Adaptive gradient background - custom gradient for receipt card
+            Rectangle()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(UIColor { traitCollection in
+                                traitCollection.userInterfaceStyle == .dark
+                                    ? UIColor(red: 0.200, green: 0.200, blue: 0.200, alpha: 1.0)  // Dark: RGB(51,51,51)
+                                    : UIColor(red: 0.85, green: 0.85, blue: 0.85, alpha: 1.0)     // Light: RGB(217,217,217) Medium gray
+                            }),
+                            Color(UIColor { traitCollection in
+                                traitCollection.userInterfaceStyle == .dark
+                                    ? UIColor(red: 0.102, green: 0.102, blue: 0.102, alpha: 1.0)  // Dark: RGB(26,26,26)
+                                    : UIColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)        // Light: RGB(255,255,255) Pure white
+                            })
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .overlay(
+                    Image(systemName: "doc.text.fill")
+                        .font(.system(size: 70))
+                        .foregroundColor(.adaptiveTextPrimary.opacity(0.03))
+                )
+
+            // Content overlay
+            HStack(alignment: .bottom) {
+                // Left: Bill name and paid by
+                VStack(alignment: .leading, spacing: .spacingSM) {
+                    Text(currentBill.billName ?? "Unnamed Bill")
+                        .font(.h4)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.adaptiveTextPrimary)
+                        .lineLimit(2)
+
+                    // Paid by info
+                    HStack(spacing: .spacingXSM) {
+                        paidByAvatar
+
+                        Text(payer?.displayName ?? "Unknown")
+                            .font(.smallText)
+                            .fontWeight(.medium)
+                            .foregroundColor(.adaptiveTextSecondary)
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer()
+
+                // Right: Date and Amount
+                VStack(alignment: .trailing, spacing: .spacingSM) {
+                    Text(currentBill.date.dateValue().formatted(date: .abbreviated, time: .omitted))
+                        .font(.smallText)
+                        .fontWeight(.medium)
+                        .foregroundColor(.adaptiveTextTertiary)
+
+                    Text(String(format: "$%.2f", billTotal))
+                        .font(.h4)
+                        .fontWeight(.bold)
+                        .foregroundColor(.adaptiveTextPrimary)
+                }
+            }
+            .padding(.paddingCard)
+        }
+        .frame(height: 220)
+        .frame(maxWidth: .infinity)
+        .cornerRadius(.cornerRadiusMedium)
+        .overlay(
+            RoundedRectangle(cornerRadius: .cornerRadiusMedium)
+                .stroke(Color.adaptiveTextPrimary.opacity(0.15), lineWidth: 1)
+        )
+        .clipped()
+    }
+
+    @ViewBuilder
+    private var unifiedBillInfoCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Top row: Bill name (left) and Date (right)
+            HStack(alignment: .top) {
+                Text(currentBill.billName ?? "Unnamed Bill")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundColor(.adaptiveTextPrimary)
+                    .minimumScaleFactor(0.8)
+                    .lineLimit(1)
+
+                Spacer()
+
+                Text(currentBill.date.dateValue().formatted(date: .abbreviated, time: .omitted))
+                    .font(.system(size: 15))
+                    .foregroundColor(.adaptiveTextSecondary)
+            }
+            .padding(.bottom, 20)
+
+            // Bottom row: Payer (left) and Amount (right)
+            HStack(alignment: .bottom) {
+                HStack(spacing: .spacingXS) {
+                    paidByAvatar
+
+                    Text(payer?.displayName ?? "Unknown")
+                        .font(.system(size: 15))
+                        .foregroundColor(.adaptiveTextSecondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                Text(String(format: "$%.2f", billTotal))
+                    .font(.system(size: 32, weight: .bold))
+                    .foregroundColor(.adaptiveTextPrimary)
+                    .minimumScaleFactor(0.8)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.paddingCard)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.adaptiveDepth2)
+        .cornerRadius(.cornerRadiusMedium)
+    }
+
+    @ViewBuilder
+    private var paidByAvatarLarge: some View {
+        if let payer = payer, let photoURLString = payer.photoURL, let photoURL = URL(string: photoURLString) {
+            AsyncImage(url: photoURL) { image in
+                image
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 48, height: 48)
+                    .clipShape(Circle())
+            } placeholder: {
+                Circle()
+                    .fill(Color.adaptiveTextSecondary.opacity(0.2))
+                    .frame(width: 48, height: 48)
+                    .overlay(
+                        Image(systemName: "person.fill")
+                            .foregroundColor(.adaptiveTextSecondary)
+                            .font(.system(size: 24))
+                    )
+            }
+        } else {
+            Circle()
+                .fill(Color.adaptiveTextSecondary.opacity(0.2))
+                .frame(width: 48, height: 48)
+                .overlay(
+                    Image(systemName: "person.fill")
+                        .foregroundColor(.adaptiveTextSecondary)
+                        .font(.system(size: 24))
+                )
         }
     }
 
     @ViewBuilder
     private var detailedBreakdownSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Detailed breakdown")
-                .font(.system(size: 18, weight: .semibold))
+            Text("Split Breakdown")
+                .font(.h4Dynamic)
+                .fontWeight(.semibold)
                 .foregroundColor(.adaptiveTextPrimary)
-                .padding(.paddingScreen)
-                .padding(.bottom, .spacingSM)
+                .padding(.horizontal, .paddingScreen)
+                .padding(.top, .paddingScreen)
+                .padding(.bottom, .spacingXS)
 
             ForEach(breakdownSummaries) { person in
                 collapsiblePersonCard(for: person)
@@ -279,7 +438,7 @@ struct BillDetailScreen: View {
         let totalOwed = person.items.reduce(0.0) { $0 + $1.price }
 
         VStack(spacing: 0) {
-            // Card header with person name, amount, and chevron
+            // Person header with name, amount, and chevron - clickable to expand/collapse
             Button(action: {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     if isExpanded {
@@ -319,32 +478,24 @@ struct BillDetailScreen: View {
                             )
                     }
 
-                    // Person name with "owes" information
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(person.name)
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(.adaptiveTextPrimary)
-
-                        // Show who this person owes (if they owe money)
-                        if let payer = payer,
-                           let owedAmount = BillCalculator.calculateOwedAmounts(bill: currentBill)[person.id],
-                           owedAmount > 0.01 {
-                            Text("owes \(payer.displayName): $\(owedAmount, specifier: "%.2f")")
-                                .font(.system(size: 12))
-                                .foregroundColor(.adaptiveTextSecondary)
-                        }
-                    }
+                    // Person name
+                    Text(person.name)
+                        .font(.bodyText)
+                        .fontWeight(.medium)
+                        .foregroundColor(.adaptiveTextPrimary)
 
                     Spacer()
 
                     // Total amount
                     Text("$\(totalOwed, specifier: "%.2f")")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.bodyText)
+                        .fontWeight(.semibold)
                         .foregroundColor(.adaptiveTextPrimary)
 
                     // Chevron icon
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.smallText)
+                        .fontWeight(.medium)
                         .foregroundColor(.adaptiveTextSecondary)
                 }
                 .padding(.horizontal, .paddingScreen)
@@ -388,28 +539,18 @@ struct BillDetailScreen: View {
                             .foregroundColor(.adaptiveTextPrimary)
                     }
                     .padding(.paddingScreen)
+                    .padding(.bottom, .spacingMD)
                 }
             }
+
+            // Horizontal divider between people
+            Divider()
+                .padding(.horizontal, .paddingScreen)
         }
-        .background(Color.adaptiveDepth0)
-        .cornerRadius(.cornerRadiusMedium)
-        .overlay(
-            RoundedRectangle(cornerRadius: .cornerRadiusMedium)
-                .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-        )
-        .shadow(color: Color.black.opacity(0.08), radius: 6, x: 0, y: 2)
-        .padding(.horizontal, .paddingScreen)
-        .padding(.bottom, .spacingMD)
     }
 
     private var actionButtonsSection: some View {
         HStack(spacing: .spacingMD) {
-            // Edit Button
-            Button("Edit") {
-                navigateToEdit = true
-            }
-            .buttonStyle(PrimaryButtonStyle())
-
             // Delete Button
             Button {
                 showingDeleteConfirmation = true
@@ -424,6 +565,12 @@ struct BillDetailScreen: View {
             }
             .buttonStyle(DestructiveButtonStyle())
             .disabled(isDeleting)
+
+            // Edit Button
+            Button("Edit") {
+                navigateToEdit = true
+            }
+            .buttonStyle(PrimaryButtonStyle())
         }
         .padding(.horizontal)
         .padding(.top)

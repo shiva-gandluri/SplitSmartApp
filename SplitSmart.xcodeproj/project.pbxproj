@@ -31,6 +31,20 @@
 		066A90402E93B1E500298F33 /* ScreenContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066A902A2E93B1E500298F33 /* ScreenContainer.swift */; };
 		066A90412E93B1E500298F33 /* StyledTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066A902C2E93B1E500298F33 /* StyledTextField.swift */; };
 		06E6B1302EA20D11000E18E1 /* View+KeyboardToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06E6B12F2EA20D10000E18E1 /* View+KeyboardToolbar.swift */; };
+		06E6B13F2EAF154D000E18E1 /* GeometricClassificationStrategy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06E6B1392EAF154D000E18E1 /* GeometricClassificationStrategy.swift */; };
+		06E6B1402EAF154D000E18E1 /* ReceiptClassifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06E6B13E2EAF154D000E18E1 /* ReceiptClassifier.swift */; };
+		06E6B1412EAF154D000E18E1 /* ClassificationStrategy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06E6B1372EAF154D000E18E1 /* ClassificationStrategy.swift */; };
+		06E6B1422EAF154D000E18E1 /* GeminiClassificationStrategy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06E6B1382EAF154D000E18E1 /* GeminiClassificationStrategy.swift */; };
+		06E6B1432EAF154D000E18E1 /* ReceiptClassificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06E6B13D2EAF154D000E18E1 /* ReceiptClassificationService.swift */; };
+		06E6B1442EAF154D000E18E1 /* ReceiptClassificationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06E6B13C2EAF154D000E18E1 /* ReceiptClassificationModels.swift */; };
+		06E6B1452EAF154D000E18E1 /* PriceRelationshipStrategy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06E6B13B2EAF154D000E18E1 /* PriceRelationshipStrategy.swift */; };
+		06E6B1462EAF154D000E18E1 /* PatternHeuristicStrategy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06E6B13A2EAF154D000E18E1 /* PatternHeuristicStrategy.swift */; };
+		06E6B1482EAF1569000E18E1 /* ClassificationReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06E6B1472EAF1569000E18E1 /* ClassificationReviewView.swift */; };
+		06E6B14B2EAF1894000E18E1 /* GeminiSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06E6B14A2EAF1894000E18E1 /* GeminiSettingsView.swift */; };
+		06E6B14C2EAF1894000E18E1 /* AdvancedSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06E6B1492EAF1894000E18E1 /* AdvancedSettingsView.swift */; };
+		06E6B14E2EAF1DF1000E18E1 /* ClassificationConfigManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06E6B14D2EAF1DF1000E18E1 /* ClassificationConfigManager.swift */; };
+		06E6B1512EB693A4000E18E1 /* GeminiAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06E6B14F2EB693A4000E18E1 /* GeminiAPIClient.swift */; };
+		06E6B1522EB693A4000E18E1 /* GeminiOnlyClassifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06E6B1502EB693A4000E18E1 /* GeminiOnlyClassifier.swift */; };
 		1111111111111111111111111111111A /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD /* GoogleService-Info.plist */; };
 		1111111111111111111111111111111C /* DataModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1111111111111111111111111111111D /* DataModels.swift */; };
 		1111111111111111111111111111111E /* ScanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1111111111111111111111111111111F /* ScanView.swift */; };
@@ -80,6 +94,20 @@
 		066A902D2E93B1E500298F33 /* StyledToggle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StyledToggle.swift; sourceTree = "<group>"; };
 		066A902E2E93B1E500298F33 /* VALIDATION_REPORT.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = VALIDATION_REPORT.md; sourceTree = "<group>"; };
 		06E6B12F2EA20D10000E18E1 /* View+KeyboardToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "View+KeyboardToolbar.swift"; path = "DesignSystem/View+KeyboardToolbar.swift"; sourceTree = "<group>"; };
+		06E6B1372EAF154D000E18E1 /* ClassificationStrategy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClassificationStrategy.swift; path = Models/Classification/ClassificationStrategy.swift; sourceTree = "<group>"; };
+		06E6B1382EAF154D000E18E1 /* GeminiClassificationStrategy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GeminiClassificationStrategy.swift; path = Models/Classification/GeminiClassificationStrategy.swift; sourceTree = "<group>"; };
+		06E6B1392EAF154D000E18E1 /* GeometricClassificationStrategy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GeometricClassificationStrategy.swift; path = Models/Classification/GeometricClassificationStrategy.swift; sourceTree = "<group>"; };
+		06E6B13A2EAF154D000E18E1 /* PatternHeuristicStrategy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PatternHeuristicStrategy.swift; path = Models/Classification/PatternHeuristicStrategy.swift; sourceTree = "<group>"; };
+		06E6B13B2EAF154D000E18E1 /* PriceRelationshipStrategy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PriceRelationshipStrategy.swift; path = Models/Classification/PriceRelationshipStrategy.swift; sourceTree = "<group>"; };
+		06E6B13C2EAF154D000E18E1 /* ReceiptClassificationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ReceiptClassificationModels.swift; path = Models/Classification/ReceiptClassificationModels.swift; sourceTree = "<group>"; };
+		06E6B13D2EAF154D000E18E1 /* ReceiptClassificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ReceiptClassificationService.swift; path = Models/Classification/ReceiptClassificationService.swift; sourceTree = "<group>"; };
+		06E6B13E2EAF154D000E18E1 /* ReceiptClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ReceiptClassifier.swift; path = Models/Classification/ReceiptClassifier.swift; sourceTree = "<group>"; };
+		06E6B1472EAF1569000E18E1 /* ClassificationReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClassificationReviewView.swift; path = Views/OCR/ClassificationReviewView.swift; sourceTree = "<group>"; };
+		06E6B1492EAF1894000E18E1 /* AdvancedSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AdvancedSettingsView.swift; path = Views/Settings/AdvancedSettingsView.swift; sourceTree = "<group>"; };
+		06E6B14A2EAF1894000E18E1 /* GeminiSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GeminiSettingsView.swift; path = Views/Settings/GeminiSettingsView.swift; sourceTree = "<group>"; };
+		06E6B14D2EAF1DF1000E18E1 /* ClassificationConfigManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClassificationConfigManager.swift; path = Models/Classification/ClassificationConfigManager.swift; sourceTree = "<group>"; };
+		06E6B14F2EB693A4000E18E1 /* GeminiAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GeminiAPIClient.swift; path = Models/Classification/GeminiAPIClient.swift; sourceTree = "<group>"; };
+		06E6B1502EB693A4000E18E1 /* GeminiOnlyClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GeminiOnlyClassifier.swift; path = Models/Classification/GeminiOnlyClassifier.swift; sourceTree = "<group>"; };
 		1111111111111111111111111111111D /* DataModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DataModels.swift; path = Models/DataModels.swift; sourceTree = "<group>"; };
 		1111111111111111111111111111111F /* ScanView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ScanView.swift; path = Views/ScanView.swift; sourceTree = "<group>"; };
 		12A247C155DBFC137AF9BF03 /* SplitSmartApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SplitSmartApp.swift; sourceTree = "<group>"; };
@@ -170,6 +198,20 @@
 		A1234567890ABCDEF22 /* SplitSmart */ = {
 			isa = PBXGroup;
 			children = (
+				06E6B14F2EB693A4000E18E1 /* GeminiAPIClient.swift */,
+				06E6B1502EB693A4000E18E1 /* GeminiOnlyClassifier.swift */,
+				06E6B14D2EAF1DF1000E18E1 /* ClassificationConfigManager.swift */,
+				06E6B1492EAF1894000E18E1 /* AdvancedSettingsView.swift */,
+				06E6B14A2EAF1894000E18E1 /* GeminiSettingsView.swift */,
+				06E6B1472EAF1569000E18E1 /* ClassificationReviewView.swift */,
+				06E6B1372EAF154D000E18E1 /* ClassificationStrategy.swift */,
+				06E6B1382EAF154D000E18E1 /* GeminiClassificationStrategy.swift */,
+				06E6B1392EAF154D000E18E1 /* GeometricClassificationStrategy.swift */,
+				06E6B13A2EAF154D000E18E1 /* PatternHeuristicStrategy.swift */,
+				06E6B13B2EAF154D000E18E1 /* PriceRelationshipStrategy.swift */,
+				06E6B13C2EAF154D000E18E1 /* ReceiptClassificationModels.swift */,
+				06E6B13D2EAF154D000E18E1 /* ReceiptClassificationService.swift */,
+				06E6B13E2EAF154D000E18E1 /* ReceiptClassifier.swift */,
 				06E6B12F2EA20D10000E18E1 /* View+KeyboardToolbar.swift */,
 				066A902F2E93B1E500298F33 /* DesignSystem */,
 				663C9A46A81547958D4273C5 /* Services */,
@@ -297,11 +339,21 @@
 				066A903B2E93B1E500298F33 /* CustomListRow.swift in Sources */,
 				066A903C2E93B1E500298F33 /* CustomModal.swift in Sources */,
 				066A903D2E93B1E500298F33 /* Animation+Extensions.swift in Sources */,
+				06E6B14E2EAF1DF1000E18E1 /* ClassificationConfigManager.swift in Sources */,
 				066A903E2E93B1E500298F33 /* HeadingText.swift in Sources */,
 				066A903F2E93B1E500298F33 /* CardView.swift in Sources */,
 				066A90402E93B1E500298F33 /* ScreenContainer.swift in Sources */,
 				066A90412E93B1E500298F33 /* StyledTextField.swift in Sources */,
 				EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE /* AuthViewModel.swift in Sources */,
+				06E6B13F2EAF154D000E18E1 /* GeometricClassificationStrategy.swift in Sources */,
+				06E6B1402EAF154D000E18E1 /* ReceiptClassifier.swift in Sources */,
+				06E6B1412EAF154D000E18E1 /* ClassificationStrategy.swift in Sources */,
+				06E6B1422EAF154D000E18E1 /* GeminiClassificationStrategy.swift in Sources */,
+				06E6B1432EAF154D000E18E1 /* ReceiptClassificationService.swift in Sources */,
+				06E6B1442EAF154D000E18E1 /* ReceiptClassificationModels.swift in Sources */,
+				06E6B1452EAF154D000E18E1 /* PriceRelationshipStrategy.swift in Sources */,
+				06E6B1462EAF154D000E18E1 /* PatternHeuristicStrategy.swift in Sources */,
+				06E6B1482EAF1569000E18E1 /* ClassificationReviewView.swift in Sources */,
 				066A8FF92E8F875D00298F33 /* SessionRecoveryManager.swift in Sources */,
 				066A8FFA2E8F875D00298F33 /* SessionPersistenceManager.swift in Sources */,
 				066A90062E923A5E00298F33 /* BillDetailScreen.swift in Sources */,
@@ -309,8 +361,12 @@
 				1111111111111111111111111111111C /* DataModels.swift in Sources */,
 				06E6B1302EA20D11000E18E1 /* View+KeyboardToolbar.swift in Sources */,
 				1111111111111111111111111111111E /* ScanView.swift in Sources */,
+				06E6B1512EB693A4000E18E1 /* GeminiAPIClient.swift in Sources */,
+				06E6B1522EB693A4000E18E1 /* GeminiOnlyClassifier.swift in Sources */,
 				2222222222222222222222222222222A /* TabButton.swift in Sources */,
 				866E190AA23249329559DAC9 /* DeepLinkCoordinator.swift in Sources */,
+				06E6B14B2EAF1894000E18E1 /* GeminiSettingsView.swift in Sources */,
+				06E6B14C2EAF1894000E18E1 /* AdvancedSettingsView.swift in Sources */,
 				F467984207B44791A6A0AA0A /* BillEditFlow.swift in Sources */,
 				9E950CDD3986438987447084 /* BillEditConfirmation.swift in Sources */,
 				D95F752301234F49BA4D57BC /* BillEditSummary.swift in Sources */,

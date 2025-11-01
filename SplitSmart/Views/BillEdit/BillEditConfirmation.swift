@@ -37,18 +37,19 @@ struct BillEditConfirmationView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-                // Header
-                Text("Verify Bill Details")
-                    .font(.h3Dynamic)
-                    .foregroundColor(.adaptiveTextPrimary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, .paddingScreen)
+                // Header and description - close spacing as they belong together
+                VStack(spacing: .spacingXS) {
+                    Text("Verify Bill Details")
+                        .font(.h3Dynamic)
+                        .foregroundColor(.adaptiveTextPrimary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
-                Text("Review and adjust the bill details before proceeding to assign items.")
-                    .font(.smallDynamic)
-                    .foregroundColor(.adaptiveTextSecondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, .paddingScreen)
+                    Text("Review and adjust the bill details before proceeding to assign items.")
+                        .font(.smallDynamic)
+                        .foregroundColor(.adaptiveTextSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.horizontal, .paddingScreen)
 
                 // Bill Details Form - Clean layout matching OCR Confirmation
                 VStack(spacing: 16) {
