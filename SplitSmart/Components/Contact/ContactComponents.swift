@@ -203,14 +203,15 @@ struct ParticipantSearchView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // Compact Search Bar
+            // Minimalist underlined search bar (matches Who paid design)
             HStack(spacing: 12) {
                 Image(systemName: "magnifyingglass")
-                    .foregroundColor(.secondary)
-                    .font(.system(size: 16))
-                
+                    .foregroundColor(.adaptiveTextSecondary)
+                    .font(.system(size: 12))
+
                 TextField("Add Participants", text: $searchText)
-                    .font(.subheadline)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.adaptiveTextPrimary)
                     .focused($isTextFieldFocused)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -220,21 +221,32 @@ struct ParticipantSearchView: View {
                             onNewContactSubmit(searchText)
                         }
                     }
-                
+
                 if !searchText.isEmpty {
                     Button(action: {
                         searchText = ""
                     }) {
                         Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.secondary)
-                            .font(.system(size: 16))
+                            .foregroundColor(.adaptiveTextSecondary)
+                            .font(.system(size: 12))
                     }
+                } else {
+                    Image(systemName: "chevron.down")
+                        .foregroundColor(.adaptiveTextSecondary)
+                        .font(.system(size: 12))
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .background(Color(.systemGray6))
-            .cornerRadius(12)
+            .padding(.vertical, 8)
+            .padding(.horizontal, 12)
+            .background(
+                VStack(spacing: 0) {
+                    Spacer()
+                    Rectangle()
+                        .fill(isTextFieldFocused ? Color.adaptiveAccentBlue : Color.adaptiveTextSecondary.opacity(0.3))
+                        .frame(height: isTextFieldFocused ? 2 : 1)
+                }
+            )
+            .animation(.easeOut(duration: 0.2), value: isTextFieldFocused)
             
             // Compact Dropdown Results
             if !searchText.isEmpty {

@@ -135,37 +135,23 @@ struct BillDetailScreen: View {
     // MARK: - View Components
 
     private var deletedBillBanner: some View {
-        VStack(spacing: .spacingMD) {
-            HStack(spacing: .spacingMD) {
-                Image(systemName: "trash.slash.fill")
-                    .font(.title3)
+        HStack(spacing: .spacingMD) {
+            Image(systemName: "trash.slash.fill")
+                .font(.title3)
+                .foregroundColor(.white)
+
+            if let deletedByName = currentBill.deletedByDisplayName,
+               let deletedAt = currentBill.deletedAt {
+                Text("Deleted by \(deletedByName) on \(deletedAt.dateValue().formatted(date: .abbreviated, time: .omitted))")
+                    .font(.captionDynamic)
                     .foregroundColor(.white)
-
-                VStack(alignment: .leading, spacing: .spacingXS) {
-                    Text("This bill has been deleted")
-                        .font(.bodyDynamic)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.white)
-
-                    if let deletedByName = currentBill.deletedByDisplayName,
-                       let deletedAt = currentBill.deletedAt {
-                        Text("Deleted by \(deletedByName) on \(deletedAt.dateValue().formatted(date: .abbreviated, time: .shortened))")
-                            .font(.captionDynamic)
-                            .foregroundColor(.white.opacity(0.9))
-                    }
-                }
-
-                Spacer()
             }
-            .padding(.paddingCard)
-            .background(Color.adaptiveAccentRed)
-            .cornerRadius(.cornerRadiusMedium)
 
-            Text("This is a read-only view for your records.")
-                .font(.captionDynamic)
-                .foregroundColor(.adaptiveTextSecondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            Spacer()
         }
+        .padding(.paddingCard)
+        .background(Color.adaptiveAccentRed)
+        .cornerRadius(.cornerRadiusMedium)
         .padding(.horizontal, .paddingScreen)
     }
 
@@ -414,14 +400,6 @@ struct BillDetailScreen: View {
     @ViewBuilder
     private var detailedBreakdownSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Split Breakdown")
-                .font(.h4Dynamic)
-                .fontWeight(.semibold)
-                .foregroundColor(.adaptiveTextPrimary)
-                .padding(.horizontal, .paddingScreen)
-                .padding(.top, .paddingScreen)
-                .padding(.bottom, .spacingXS)
-
             ForEach(breakdownSummaries) { person in
                 collapsiblePersonCard(for: person)
             }
@@ -491,12 +469,6 @@ struct BillDetailScreen: View {
                         .font(.bodyText)
                         .fontWeight(.semibold)
                         .foregroundColor(.adaptiveTextPrimary)
-
-                    // Chevron icon
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.smallText)
-                        .fontWeight(.medium)
-                        .foregroundColor(.adaptiveTextSecondary)
                 }
                 .padding(.horizontal, .paddingScreen)
                 .padding(.vertical, .spacingLG)
@@ -522,24 +494,9 @@ struct BillDetailScreen: View {
                         .padding(.vertical, .spacingMD)
                     }
 
-                    // Horizontal line before subtotal
-                    Divider()
-                        .padding(.horizontal, .paddingScreen)
-
-                    // Subtotal
-                    HStack {
-                        Text("Subtotal")
-                            .font(.bodyDynamic)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.adaptiveTextPrimary)
-                        Spacer()
-                        Text("$\(totalOwed, specifier: "%.2f")")
-                            .font(.bodyDynamic)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.adaptiveTextPrimary)
-                    }
-                    .padding(.paddingScreen)
-                    .padding(.bottom, .spacingMD)
+                    // Bottom padding
+                    Spacer()
+                        .frame(height: .spacingMD)
                 }
             }
 

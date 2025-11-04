@@ -375,7 +375,7 @@ class PatternHeuristicStrategy: ClassificationStrategy {
         if item.price >= 1.0 && item.price <= 100.0 {
             return ClassificationResult(
                 category: .food,
-                confidence: 0.55,
+                confidence: 0.75,
                 method: .heuristic,
                 reasoning: "Price in typical food item range"
             )

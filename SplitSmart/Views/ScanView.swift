@@ -73,50 +73,313 @@ struct CameraCapture: UIViewControllerRepresentable {
     @Binding var isPresented: Bool
     @Binding var capturedImage: UIImage?
     let sourceType: UIImagePickerController.SourceType
-    
+
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
         picker.delegate = context.coordinator
         picker.sourceType = sourceType
         picker.allowsEditing = false
-        
+
         // Configure media types for JPEG/PNG only
         picker.mediaTypes = ["public.image"]
-        
+
         if sourceType == .camera {
             picker.cameraDevice = .rear
             picker.cameraCaptureMode = .photo
+            picker.showsCameraControls = false  // Hide default camera controls
+            picker.cameraViewTransform = CGAffineTransform(scaleX: 1.0, y: 1.0)
         } else if sourceType == .photoLibrary {
             // Additional configuration for photo library
             picker.modalPresentationStyle = .fullScreen
         }
-        
+
         return picker
     }
-    
+
     func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
-    
+
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
-    
+
     class Coordinator: NSObject, UINavigationControllerDelegate, UIImagePickerControllerDelegate {
         let parent: CameraCapture
-        
+
         init(_ parent: CameraCapture) {
             self.parent = parent
         }
-        
+
         func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
             if let image = info[.originalImage] as? UIImage {
                 parent.capturedImage = image
             }
             parent.isPresented = false
         }
-        
+
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
             parent.isPresented = false
         }
+    }
+}
+
+// MARK: - Camera Capture With Overlay Icons
+struct CameraCaptureWithOverlay: View {
+    @Binding var isPresented: Bool
+    @Binding var capturedImage: UIImage?
+    let onImageCaptured: () -> Void
+    let onUpload: () -> Void
+    let onManualEntry: () -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        ZStack {
+            // Full screen camera
+            CameraCaptureView(capturedImage: $capturedImage, onImageCaptured: onImageCaptured)
+                .ignoresSafeArea()
+
+            // Top cancel button (moved to top-left)
+            VStack {
+                HStack {
+                    Button(action: onCancel) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 44, height: 44)
+                            .background(Color.black.opacity(0.6))
+                            .clipShape(Circle())
+                    }
+                    .padding(.top, 60)
+                    .padding(.leading, 20)
+                    Spacer()
+                }
+                Spacer()
+            }
+
+            // Bottom overlay with camera button and action buttons
+            VStack {
+                Spacer()
+
+                // Camera capture button (center, larger)
+                Button(action: {
+                    NotificationCenter.default.post(name: NSNotification.Name("TakePhoto"), object: nil)
+                }) {
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: 70, height: 70)
+                        .overlay(
+                            Circle()
+                                .stroke(Color.white.opacity(0.5), lineWidth: 3)
+                                .frame(width: 80, height: 80)
+                        )
+                }
+                .padding(.bottom, 32)
+
+                // Action buttons row with circular backgrounds
+                GeometryReader { geometry in
+                    HStack(spacing: 0) {
+                        // Upload button (centered in left half)
+                        Button(action: {
+                            // Call onUpload directly - fullScreenCover will overlay camera
+                            onUpload()
+                        }) {
+                            VStack(spacing: 8) {
+                                Circle()
+                                    .fill(Color.black.opacity(0.6))
+                                    .frame(width: 60, height: 60)
+                                    .overlay(
+                                        Image(systemName: "photo")
+                                            .font(.system(size: 28, weight: .regular))
+                                            .foregroundColor(.white)
+                                    )
+                                Text("Upload")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(.white)
+                            }
+                        }
+                        .frame(width: geometry.size.width / 2)
+
+                        // Manual entry button (centered in right half)
+                        Button(action: {
+                            isPresented = false
+                            onManualEntry()
+                        }) {
+                            VStack(spacing: 8) {
+                                Circle()
+                                    .fill(Color.black.opacity(0.6))
+                                    .frame(width: 60, height: 60)
+                                    .overlay(
+                                        Image(systemName: "list.bullet.clipboard")
+                                            .font(.system(size: 28, weight: .regular))
+                                            .foregroundColor(.white)
+                                    )
+                                Text("Manual")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(.white)
+                            }
+                        }
+                        .frame(width: geometry.size.width / 2)
+                    }
+                }
+                .frame(height: 90)
+                .padding(.bottom, 40)
+            }
+        }
+        .statusBar(hidden: true)
+    }
+}
+
+// MARK: - Custom Camera View with AVFoundation
+import AVFoundation
+
+struct CameraCaptureView: UIViewRepresentable {
+    @Binding var capturedImage: UIImage?
+    let onImageCaptured: () -> Void
+
+    func makeUIView(context: Context) -> CameraPreviewView {
+        let view = CameraPreviewView()
+        view.delegate = context.coordinator
+        return view
+    }
+
+    func updateUIView(_ uiView: CameraPreviewView, context: Context) {}
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    class Coordinator: NSObject, CameraPreviewDelegate {
+        let parent: CameraCaptureView
+
+        init(_ parent: CameraCaptureView) {
+            self.parent = parent
+            super.init()
+
+            // Listen for take photo notification
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(takePhoto),
+                name: NSNotification.Name("TakePhoto"),
+                object: nil
+            )
+        }
+
+        deinit {
+            NotificationCenter.default.removeObserver(self)
+        }
+
+        @objc func takePhoto() {
+            // Will be called by the camera preview
+        }
+
+        func didCapturePhoto(_ image: UIImage) {
+            parent.capturedImage = image
+            DispatchQueue.main.async {
+                self.parent.onImageCaptured()
+            }
+        }
+    }
+}
+
+// MARK: - Camera Preview Delegate
+protocol CameraPreviewDelegate: AnyObject {
+    func didCapturePhoto(_ image: UIImage)
+}
+
+// MARK: - Camera Preview View
+class CameraPreviewView: UIView {
+    weak var delegate: CameraPreviewDelegate?
+
+    private var captureSession: AVCaptureSession?
+    private var photoOutput: AVCapturePhotoOutput?
+    private var previewLayer: AVCaptureVideoPreviewLayer?
+    private var currentPhotoSettings: AVCapturePhotoSettings?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        setupCamera()
+
+        // Listen for capture trigger
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(capturePhoto),
+            name: NSNotification.Name("TakePhoto"),
+            object: nil
+        )
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+        captureSession?.stopRunning()
+    }
+
+    private func setupCamera() {
+        let session = AVCaptureSession()
+        session.sessionPreset = .photo
+
+        guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
+              let input = try? AVCaptureDeviceInput(device: camera) else {
+            print("❌ Failed to access camera")
+            return
+        }
+
+        if session.canAddInput(input) {
+            session.addInput(input)
+        }
+
+        let output = AVCapturePhotoOutput()
+        if session.canAddOutput(output) {
+            session.addOutput(output)
+            photoOutput = output
+        }
+
+        let preview = AVCaptureVideoPreviewLayer(session: session)
+        preview.videoGravity = .resizeAspectFill
+        preview.frame = bounds
+        layer.addSublayer(preview)
+        previewLayer = preview
+
+        captureSession = session
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            session.startRunning()
+        }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        previewLayer?.frame = bounds
+    }
+
+    @objc func capturePhoto() {
+        guard let photoOutput = photoOutput else { return }
+
+        let settings = AVCapturePhotoSettings()
+        settings.flashMode = .auto
+        currentPhotoSettings = settings
+
+        photoOutput.capturePhoto(with: settings, delegate: self)
+    }
+}
+
+// MARK: - Photo Capture Delegate
+extension CameraPreviewView: AVCapturePhotoCaptureDelegate {
+    func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
+        if let error = error {
+            print("❌ Photo capture error: \(error.localizedDescription)")
+            return
+        }
+
+        guard let imageData = photo.fileDataRepresentation(),
+              let image = UIImage(data: imageData) else {
+            print("❌ Failed to convert photo to image")
+            return
+        }
+
+        delegate?.didCapturePhoto(image)
     }
 }
 
@@ -479,17 +742,19 @@ extension View {
 struct UIScanScreen: View {
     let session: BillSplitSession
     let onContinue: () -> Void
+    var onCancel: (() -> Void)? = nil
 
     @State private var scanComplete = false
     @State private var scanningStatus = ""
     @State private var capturedImage: UIImage?
     @State private var showingImagePreview = false
-    @State private var showingCamera = false
+    @State private var showingCamera = true  // Auto-open camera when Add tab is tapped
     @State private var showingPhotoLibrary = false
     @State private var showingOCRResults = false
     @State private var ocrResult: OCRResult?
     @StateObject private var permissionManager = CameraPermissionManager()
     @StateObject private var ocrService = OCRService()
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         ScrollView {
@@ -503,11 +768,21 @@ struct UIScanScreen: View {
         .cameraSheet(
             isPresented: $showingCamera,
             capturedImage: $capturedImage,
-            onImageCaptured: handleImageCaptured
+            onImageCaptured: handleImageCaptured,
+            onUpload: handlePhotoLibrary,
+            onManualEntry: handleManualEntry,
+            onCancel: {
+                if let onCancel = onCancel {
+                    onCancel()
+                } else {
+                    dismiss()
+                }
+            }
         )
         .photoLibrarySheet(
             isPresented: $showingPhotoLibrary,
             capturedImage: $capturedImage,
+            showingCamera: $showingCamera,
             onImageCaptured: handleImageCaptured
         )
         .permissionAlert(
@@ -521,7 +796,8 @@ struct UIScanScreen: View {
 
     private var headerTitle: some View {
         Group {
-            if !showingOCRResults {
+            // Only show header when we have actual content to display (image preview, OCR results, or processing)
+            if showingImagePreview || showingOCRResults || ocrService.isProcessing {
                 Text("Scan Receipt")
                     .font(.h3Dynamic)
                     .foregroundColor(.adaptiveTextPrimary)
@@ -540,7 +816,8 @@ struct UIScanScreen: View {
             } else if ocrService.isProcessing {
                 processingView
             } else {
-                scanInputView
+                // Don't show scanInputView - camera auto-opens instead
+                Color.clear
             }
         }
     }
@@ -585,7 +862,8 @@ struct UIScanScreen: View {
             ScanInputSection(
                 scanningStatus: scanningStatus,
                 onScan: handleScanReceipt,
-                onUpload: handlePhotoLibrary
+                onUpload: handlePhotoLibrary,
+                onManualEntry: handleManualEntry
             )
         }
     }
@@ -633,13 +911,21 @@ struct UIScanScreen: View {
         // Check photo library permission before proceeding
         switch permissionManager.photoLibraryPermissionStatus {
         case .authorized, .limited:
-            showingPhotoLibrary = true
+            // Close camera first
+            showingCamera = false
+            // Use async to present photo library after camera dismissal starts
+            DispatchQueue.main.async {
+                self.showingPhotoLibrary = true
+            }
         case .notDetermined:
             permissionManager.requestPhotoLibraryPermission()
-            // Wait for permission result
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            // Minimal delay for permission result
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 if self.permissionManager.canUsePhotoLibrary {
-                    self.showingPhotoLibrary = true
+                    self.showingCamera = false
+                    DispatchQueue.main.async {
+                        self.showingPhotoLibrary = true
+                    }
                 }
             }
         case .denied, .restricted:
@@ -648,7 +934,34 @@ struct UIScanScreen: View {
             permissionManager.showPermissionAlert = true
         }
     }
-    
+
+    private func handleManualEntry() {
+        print("🟢 [ScanView] handleManualEntry called")
+
+        // Clear any existing scanning status to prevent loading spinner
+        scanningStatus = ""
+
+        // Set entry method to manual
+        session.entryMethod = .manual
+        print("🟢 [ScanView] Set entryMethod to: \(session.entryMethod)")
+
+        // Initialize with empty items - user will add them in AssignScreen
+        session.assignedItems = []
+
+        // Set minimal required values for session
+        session.confirmedTotal = 0.0
+        session.confirmedTax = 0.0
+        session.confirmedTip = 0.0
+
+        print("🟢 [ScanView] Session configured for manual entry - navigating to AssignScreen")
+
+        // Auto-save session
+        session.autoSaveSession()
+
+        // Navigate directly to AssignScreen
+        onContinue()
+    }
+
     private func handleImageCaptured() {
         showingImagePreview = true
     }
@@ -746,6 +1059,10 @@ struct UIScanScreen: View {
             // Combine manual tip with auto-gratuity for total tip amount
             let totalTip = actualTip + gratuity
 
+            // Set entry method to scan for scan-based flow
+            session.entryMethod = .scan
+            print("🟢 [ScanView] Set entryMethod to: \(session.entryMethod)")
+
             session.updateOCRResults(
                 processedItems,
                 rawText: result.rawText,
@@ -776,6 +1093,7 @@ struct ScanInputSection: View {
     let scanningStatus: String
     let onScan: () -> Void
     let onUpload: () -> Void
+    let onManualEntry: () -> Void
 
     var body: some View {
         VStack(spacing: .spacingLG) {
@@ -784,17 +1102,17 @@ struct ScanInputSection: View {
                 // Solid background with depth
                 RoundedRectangle(cornerRadius: .cornerRadiusMedium)
                     .fill(Color.adaptiveDepth1)
-                    .frame(height: 400)
+                    .frame(height: 450)
 
                 // Subtle border
                 RoundedRectangle(cornerRadius: .cornerRadiusMedium)
                     .stroke(Color.adaptiveTextPrimary.opacity(0.08), lineWidth: 1)
-                    .frame(height: 400)
+                    .frame(height: 450)
 
                 // Content overlay
                 VStack(spacing: .spacingLG) {
                     if scanningStatus.isEmpty {
-                        CameraInputView(onScan: onScan, onUpload: onUpload)
+                        CameraInputView(onScan: onScan, onUpload: onUpload, onManualEntry: onManualEntry)
                     } else {
                         ScanningProgressView(status: scanningStatus)
                     }
@@ -802,8 +1120,6 @@ struct ScanInputSection: View {
                 .padding(.spacingLG)
             }
             .padding(.horizontal, .paddingScreen)
-
-            ScanTipsView()
         }
     }
 }
@@ -812,6 +1128,7 @@ struct ScanInputSection: View {
 struct CameraInputView: View {
     let onScan: () -> Void
     let onUpload: () -> Void
+    let onManualEntry: () -> Void
 
     var body: some View {
         VStack(spacing: .spacingLG) {
@@ -819,7 +1136,7 @@ struct CameraInputView: View {
                 .font(.system(size: 60))
                 .foregroundColor(.adaptiveTextSecondary)
 
-            Text("Take a photo of your receipt or upload from gallery")
+            Text("Take a photo of your receipt, upload from gallery, or enter manually")
                 .font(.bodyDynamic)
                 .multilineTextAlignment(.center)
                 .foregroundColor(.adaptiveTextSecondary)
@@ -843,6 +1160,15 @@ struct CameraInputView: View {
                     }
                 }
                 .buttonStyle(SecondaryButtonStyle())
+
+                // Tertiary action: Manual Entry
+                Button(action: onManualEntry) {
+                    HStack(spacing: .spacingSM) {
+                        Image(systemName: "square.and.pencil")
+                        Text("Enter Manually")
+                    }
+                }
+                .buttonStyle(TertiaryButtonStyle())
             }
             .padding(.horizontal, .spacingLG)
         }
@@ -861,61 +1187,6 @@ struct ScanningProgressView: View {
 
             Text(status == "scanning" ? "Scanning receipt..." : "Processing items...")
                 .font(.bodyDynamic)
-                .foregroundColor(.adaptiveTextSecondary)
-        }
-    }
-}
-
-// MARK: - Refactored ScanTipsView with Design System
-struct ScanTipsView: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: .spacingMD) {
-            HStack(spacing: .spacingSM) {
-                Image(systemName: "lightbulb.fill")
-                    .font(.system(size: 16))
-                    .foregroundColor(.adaptiveAccentOrange)
-
-                Text("Tips for best results:")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.adaptiveTextPrimary)
-            }
-
-            VStack(alignment: .leading, spacing: .spacingSM) {
-                TipRow(icon: "sun.max.fill", text: "Ensure good lighting")
-                TipRow(icon: "rectangle.on.rectangle", text: "Place receipt on a flat surface")
-                TipRow(icon: "eye.fill", text: "Make sure all items are visible")
-                TipRow(icon: "camera.metering.center.weighted", text: "Hold the camera steady")
-            }
-        }
-        .padding(.spacingLG)
-        .background(
-            ZStack {
-                Color.adaptiveDepth1
-                Color.adaptiveAccentOrange.opacity(0.1)
-            }
-        )
-        .cornerRadius(.cornerRadiusMedium)
-        .overlay(
-            RoundedRectangle(cornerRadius: .cornerRadiusMedium)
-                .stroke(Color.adaptiveAccentOrange.opacity(0.25), lineWidth: 1)
-        )
-        .padding(.horizontal, .paddingScreen)
-    }
-}
-
-struct TipRow: View {
-    let icon: String
-    let text: String
-
-    var body: some View {
-        HStack(spacing: .spacingSM) {
-            Image(systemName: icon)
-                .font(.system(size: 12))
-                .foregroundColor(.adaptiveAccentOrange)
-                .frame(width: 16)
-
-            Text(text)
-                .font(.system(size: 14))
                 .foregroundColor(.adaptiveTextSecondary)
         }
     }
@@ -2138,21 +2409,22 @@ private struct CameraSheetModifier: ViewModifier {
     @Binding var isPresented: Bool
     @Binding var capturedImage: UIImage?
     let onImageCaptured: () -> Void
+    let onUpload: () -> Void
+    let onManualEntry: () -> Void
+    let onCancel: () -> Void
 
     func body(content: Content) -> some View {
         content
             .fullScreenCover(isPresented: $isPresented) {
-                CameraCapture(
+                CameraCaptureWithOverlay(
                     isPresented: $isPresented,
                     capturedImage: $capturedImage,
-                    sourceType: .camera
+                    onImageCaptured: onImageCaptured,
+                    onUpload: onUpload,
+                    onManualEntry: onManualEntry,
+                    onCancel: onCancel
                 )
                 .ignoresSafeArea()
-                .onDisappear {
-                    if capturedImage != nil {
-                        onImageCaptured()
-                    }
-                }
             }
     }
 }
@@ -2160,6 +2432,7 @@ private struct CameraSheetModifier: ViewModifier {
 private struct PhotoLibrarySheetModifier: ViewModifier {
     @Binding var isPresented: Bool
     @Binding var capturedImage: UIImage?
+    @Binding var showingCamera: Bool
     let onImageCaptured: () -> Void
 
     func body(content: Content) -> some View {
@@ -2172,6 +2445,8 @@ private struct PhotoLibrarySheetModifier: ViewModifier {
                 )
                 .ignoresSafeArea()
                 .onDisappear {
+                    // Close the camera when photo library closes
+                    showingCamera = false
                     if capturedImage != nil {
                         onImageCaptured()
                     }
@@ -2184,23 +2459,31 @@ extension View {
     func cameraSheet(
         isPresented: Binding<Bool>,
         capturedImage: Binding<UIImage?>,
-        onImageCaptured: @escaping () -> Void
+        onImageCaptured: @escaping () -> Void,
+        onUpload: @escaping () -> Void,
+        onManualEntry: @escaping () -> Void,
+        onCancel: @escaping () -> Void
     ) -> some View {
         modifier(CameraSheetModifier(
             isPresented: isPresented,
             capturedImage: capturedImage,
-            onImageCaptured: onImageCaptured
+            onImageCaptured: onImageCaptured,
+            onUpload: onUpload,
+            onManualEntry: onManualEntry,
+            onCancel: onCancel
         ))
     }
 
     func photoLibrarySheet(
         isPresented: Binding<Bool>,
         capturedImage: Binding<UIImage?>,
+        showingCamera: Binding<Bool>,
         onImageCaptured: @escaping () -> Void
     ) -> some View {
         modifier(PhotoLibrarySheetModifier(
             isPresented: isPresented,
             capturedImage: capturedImage,
+            showingCamera: showingCamera,
             onImageCaptured: onImageCaptured
         ))
     }

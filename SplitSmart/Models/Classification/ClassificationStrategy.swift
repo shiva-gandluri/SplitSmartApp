@@ -48,6 +48,8 @@ class ClassificationStrategyChain {
     func classify(_ item: ReceiptItem, at position: Int, context: ReceiptContext) async -> ClassificationResult {
         print("🔗 Strategy Chain: Classifying '\(item.name)' at position \(position)")
 
+        var bestResult: ClassificationResult?
+
         for (index, strategy) in strategies.enumerated() {
             let strategyName = String(describing: type(of: strategy))
 
@@ -62,6 +64,11 @@ class ClassificationStrategyChain {
 
             print("  📊 Strategy \(index + 1)/\(strategies.count) (\(strategyName)): " +
                   "\(result.category.rawValue) (confidence: \(String(format: "%.2f", result.confidence)))")
+
+            // Track best result so far
+            if result.confidence > (bestResult?.confidence ?? 0) {
+                bestResult = result
+            }
 
             // If high confidence (>= highConfidenceThreshold), stop here
             if result.confidence >= config.highConfidenceThreshold {
@@ -92,6 +99,12 @@ class ClassificationStrategyChain {
                 print("  ✓  Accepting result from \(strategyName)")
                 return result
             }
+        }
+
+        // Return best result if we have one
+        if let bestResult = bestResult, bestResult.confidence > 0 {
+            print("  ✅ Returning best result: \(bestResult.category.rawValue) (confidence: \(String(format: "%.2f", bestResult.confidence)))")
+            return bestResult
         }
 
         // No strategy could classify with confidence

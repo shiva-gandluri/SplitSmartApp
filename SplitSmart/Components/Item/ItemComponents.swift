@@ -781,9 +781,16 @@ struct ItemRowWithParticipants: View {
             // Item details
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(item.name)
-                        .font(.body)
-                        .fontWeight(.medium)
+                    HStack(spacing: 4) {
+                        if item.assignedToParticipants.isEmpty {
+                            Text("*")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(.red)
+                        }
+                        Text(item.name)
+                            .font(.body)
+                            .fontWeight(.medium)
+                    }
                     
                     HStack(spacing: 8) {
                         Text("$\(item.price, specifier: "%.2f")")
@@ -821,10 +828,6 @@ struct ItemRowWithParticipants: View {
             // Participant assignment row
             if !participants.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Assign to")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    
                     // Combined assignment row with Everyone button and participants
                     ParticipantAssignmentRow(
                         item: item,
@@ -900,6 +903,178 @@ struct ItemRowWithParticipants: View {
         let allParticipantIds = Set(participants.map { $0.id })
         isEveryoneSelected = !item.assignedToParticipants.isEmpty && 
                                  item.assignedToParticipants == allParticipantIds
+    }
+}
+
+
+// MARK: - Manual Entry Item Row with Editable Name and Price
+/**
+ * Manual Entry Item Row Component
+ * 
+ * Enhanced item row for manual bill entry that allows editing both item name and price
+ * while maintaining participant assignment functionality.
+ * 
+ * Features:
+ * - Editable item name and price fields
+ * - Same participant assignment UI as scan-based items
+ * - Delete button to remove items
+ * - Real-time validation and updates
+ * 
+ * Usage: Manual entry mode in AssignScreen
+ */
+struct ManualItemRowWithParticipants: View {
+    @Binding var item: UIItem
+    let participants: [UIParticipant]
+    let onItemUpdate: (UIItem) -> Void
+    let onDelete: () -> Void
+    
+    @State private var showingSuccessAnimation = false
+    @State private var isEveryoneSelected = false
+    @FocusState private var focusedField: Field?
+    
+    enum Field: Hashable {
+        case name, price
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Editable item name
+            HStack(alignment: .center, spacing: 12) {
+                Text("Item name")
+                    .font(.bodyDynamic)
+                    .foregroundColor(.adaptiveTextPrimary)
+                    .frame(width: 90, alignment: .leading)
+                
+                TextField("Enter item name", text: $item.name)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .focused($focusedField, equals: .name)
+                    .onChange(of: item.name) { _ in
+                        onItemUpdate(item)
+                    }
+            }
+            
+            // Editable item price with delete button
+            HStack(alignment: .center, spacing: 12) {
+                Text("Item value")
+                    .font(.bodyDynamic)
+                    .foregroundColor(.adaptiveTextPrimary)
+                    .frame(width: 90, alignment: .leading)
+                
+                HStack(spacing: 8) {
+                    HStack(spacing: 4) {
+                        Text("$")
+                            .font(.bodyDynamic)
+                            .foregroundColor(.adaptiveTextPrimary)
+                        
+                        TextField("0.00", value: $item.price, format: .number.precision(.fractionLength(2)))
+                            .keyboardType(.decimalPad)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .focused($focusedField, equals: .price)
+                            .onChange(of: item.price) { _ in
+                                onItemUpdate(item)
+                            }
+                    }
+                    
+                    Spacer()
+                    
+                    // Assignment status indicator
+                    Circle()
+                        .fill(item.assignedToParticipants.isEmpty ? Color.adaptiveAccentOrange : Color.adaptiveAccentGreen)
+                        .frame(width: 8, height: 8)
+                        .overlay(
+                            Circle()
+                                .fill(showingSuccessAnimation ? Color.adaptiveAccentGreen.opacity(0.3) : Color.clear)
+                                .scaleEffect(showingSuccessAnimation ? 2.0 : 1.0)
+                                .animation(.easeOut(duration: 0.4), value: showingSuccessAnimation)
+                        )
+                    
+                    Button(action: onDelete) {
+                        Image(systemName: "trash")
+                            .foregroundColor(.red)
+                            .font(.system(size: 18))
+                    }
+                }
+            }
+            
+            // Horizontal line separator
+            Rectangle()
+                .fill(Color.gray.opacity(0.3))
+                .frame(height: 1)
+            
+            // Participant assignment row
+            if !participants.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    // Combined assignment row with Everyone button and participants
+                    ParticipantAssignmentRow(
+                        item: item,
+                        participants: participants,
+                        onParticipantToggle: { participantId in
+                            toggleParticipant(participantId)
+                        },
+                        onParticipantRemove: { participantId in
+                            removeParticipant(participantId)
+                        },
+                        everyoneSelected: isEveryoneSelected,
+                        onEveryoneToggle: {
+                            toggleEveryoneButton()
+                        }
+                    )
+                }
+            }
+        }
+        .padding(.paddingScreen)
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
+        .onAppear {
+            updateEveryoneButtonState()
+        }
+        .onChange(of: item.assignedToParticipants) {
+            updateEveryoneButtonState()
+        }
+    }
+    
+    private func toggleParticipant(_ participantId: String) {
+        if item.assignedToParticipants.contains(participantId) {
+            removeParticipant(participantId)
+        } else {
+            addParticipant(participantId)
+        }
+    }
+
+    private func addParticipant(_ participantId: String) {
+        item.assignedToParticipants.insert(participantId)
+        onItemUpdate(item)
+        triggerSuccessAnimation()
+    }
+
+    private func removeParticipant(_ participantId: String) {
+        item.assignedToParticipants.remove(participantId)
+        onItemUpdate(item)
+    }
+
+    private func toggleEveryoneButton() {
+        if isEveryoneSelected {
+            // Remove everyone
+            item.assignedToParticipants.removeAll()
+        } else {
+            // Add everyone
+            item.assignedToParticipants = Set(participants.map { $0.id })
+            triggerSuccessAnimation()
+        }
+        onItemUpdate(item)
+    }
+
+    private func updateEveryoneButtonState() {
+        isEveryoneSelected = !item.assignedToParticipants.isEmpty &&
+                            item.assignedToParticipants.count == participants.count
+    }
+
+    private func triggerSuccessAnimation() {
+        showingSuccessAnimation = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            showingSuccessAnimation = false
+        }
     }
 }
 

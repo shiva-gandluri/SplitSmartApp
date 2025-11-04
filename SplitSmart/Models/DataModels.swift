@@ -356,6 +356,12 @@ import FirebaseAuth
 // TODO: Uncomment after adding FirebaseMessaging dependency in Xcode
 // import FirebaseMessaging
 
+// Bill entry method for analytics and metadata
+enum BillEntryMethod: String, Codable {
+    case scan = "scan"
+    case manual = "manual"
+}
+
 struct Bill: Codable, Identifiable, Hashable {
     let id: String
     let paidBy: String // userID who paid
@@ -387,6 +393,9 @@ struct Bill: Codable, Identifiable, Hashable {
     var deletedByDisplayName: String? // Display name snapshot
     var deletedAt: Timestamp? // When bill was deleted
 
+    // Entry method tracking
+    var entryMethod: BillEntryMethod
+
     init(id: String = UUID().uuidString,
          createdBy: String,
          createdByDisplayName: String,
@@ -407,7 +416,8 @@ struct Bill: Codable, Identifiable, Hashable {
          isDeleted: Bool = false,
          deletedBy: String? = nil,
          deletedByDisplayName: String? = nil,
-         deletedAt: Timestamp? = nil) {
+         deletedAt: Timestamp? = nil,
+         entryMethod: BillEntryMethod = .scan) {
         self.id = id
         self.createdBy = createdBy
         self.createdByDisplayName = createdByDisplayName
@@ -431,6 +441,7 @@ struct Bill: Codable, Identifiable, Hashable {
         self.deletedBy = deletedBy
         self.deletedByDisplayName = deletedByDisplayName
         self.deletedAt = deletedAt
+        self.entryMethod = entryMethod
     }
     
     // Legacy initializer for backward compatibility
@@ -449,7 +460,8 @@ struct Bill: Codable, Identifiable, Hashable {
          createdByEmail: String = "unknown@example.com",
          calculatedTotals: [String: Double],
          roundingAdjustments: [String: Double] = [:],
-         isDeleted: Bool = false) {
+         isDeleted: Bool = false,
+         entryMethod: BillEntryMethod = .scan) {
         self.id = id
         self.paidBy = paidBy
         self.paidByDisplayName = paidByDisplayName
@@ -473,6 +485,7 @@ struct Bill: Codable, Identifiable, Hashable {
         self.deletedBy = nil
         self.deletedByDisplayName = nil
         self.deletedAt = nil
+        self.entryMethod = entryMethod
     }
     
     /// Returns the display name for the bill (custom name or default based on items)
@@ -715,7 +728,8 @@ class BillService: ObservableObject {
             items: billItems,
             participants: billParticipants,
             createdBy: currentUser.uid,
-            calculatedTotals: [:] // Temporary empty, will be calculated below
+            calculatedTotals: [:], // Temporary empty, will be calculated below
+            entryMethod: session.entryMethod
         )
 
         // DEBUG: Log participantIds that will be used for querying
@@ -737,7 +751,8 @@ class BillService: ObservableObject {
             items: billItems,
             participants: billParticipants,
             createdBy: currentUser.uid,
-            calculatedTotals: calculatedDebts // Now uses Firebase UIDs consistently
+            calculatedTotals: calculatedDebts, // Now uses Firebase UIDs consistently
+            entryMethod: session.entryMethod
         )
         
         // Validate bill totals
@@ -5032,10 +5047,13 @@ class BillSplitSession: ObservableObject {
     
     // Bill name (optional, defaults to item count description)
     @Published var billName: String = ""
-    
+
     // Item assignments
     @Published var assignedItems: [UIItem] = []
-    
+
+    // Entry method tracking
+    @Published var entryMethod: BillEntryMethod = .scan
+
     // Session state
     @Published var sessionState: SessionState = .home
     @Published var isSessionActive: Bool = false
@@ -5080,7 +5098,10 @@ class BillSplitSession: ObservableObject {
         // Reset bill payer selection and name
         paidByParticipantID = nil
         billName = ""
-        
+
+        // Reset entry method to scan
+        entryMethod = .scan
+
         sessionState = .home
         isSessionActive = false
     }
@@ -6073,21 +6094,28 @@ final class AccountDeletionService {
     /// - Parameter billManager: BillManager instance with user's current balance data
     /// - Throws: AccountDeletionError if deletion is not allowed
     static func validateDeletion(for billManager: BillManager) throws {
-        let balance = billManager.userBalance
+        // Use NET balances (same calculation as home screen) instead of GROSS balances
+        // This ensures consistency between what user sees and deletion validation
+        let peopleWhoOweUser = billManager.getPeopleWhoOweUser()
+        let peopleUserOwes = billManager.getPeopleUserOwes()
 
-        // Check if user owes money to others
-        if balance.hasDebts {
-            throw AccountDeletionError.hasDebts(amount: balance.totalOwed)
+        let totalOwedToUser = peopleWhoOweUser.reduce(0.0) { $0 + $1.total }
+        let totalUserOwes = peopleUserOwes.reduce(0.0) { $0 + $1.total }
+
+        // Check if user owes money to others (NET balance)
+        if totalUserOwes > 0.01 {
+            throw AccountDeletionError.hasDebts(amount: totalUserOwes)
         }
 
-        // Check if others owe money to user
-        if balance.isOwed {
-            throw AccountDeletionError.isOwed(amount: balance.totalOwedTo)
+        // Check if others owe money to user (NET balance)
+        if totalOwedToUser > 0.01 {
+            throw AccountDeletionError.isOwed(amount: totalOwedToUser)
         }
 
         // Check if user has any active bills (even if settled)
-        if !balance.activeBillIds.isEmpty {
-            throw AccountDeletionError.hasActiveBills(count: balance.activeBillIds.count)
+        let activeBillIds = billManager.userBalance.activeBillIds
+        if !activeBillIds.isEmpty {
+            throw AccountDeletionError.hasActiveBills(count: activeBillIds.count)
         }
 
         // All checks passed - safe to delete

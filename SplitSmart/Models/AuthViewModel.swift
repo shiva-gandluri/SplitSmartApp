@@ -527,22 +527,22 @@ class AuthViewModel: ObservableObject {
             }
         }
     }
-    
+
     func signInWithGoogle() async {
-        
+
         // Ensure we're not already loading
         guard !isLoading else {
             return
         }
-        
+
         await MainActor.run {
             self.isLoading = true
             self.errorMessage = ""
         }
-        
+
         // Add small delay to prevent rapid successive calls
         try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
-        
+
         // Get root view controller
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let window = windowScene.windows.first,
@@ -553,10 +553,10 @@ class AuthViewModel: ObservableObject {
             }
             return
         }
-        
-        
+
+
         do {
-            // Use the Google Sign-In that's already configured in AppDelegate
+            // Use the Google Sign-In SDK (shows Google's UI)
             let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: rootViewController)
             
             // Check if we're still in loading state (user might have cancelled)
@@ -579,23 +579,23 @@ class AuthViewModel: ObservableObject {
             )
             
             let authResult = try await Auth.auth().signIn(with: credential)
-            
+
             // Create user record in background (non-blocking)
             Task.detached(priority: .userInitiated) { [weak self] in
                 do {
                     try await self?.createUserRecord(authResult: authResult)
                     try await self?.createParticipantRecord(authResult: authResult)
-                    
+
                     // MIGRATION: Auto-migrate existing users on login
                     await self?.performAutoMigrationIfNeeded(authResult: authResult)
-                    
+
                 } catch {
                     AppLog.authError("Background record creation failed", error: error)
                     #if DEBUG
                     #endif
                 }
             }
-            
+
             // Update UI state immediately
             await MainActor.run {
                 self.user = authResult.user
@@ -628,7 +628,7 @@ class AuthViewModel: ObservableObject {
             }
         }
     }
-    
+
     private func createUserRecord(authResult: AuthDataResult) async throws {
         
         let db = Firestore.firestore()

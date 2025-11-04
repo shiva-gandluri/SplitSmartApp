@@ -1,7 +1,6 @@
 import SwiftUI
 import GoogleSignInSwift
 
-// MARK: - Refactored AuthView with Design System
 struct AuthView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
     @State private var isAnimating = false
@@ -9,22 +8,13 @@ struct AuthView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // Gradient Background with adaptive colors
-                LinearGradient(
-                    gradient: Gradient(colors: [
-                        Color.accentColor.opacity(0.1),
-                        Color.purple.opacity(0.05),
-                        Color.adaptiveDepth0
-                    ]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
+                // Background matching other app screens
+                Color.adaptiveDepth0.ignoresSafeArea()
 
                 VStack(spacing: .spacing2XL) {
                     Spacer()
 
-                    // App Branding with enhanced design
+                    // App Branding
                     VStack(spacing: .spacingLG) {
                         // Animated App Icon
                         ZStack {
@@ -37,7 +27,7 @@ struct AuthView: View {
                                     )
                                 )
                                 .frame(width: 120, height: 120)
-                                .shadow(color: .accentColor.opacity(0.3), radius: 20, x: 0, y: 10)
+                                // .shadow(color: .accentColor.opacity(0.3), radius: 20, x: 0, y: 10)
 
                             Image(systemName: "dollarsign.circle.fill")
                                 .font(.system(size: 60, weight: .bold))
@@ -71,7 +61,7 @@ struct AuthView: View {
 
                     Spacer()
 
-                    // Enhanced Sign In Section with design system
+                    // Sign In Section
                     VStack(spacing: .spacingLG) {
                         if authViewModel.isLoading {
                             VStack(spacing: .spacingMD) {
@@ -89,7 +79,7 @@ struct AuthView: View {
                                     .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: 5)
                             )
                         } else {
-                            // Custom styled Google Sign-In button with design system
+                            // Simple Google Sign-In button
                             Button(action: {
                                 Task {
                                     await authViewModel.signInWithGoogle()
@@ -103,7 +93,7 @@ struct AuthView: View {
                             .buttonStyle(PrimaryButtonStyle())
                         }
 
-                        // Error message with design system
+                        // Error message
                         if !authViewModel.errorMessage.isEmpty {
                             HStack(spacing: .spacingXS) {
                                 Image(systemName: "exclamationmark.triangle.fill")
@@ -125,34 +115,6 @@ struct AuthView: View {
                         }
                     }
                     .padding(.horizontal, .spacingLG)
-
-                    Spacer()
-
-                    // Enhanced Terms and Privacy with design system
-                    VStack(spacing: .spacingSM) {
-                        Text("By continuing, you agree to our")
-                            .font(.captionDynamic)
-                            .foregroundColor(.adaptiveTextSecondary)
-
-                        HStack(spacing: .spacingXS) {
-                            Button("Terms of Service") {
-                                // TODO: Implement terms of service
-                            }
-                            .font(.captionDynamic)
-                            .foregroundColor(.accentColor)
-
-                            Text("and")
-                                .font(.captionDynamic)
-                                .foregroundColor(.adaptiveTextSecondary)
-
-                            Button("Privacy Policy") {
-                                // TODO: Implement privacy policy
-                            }
-                            .font(.captionDynamic)
-                            .foregroundColor(.accentColor)
-                        }
-                    }
-                    .padding(.bottom, max(geometry.safeAreaInsets.bottom, .spacingMD))
                 }
                 .padding(.horizontal, .paddingSection)
             }

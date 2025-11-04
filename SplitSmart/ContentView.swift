@@ -19,24 +19,28 @@ struct ContentView: View {
     }
 
     var body: some View {
-        ZStack {
-            mainContent
-            sessionRecoveryOverlay
+        NavigationStack {
+            ZStack {
+                mainContent
+                sessionRecoveryOverlay
+            }
+            .navigationBarHidden(selectedTab == "scan")
+            .toolbar(selectedTab == "scan" ? .hidden : .automatic, for: .navigationBar)
+            .lifecycleHandlers(
+                authViewModel: authViewModel,
+                contactsManager: contactsManager,
+                billManager: billManager,
+                billSplitSession: billSplitSession,
+                setupKeyboardObservers: setupKeyboardObservers,
+                removeKeyboardObservers: removeKeyboardObservers
+            )
+            .deepLinkHandlers(
+                deepLinkCoordinator: deepLinkCoordinator,
+                selectedTab: $selectedTab,
+                billManager: billManager,
+                authViewModel: authViewModel
+            )
         }
-        .lifecycleHandlers(
-            authViewModel: authViewModel,
-            contactsManager: contactsManager,
-            billManager: billManager,
-            billSplitSession: billSplitSession,
-            setupKeyboardObservers: setupKeyboardObservers,
-            removeKeyboardObservers: removeKeyboardObservers
-        )
-        .deepLinkHandlers(
-            deepLinkCoordinator: deepLinkCoordinator,
-            selectedTab: $selectedTab,
-            billManager: billManager,
-            authViewModel: authViewModel
-        )
     }
 
     // MARK: - Main Content
@@ -47,7 +51,7 @@ struct ContentView: View {
                 backButtonSection
             }
             currentTabView
-            if !isKeyboardVisible {
+            if !isKeyboardVisible && selectedTab != "scan" {
                 TabBarView(selectedTab: $selectedTab)
             }
         }
@@ -77,14 +81,17 @@ struct ContentView: View {
     }
 
     private var currentTabView: some View {
-        Group {
+        let _ = print("🟣 [ContentView] Rendering tab: \(selectedTab)")
+
+        return Group {
             switch selectedTab {
             case "home":
                 UIHomeScreen(session: billSplitSession, billManager: billManager, authViewModel: authViewModel, onCreateNew: startNewBill)
             case "scan":
-                UIScanScreen(session: billSplitSession, onContinue: moveToAssign)
+                UIScanScreen(session: billSplitSession, onContinue: moveToAssign, onCancel: { selectedTab = "home" })
             case "assign":
                 UIAssignScreen(session: billSplitSession, contactsManager: contactsManager, onContinue: moveToSummary)
+                    .environmentObject(authViewModel)
             case "summary":
                 UISummaryScreen(
                     session: billSplitSession,
@@ -131,8 +138,11 @@ struct ContentView: View {
     }
 
     private func moveToAssign() {
+        print("🔵 [ContentView] moveToAssign called - switching to assign tab")
+        print("🔵 [ContentView] Session entryMethod: \(billSplitSession.entryMethod)")
         billSplitSession.currentScreenIndex = 2
         selectedTab = "assign"
+        print("🔵 [ContentView] selectedTab now: \(selectedTab)")
     }
 
     private func moveToSummary() {
@@ -251,7 +261,7 @@ struct TabBarView: View {
             TabButton(icon: "house.fill", label: "Home", isSelected: selectedTab == "home") {
                 selectedTab = "home"
             }
-            TabButton(icon: "camera.fill", label: "Scan", isSelected: selectedTab == "scan") {
+            TabButton(icon: "plus.circle.fill", label: "Add", isSelected: selectedTab == "scan") {
                 selectedTab = "scan"
             }
             TabButton(icon: "clock.fill", label: "History", isSelected: selectedTab == "history") {

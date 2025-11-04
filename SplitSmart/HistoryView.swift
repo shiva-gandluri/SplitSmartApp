@@ -107,19 +107,6 @@ struct HistoryView: View {
         .padding(.horizontal, .paddingScreen)
     }
 
-    @ViewBuilder
-    private var activityCountBadge: some View {
-        if !billManager.billActivities.isEmpty {
-            Text("\(filteredActivities.count)")
-                .font(.captionDynamic)
-                .fontWeight(.medium)
-                .foregroundColor(.white)
-                .padding(.horizontal, .spacingSM)
-                .padding(.vertical, .spacingXS)
-                .background(Color.adaptiveAccentBlue)
-                .clipShape(Capsule())
-        }
-    }
 
     private var filterTabsSection: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -154,7 +141,7 @@ struct HistoryView: View {
     private var loadingView: some View {
         VStack {
             Spacer()
-            ProgressView("Loading activities...")
+            ProgressView()
                 .frame(maxWidth: .infinity)
             Spacer()
         }
@@ -386,20 +373,16 @@ struct FilterTab: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: .spacingXS) {
-                Image(systemName: icon)
-                    .font(.captionText)
-                Text(title)
-                    .font(.captionDynamic)
-                    .fontWeight(.medium)
-            }
-            .foregroundColor(isSelected ? .white : .adaptiveTextPrimary)
-            .padding(.horizontal, .spacingMD)
-            .padding(.vertical, .spacingSM)
-            .background(
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(isSelected ? Color.adaptiveAccentBlue : Color.adaptiveDepth1)
-            )
+            Text(title)
+                .font(.captionDynamic)
+                .fontWeight(.medium)
+                .foregroundColor(isSelected ? .white : .adaptiveTextPrimary)
+                .padding(.horizontal, .spacingMD)
+                .padding(.vertical, .spacingSM)
+                .background(
+                    RoundedRectangle(cornerRadius: 20)
+                        .fill(isSelected ? Color.adaptiveAccentBlue : Color.adaptiveDepth1)
+                )
         }
     }
 }
@@ -508,13 +491,13 @@ struct EmptyHistoryView: View {
     private var emptyStateMessage: String {
         switch filter {
         case .all:
-            return "When you or others create, edit, or delete bills, they'll appear here with timestamps and attribution."
+            return "Bill activity will appear here"
         case .created:
-            return "Bills you or others create will appear here with creation details."
+            return "New bills will appear here"
         case .edited:
-            return "When bills are modified, you'll see the edit history here."
+            return "Edited bills will appear here"
         case .deleted:
-            return "Deleted bills are tracked here so you can see what was removed and by whom."
+            return "Deleted bills will appear here"
         }
     }
 }

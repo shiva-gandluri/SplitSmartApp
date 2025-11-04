@@ -182,15 +182,10 @@ struct BillEditSummaryScreen: View {
                                     Spacer()
 
                                     // Amount owed
-                                    VStack(alignment: .trailing, spacing: 2) {
-                                        Text("$\(amountOwed, specifier: "%.2f")")
-                                            .font(.bodyDynamic)
-                                            .fontWeight(.bold)
-                                            .foregroundColor(.adaptiveAccentRed)
-                                        Text("owes")
-                                            .font(.captionDynamic)
-                                            .foregroundColor(.secondary)
-                                    }
+                                    Text("$\(amountOwed, specifier: "%.2f")")
+                                        .font(.bodyDynamic)
+                                        .fontWeight(.bold)
+                                        .foregroundColor(.adaptiveAccentRed)
                                 }
                                 .padding()
                                 .background(Color(.systemBackground))

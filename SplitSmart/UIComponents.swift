@@ -554,7 +554,8 @@ struct UIAssignScreen: View {
     @State private var pendingContactEmail = ""
     @State private var pendingContactName = ""
     @StateObject private var contactsPermissionManager = ContactsPermissionManager()
-    
+    @State private var highlightedItemId: Int? = nil
+
     // Check if totals match within reasonable tolerance
     private var totalsMatch: Bool {
         guard let identifiedTotal = session.identifiedTotal else { return true }
@@ -569,30 +570,36 @@ struct UIAssignScreen: View {
     // Extract complex menu label into computed property
     @ViewBuilder
     private var paidByMenuLabel: some View {
-        HStack {
+        HStack(spacing: 12) {
             if let paidByID = session.paidByParticipantID,
                let paidByParticipant = session.participants.first(where: { $0.id == paidByID }) {
                 Circle()
                     .fill(paidByParticipant.color)
-                    .frame(width: 20, height: 20)
+                    .frame(width: 16, height: 16)
                 Text(paidByParticipant.name)
+                    .font(.system(size: 16, weight: .medium))
                     .foregroundColor(.adaptiveTextPrimary)
                     .lineLimit(1)
-                    .truncationMode(.tail)
             } else {
-                Text("Select who paid")
+                Text("Select participant")
+                    .font(.system(size: 16, weight: .medium))
                     .foregroundColor(.adaptiveTextSecondary)
             }
             Spacer()
             Image(systemName: "chevron.down")
                 .foregroundColor(.adaptiveTextSecondary)
-                .font(.captionText)
+                .font(.system(size: 12))
         }
-        .padding(.paddingScreen)
-        .background(Color.adaptiveDepth3)
-        .cornerRadius(.cornerRadiusMedium)
-        .shadow(color: Color.black.opacity(0.08), radius: 8, x: 0, y: 3)
-        .shadow(color: Color.black.opacity(0.04), radius: 2, x: 0, y: 1)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .background(
+            VStack(spacing: 0) {
+                Spacer()
+                Rectangle()
+                    .fill(Color.adaptiveTextSecondary.opacity(0.3))
+                    .frame(height: 1)
+            }
+        )
     }
 
     // Extract header section
@@ -610,60 +617,50 @@ struct UIAssignScreen: View {
     }
 
     private var whoPaidSection: some View {
-        HStack(spacing: .spacingML) {
-            HStack(spacing: .spacingXS) {
-                Text("Who paid this bill?")
-                    .font(.bodyText)
-                    .fontWeight(.medium)
+        GeometryReader { geometry in
+            HStack(spacing: .spacingML) {
+                Text("Who paid?")
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(.adaptiveTextPrimary)
-                Text("*")
-                    .font(.smallText)
-                    .fontWeight(.bold)
-                    .foregroundColor(.adaptiveAccentRed)
-            }
 
-            Spacer()
+                Spacer()
 
-            Menu {
-                ForEach(session.participants) { participant in
-                    Button(action: {
-                        session.paidByParticipantID = participant.id
-                    }) {
-                        HStack {
-                            Circle()
-                                .fill(participant.color)
-                                .frame(width: 14, height: 14)
-                            Text(participant.name)
-                            if session.paidByParticipantID == participant.id {
-                                Spacer()
-                                Image(systemName: "checkmark")
-                                    .foregroundColor(.adaptiveAccentBlue)
+                Menu {
+                    ForEach(session.participants) { participant in
+                        Button(action: {
+                            session.paidByParticipantID = participant.id
+                        }) {
+                            HStack(spacing: .spacingSM) {
+                                Circle()
+                                    .fill(participant.color)
+                                    .frame(width: 16, height: 16)
+                                Text(participant.name)
+                                    .font(.system(size: 16, weight: .regular))
+                                if session.paidByParticipantID == participant.id {
+                                    Spacer()
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundColor(.adaptiveAccentBlue)
+                                }
                             }
                         }
                     }
+                } label: {
+                    paidByMenuLabel
                 }
-            } label: {
-                paidByMenuLabel
-            }
-            .frame(width: 180)
-            .onTapGesture {
-                // Debug log when Menu is tapped
-                for participant in session.participants {
-                }
+                .frame(width: geometry.size.width * 0.5, alignment: .trailing)
             }
         }
+        .frame(height: 44)
     }
     
     var body: some View {
-        ScrollView {
-            VStack(spacing: .spacingXXL) {
-                headerWithImagePreview
-                participantManagementSection
-                regexItemsSection
-                llmItemsSection
-                assignmentSummarySection
+        Group {
+            if session.entryMethod == .manual {
+                manualEntryView
+            } else {
+                scanBasedView
             }
-            .padding(.top)
         }
         .onAppear(perform: handleOnAppear)
         .onTapGesture(perform: hideKeyboard)
@@ -697,6 +694,265 @@ struct UIAssignScreen: View {
         )
     }
 
+    // MARK: - Manual Entry View
+
+    private var manualEntryView: some View {
+        ScrollViewReader { proxy in
+            List {
+                // Header Section
+                Section {
+                    manualEntryHeader
+                        .listRowInsets(EdgeInsets())
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                }
+
+                // Participant Management Section
+                Section {
+                    participantManagementSection
+                        .listRowInsets(EdgeInsets())
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                }
+
+                // Manual Items Section
+                manualItemsListSection(scrollProxy: proxy)
+
+                // Assignment Summary Section
+                Section {
+                    manualAssignmentSummary(scrollProxy: proxy)
+                        .listRowInsets(EdgeInsets())
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(Color.adaptiveDepth0)
+        }
+    }
+
+    private var manualEntryHeader: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: .spacingXS) {
+                Text("Assign Items")
+                    .font(.h3Dynamic)
+                    .foregroundColor(.adaptiveTextPrimary)
+
+                Text("Add participants & items manually")
+                    .font(.smallDynamic)
+                    .foregroundColor(.adaptiveTextSecondary)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, .paddingScreen)
+        .padding(.bottom, .spacingMD)
+    }
+
+    private func manualItemsListSection(scrollProxy: ScrollViewProxy) -> some View {
+        Section(header:
+            HStack {
+                Text("Items")
+                    .font(.h4Dynamic)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.adaptiveTextPrimary)
+                    .textCase(nil)
+
+                Spacer()
+
+                Button(action: { addManualItem(scrollProxy: scrollProxy) }) {
+                    HStack(spacing: .spacingXS) {
+                        Image(systemName: "plus.circle.fill")
+                        Text("Add Item")
+                    }
+                    .font(.bodyDynamic)
+                    .foregroundColor(.adaptiveAccentBlue)
+                }
+            }
+            .listRowInsets(EdgeInsets(top: 8, leading: .paddingScreen, bottom: 8, trailing: .paddingScreen))
+        ) {
+            if session.assignedItems.isEmpty {
+                VStack(spacing: .spacingMD) {
+                    Image(systemName: "cart")
+                        .font(.system(size: 40))
+                        .foregroundColor(.adaptiveTextSecondary)
+                    Text("No items yet")
+                        .font(.bodyDynamic)
+                        .foregroundColor(.adaptiveTextSecondary)
+                    Text("Tap 'Add Item' to get started")
+                        .font(.smallDynamic)
+                        .foregroundColor(.adaptiveTextTertiary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, .spacingXL)
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+            } else {
+                ForEach(session.assignedItems.indices, id: \.self) { index in
+                    ManualItemRow(
+                        item: $session.assignedItems[index],
+                        participants: session.participants,
+                        onDelete: { deleteManualItem(at: index) },
+                        onToggleParticipant: { participantId in
+                            toggleParticipantAssignment(itemIndex: index, participantId: participantId)
+                        },
+                        isHighlighted: highlightedItemId == session.assignedItems[index].id
+                    )
+                    .id("item-\(session.assignedItems[index].id)")
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button(role: .destructive, action: {
+                            deleteManualItem(at: index)
+                        }) {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
+                    .listRowInsets(EdgeInsets(top: 16, leading: .paddingScreen, bottom: 16, trailing: .paddingScreen))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                }
+            }
+        }
+    }
+
+    private var manualItemsList: some View {
+        VStack(spacing: 0) {
+            ForEach(session.assignedItems.indices, id: \.self) { index in
+                ManualItemRow(
+                    item: $session.assignedItems[index],
+                    participants: session.participants,
+                    onDelete: { deleteManualItem(at: index) },
+                    onToggleParticipant: { participantId in
+                        toggleParticipantAssignment(itemIndex: index, participantId: participantId)
+                    },
+                    isHighlighted: highlightedItemId == session.assignedItems[index].id
+                )
+                .id("item-\(session.assignedItems[index].id)")
+                .padding(.horizontal, .paddingScreen)
+                .padding(.vertical, 20)
+                .background(Color.adaptiveDepth1)
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive, action: {
+                        deleteManualItem(at: index)
+                    }) {
+                        Label("Delete", systemImage: "trash")
+                    }
+                }
+
+                // Divider between items
+                if index < session.assignedItems.count - 1 {
+                    Divider()
+                        .background(Color.gray.opacity(0.2))
+                }
+            }
+        }
+    }
+
+    private func manualAssignmentSummary(scrollProxy: ScrollViewProxy) -> some View {
+        VStack(spacing: .spacingLG) {
+            whoPaidSection
+                .padding(.horizontal, .paddingScreen)
+
+            manualContinueButtonSection(scrollProxy: scrollProxy)
+        }
+    }
+
+    private func manualContinueButtonSection(scrollProxy: ScrollViewProxy) -> some View {
+        let allItemsAssigned = session.assignedItems.allSatisfy { !$0.assignedToParticipants.isEmpty }
+        let whoPaidSelected = session.paidByParticipantID != nil
+        let canContinue = whoPaidSelected && allItemsAssigned
+        let totalAmount = session.assignedItems.reduce(0.0) { $0 + $1.price }
+
+        return VStack(spacing: .spacingSM) {
+            Button(action: {
+                if canContinue {
+                    session.confirmedTotal = totalAmount
+                    session.confirmedTax = 0.0
+                    session.confirmedTip = 0.0
+                    onContinue()
+                } else {
+                    // Find first unassigned item and scroll to it
+                    if let firstUnassigned = session.assignedItems.first(where: { $0.assignedToParticipants.isEmpty }) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            withAnimation(.easeInOut(duration: 0.5)) {
+                                scrollProxy.scrollTo("item-\(firstUnassigned.id)", anchor: .center)
+                            }
+
+                            // Highlight the item
+                            highlightedItemId = firstUnassigned.id
+
+                            // Remove highlight after 2 seconds
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                                withAnimation {
+                                    highlightedItemId = nil
+                                }
+                            }
+                        }
+                    }
+                }
+            }) {
+                HStack {
+                    Text("Continue to Summary")
+                    Image(systemName: "arrow.right")
+                }
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .padding(.horizontal, .paddingScreen)
+
+            if !canContinue {
+                VStack(spacing: .spacingXS) {
+                    if !whoPaidSelected {
+                        validationMessage(icon: "exclamationmark.triangle.fill", text: "Please select who paid this bill.", color: .red)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, .paddingScreen)
+    }
+
+    // MARK: - Scan Based View
+
+    private var scanBasedView: some View {
+        ScrollViewReader { proxy in
+            List {
+                // Header Section
+                Section {
+                    headerWithImagePreview
+                        .listRowInsets(EdgeInsets())
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                }
+
+                // Participant Management Section
+                Section {
+                    participantManagementSection
+                        .listRowInsets(EdgeInsets())
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                }
+
+                // Receipt Items Section
+                regexItemsListSection(scrollProxy: proxy)
+
+                // Who Paid and Continue Section
+                Section {
+                    VStack(spacing: .spacingLG) {
+                        whoPaidSection
+                            .padding(.horizontal, .paddingScreen)
+
+                        scanContinueButtonSection(scrollProxy: proxy)
+                    }
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(Color.adaptiveDepth0)
+        }
+    }
+
     // MARK: - View Components
 
     private var headerWithImagePreview: some View {
@@ -708,6 +964,7 @@ struct UIAssignScreen: View {
             }
         }
         .padding(.horizontal, .paddingScreen)
+        .padding(.bottom, .spacingMD)
     }
 
     private func receiptThumbnail(image: UIImage) -> some View {
@@ -755,28 +1012,61 @@ struct UIAssignScreen: View {
         }
     }
 
-    private var regexItemsSection: some View {
-        VStack(alignment: .leading, spacing: .spacingML) {
-            regexSectionHeader
-            regexItemsList
-        }
-    }
+    private func regexItemsListSection(scrollProxy: ScrollViewProxy) -> some View {
+        Section(header:
+            HStack {
+                Text("Receipt Items")
+                    .font(.h4Dynamic)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.adaptiveTextPrimary)
+                    .textCase(nil)
 
-    private var regexSectionHeader: some View {
-        Text("Receipt Items (based on Regex)")
-            .font(.h4Dynamic)
-            .fontWeight(.semibold)
-            .foregroundColor(.adaptiveTextPrimary)
-            .padding(.horizontal, .paddingScreen)
-            .padding(.bottom, 0)
-    }
+                Spacer()
 
-    private var regexItemsList: some View {
-        Group {
-            if session.regexDetectedItems.isEmpty {
-                processingIndicator(message: "Processing with regex approach...")
+                Button(action: { addManualItem(scrollProxy: scrollProxy) }) {
+                    HStack(spacing: .spacingXS) {
+                        Image(systemName: "plus.circle.fill")
+                        Text("Add Item")
+                    }
+                    .font(.bodyDynamic)
+                    .foregroundColor(.adaptiveAccentBlue)
+                }
+            }
+            .listRowInsets(EdgeInsets(top: 8, leading: .paddingScreen, bottom: 8, trailing: .paddingScreen))
+        ) {
+            if session.assignedItems.isEmpty {
+                VStack(spacing: .spacingMD) {
+                    ProgressView()
+                        .scaleEffect(1.2)
+                    Text("Processing receipt...")
+                        .font(.bodyDynamic)
+                        .foregroundColor(.adaptiveTextSecondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, .spacingLG)
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
             } else {
-                itemAssignmentList
+                ForEach(session.assignedItems.indices, id: \.self) { index in
+                    ItemRowWithParticipants(
+                        item: $session.assignedItems[index],
+                        participants: session.participants,
+                        onItemUpdate: session.updateItemAssignments,
+                        isHighlighted: highlightedItemId == session.assignedItems[index].id
+                    )
+                    .id("item-\(session.assignedItems[index].id)")
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button(role: .destructive, action: {
+                            deleteManualItem(at: index)
+                        }) {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
+                    .listRowInsets(EdgeInsets(top: 16, leading: .paddingScreen, bottom: 16, trailing: .paddingScreen))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                }
             }
         }
     }
@@ -827,20 +1117,26 @@ struct UIAssignScreen: View {
 
             // Items with horizontal dividers
             ForEach(session.assignedItems.indices, id: \.self) { index in
-                VStack(spacing: 0) {
-                    ItemRowWithParticipants(
-                        item: $session.assignedItems[index],
-                        participants: session.participants,
-                        onItemUpdate: session.updateItemAssignments
-                    )
-                    .padding(.horizontal, .paddingScreen)
-                    .padding(.vertical, 20)
-
-                    // Divider between items (not after last item)
-                    if index < session.assignedItems.count - 1 {
-                        Divider()
-                            .background(Color.gray.opacity(0.2))
+                ItemRowWithParticipants(
+                    item: $session.assignedItems[index],
+                    participants: session.participants,
+                    onItemUpdate: session.updateItemAssignments
+                )
+                .padding(.horizontal, .paddingScreen)
+                .padding(.vertical, 20)
+                .background(Color.adaptiveDepth1)
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive, action: {
+                        deleteManualItem(at: index)
+                    }) {
+                        Label("Delete", systemImage: "trash")
                     }
+                }
+
+                // Divider between items (not after last item)
+                if index < session.assignedItems.count - 1 {
+                    Divider()
+                        .background(Color.gray.opacity(0.2))
                 }
             }
         }
@@ -915,6 +1211,56 @@ struct UIAssignScreen: View {
         }
     }
 
+    private func scanContinueButtonSection(scrollProxy: ScrollViewProxy) -> some View {
+        let assignedTotal = session.assignedItems.reduce(0.0) { total, item in
+            total + (item.assignedToParticipants.isEmpty ? 0 : item.price)
+        }
+        let allItemsAssigned = session.assignedItems.allSatisfy { !$0.assignedToParticipants.isEmpty }
+        let totalComplete = abs(assignedTotal - session.confirmedTotal) <= 0.01
+        let whoPaidSelected = session.paidByParticipantID != nil
+        let canContinue = session.isReadyForBillCreation && totalComplete
+
+        return VStack(spacing: .spacingSM) {
+            Button(action: {
+                if canContinue {
+                    onContinue()
+                } else {
+                    // Find first unassigned item and scroll to it
+                    if let firstUnassigned = session.assignedItems.first(where: { $0.assignedToParticipants.isEmpty }) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            withAnimation(.easeInOut(duration: 0.5)) {
+                                scrollProxy.scrollTo("item-\(firstUnassigned.id)", anchor: .center)
+                            }
+
+                            // Highlight the item
+                            highlightedItemId = firstUnassigned.id
+
+                            // Remove highlight after 2 seconds
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                                withAnimation {
+                                    highlightedItemId = nil
+                                }
+                            }
+                        }
+                    }
+                }
+            }) {
+                HStack {
+                    Text("Continue to Summary")
+                    Image(systemName: "arrow.right")
+                }
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .padding(.horizontal, .paddingScreen)
+
+            validationMessages(
+                whoPaidSelected: whoPaidSelected,
+                allItemsAssigned: allItemsAssigned,
+                totalComplete: totalComplete
+            )
+        }
+    }
+
     private var continueButtonSection: some View {
         let assignedTotal = session.assignedItems.reduce(0.0) { total, item in
             total + (item.assignedToParticipants.isEmpty ? 0 : item.price)
@@ -925,7 +1271,16 @@ struct UIAssignScreen: View {
         let canContinue = session.isReadyForBillCreation && totalComplete
 
         return VStack(spacing: .spacingSM) {
-            continueButton(enabled: canContinue)
+            Button(action: onContinue) {
+                HStack {
+                    Text("Continue to Summary")
+                    Image(systemName: "arrow.right")
+                }
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .disabled(!canContinue)
+            .padding(.horizontal, .paddingScreen)
+
             validationMessages(
                 whoPaidSelected: whoPaidSelected,
                 allItemsAssigned: allItemsAssigned,
@@ -950,10 +1305,6 @@ struct UIAssignScreen: View {
         Group {
             if !whoPaidSelected {
                 validationMessage(icon: "exclamationmark.triangle.fill", text: "Please select who paid this bill.", color: .red)
-            } else if !allItemsAssigned {
-                validationMessage(icon: "exclamationmark.triangle.fill", text: "Please assign all items to participants.", color: .orange)
-            } else if !totalComplete {
-                validationMessage(icon: "exclamationmark.triangle.fill", text: "Assignment total doesn't match bill total.", color: .red)
             }
         }
     }
@@ -992,6 +1343,42 @@ struct UIAssignScreen: View {
                 originalDetectedPrice: receiptItem.originalDetectedPrice
             )
         }
+    }
+
+    private func addManualItem(scrollProxy: ScrollViewProxy) {
+        let newItem = UIItem(
+            id: (session.assignedItems.map { $0.id }.max() ?? 0) + 1,
+            name: "",
+            price: 0.0,
+            assignedTo: nil,
+            assignedToParticipants: Set<String>(),
+            confidence: .high,
+            originalDetectedName: nil,
+            originalDetectedPrice: nil
+        )
+        session.assignedItems.append(newItem)
+        session.autoSaveSession()
+
+        // Scroll to the newly added item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            withAnimation {
+                scrollProxy.scrollTo("item-\(newItem.id)", anchor: .center)
+            }
+        }
+    }
+
+    private func deleteManualItem(at index: Int) {
+        session.assignedItems.remove(at: index)
+        session.autoSaveSession()
+    }
+
+    private func toggleParticipantAssignment(itemIndex: Int, participantId: String) {
+        if session.assignedItems[itemIndex].assignedToParticipants.contains(participantId) {
+            session.assignedItems[itemIndex].assignedToParticipants.remove(participantId)
+        } else {
+            session.assignedItems[itemIndex].assignedToParticipants.insert(participantId)
+        }
+        session.autoSaveSession()
     }
 
     private func handleOnAppear() {
@@ -2064,15 +2451,10 @@ struct UISummaryScreen: View {
                                 Spacer()
 
                                 // Amount owed
-                                VStack(alignment: .trailing, spacing: .spacing2XS) {
-                                    Text("$\(amountOwed, specifier: "%.2f")")
-                                        .font(.bodyDynamic)
-                                        .fontWeight(.bold)
-                                        .foregroundColor(.adaptiveAccentRed)
-                                    Text("owes")
-                                        .font(.captionDynamic)
-                                        .foregroundColor(.secondary)
-                                }
+                                Text("$\(amountOwed, specifier: "%.2f")")
+                                    .font(.bodyDynamic)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.adaptiveAccentRed)
                             }
                             .padding(.paddingScreen)
                         }
@@ -2197,23 +2579,10 @@ struct UISummaryScreen: View {
                             )
                     }
 
-                    // Person name with "owes" information
-                    VStack(alignment: .leading, spacing: .spacing2XS) {
-                        Text(person.name)
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(.adaptiveTextPrimary)
-
-                        // Show who this person owes (if they owe money)
-                        if let paidByID = session.paidByParticipantID,
-                           let paidByParticipant = session.participants.first(where: { $0.id == paidByID }),
-                           let personID = session.participants.first(where: { $0.name == person.name })?.id,
-                           let amountOwed = session.individualDebts[personID],
-                           amountOwed > 0.01 {
-                            Text("owes \(paidByParticipant.name): $\(amountOwed, specifier: "%.2f")")
-                                .font(.system(size: 12))
-                                .foregroundColor(.adaptiveTextSecondary)
-                        }
-                    }
+                    // Person name
+                    Text(person.name)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.adaptiveTextPrimary)
 
                     Spacer()
 
@@ -2639,11 +3008,7 @@ struct UIProfileScreen: View {
                 }
             }
         }
-        .confirmationDialog(
-            "Delete Account",
-            isPresented: $showDeleteAccountConfirmation,
-            titleVisibility: .visible
-        ) {
+        .alert("Delete Account", isPresented: $showDeleteAccountConfirmation) {
             Button("Delete Account", role: .destructive) {
                 handleDeleteAccount()
             }
@@ -2705,7 +3070,8 @@ struct UIProfileScreen: View {
     }
 
     private var menuItemsSection: some View {
-        VStack(spacing: .spacingSM) {
+        VStack(spacing: .spacingXS) {
+            // Notifications Row
             NavigationLink(destination: NotificationsSettingsView().environmentObject(authViewModel)) {
                 HStack {
                     HStack(spacing: .spacingMD) {
@@ -2725,27 +3091,25 @@ struct UIProfileScreen: View {
                         .font(.captionText)
                         .foregroundColor(.adaptiveTextSecondary)
                 }
-                .padding(.paddingCard)
-                .background(Color.adaptiveDepth1)
-                .cornerRadius(.cornerRadiusMedium)
-                .shadow(color: .black.opacity(0.05), radius: 1, x: 0, y: 1)
+                .padding(.vertical, .spacingMD)
+                .padding(.horizontal, .paddingScreen)
+                .background(Color.adaptiveDepth0)
             }
 
-            NavigationLink(destination: HelpSupportView(
-                billManager: billManager,
-                showDeleteAccountConfirmation: $showDeleteAccountConfirmation
-            )
-            .environmentObject(authViewModel)) {
+            // Delete Account Row
+            Button(action: {
+                showDeleteAccountConfirmation = true
+            }) {
                 HStack {
                     HStack(spacing: .spacingMD) {
-                        Image(systemName: "questionmark.circle")
+                        Image(systemName: "trash")
                             .font(.system(size: 18))
-                            .foregroundColor(.adaptiveTextSecondary)
+                            .foregroundColor(.red)
                             .frame(width: 24)
 
-                        Text("Help & Support")
+                        Text("Delete Account")
                             .font(.bodyDynamic)
-                            .foregroundColor(.adaptiveTextPrimary)
+                            .foregroundColor(.red)
                     }
 
                     Spacer()
@@ -2754,13 +3118,11 @@ struct UIProfileScreen: View {
                         .font(.captionText)
                         .foregroundColor(.adaptiveTextSecondary)
                 }
-                .padding(.paddingCard)
-                .background(Color.adaptiveDepth1)
-                .cornerRadius(.cornerRadiusMedium)
-                .shadow(color: .black.opacity(0.05), radius: 1, x: 0, y: 1)
+                .padding(.vertical, .spacingMD)
+                .padding(.horizontal, .paddingScreen)
+                .background(Color.adaptiveDepth0)
             }
         }
-        .padding(.horizontal, .paddingScreen)
     }
 
 
@@ -2834,48 +3196,6 @@ struct UIProfileMenuItem: View {
             .cornerRadius(12)
             .shadow(color: .black.opacity(0.05), radius: 1, x: 0, y: 1)
         }
-    }
-}
-
-// MARK: - Help & Support View
-
-struct HelpSupportView: View {
-    @EnvironmentObject var authViewModel: AuthViewModel
-    var billManager: BillManager
-    @Binding var showDeleteAccountConfirmation: Bool
-
-    var body: some View {
-        List {
-            Section {
-                Button(action: {
-                    showDeleteAccountConfirmation = true
-                }) {
-                    HStack {
-                        HStack(spacing: .spacingML) {
-                            Image(systemName: "trash")
-                                .font(.system(size: 18))
-                                .foregroundColor(.adaptiveAccentRed)
-                                .frame(width: 24)
-
-                            Text("Delete Account")
-                                .foregroundColor(.adaptiveAccentRed)
-                        }
-
-                        Spacer()
-
-                        Image(systemName: "chevron.right")
-                            .font(.captionDynamic)
-                            .foregroundColor(.secondary)
-                    }
-                }
-            } header: {
-                Text("Account")
-            } footer: {
-                Text("Permanently delete your account and all associated data")
-            }
-        }
-        .navigationTitle("Help & Support")
-        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -3069,71 +3389,85 @@ struct ItemRowWithParticipants: View {
     @Binding var item: UIItem
     let participants: [UIParticipant]
     let onItemUpdate: (UIItem) -> Void
+    var isHighlighted: Bool = false
 
     @State private var showingSuccessAnimation = false
     @State private var isEveryoneSelected = false
     @State private var priceInput: String = ""
     @State private var isAssignSectionExpanded = true
+    @State private var isPriceInputTouched = false
+    @FocusState private var isNameFocused: Bool
     @FocusState private var isPriceFocused: Bool
 
+    // Check if this is a manually added item (no original detected values)
+    private var isManuallyAdded: Bool {
+        item.originalDetectedName == nil && item.originalDetectedPrice == nil
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: .spacingMD) {
+        VStack(alignment: .leading, spacing: 4) {
             // Item name and price (label-left, value-right layout)
             HStack(spacing: .spacingML) {
                 VStack(alignment: .leading, spacing: .spacingXSM) {
-                    Text(item.name)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.adaptiveTextPrimary)
-
-                    // Assignment status text label underneath item name
-                    if item.assignedToParticipants.isEmpty {
-                        Text("Unassigned")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.orange)
+                    // Show TextField for manually added items, Text for scanned items
+                    HStack(spacing: 4) {
+                        if isManuallyAdded {
+                            TextField("Item name", text: $item.name)
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.adaptiveTextPrimary)
+                                .focused($isNameFocused)
+                        } else {
+                            Text(item.name)
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.adaptiveTextPrimary)
+                        }
+                        if item.assignedToParticipants.isEmpty {
+                            Text("*")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(.red)
+                        }
                     }
                 }
 
                 Spacer()
 
-                // Price input field on the right with $ label
-                HStack(spacing: .spacingXS) {
+                // Price input field with underline style (matches manual entry)
+                HStack(spacing: 4) {
                     Text("$")
-                        .font(.system(size: 16, weight: .regular))
-                        .foregroundColor(.adaptiveTextSecondary)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(isPriceInputTouched || !priceInput.isEmpty ? .adaptiveTextPrimary : .adaptiveTextSecondary)
                     TextField("0.00", text: $priceInput)
                         .keyboardType(.decimalPad)
-                        .font(.system(size: 16, weight: .regular))
-                        .foregroundColor(.adaptiveTextPrimary)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(isPriceInputTouched || !priceInput.isEmpty ? .adaptiveTextPrimary : .adaptiveTextSecondary)
                         .multilineTextAlignment(.trailing)
                         .focused($isPriceFocused)
-                        .onChange(of: priceInput) { newValue in
-                            updatePriceFromInput(newValue)
+                        .onChange(of: isPriceFocused) { isFocused in
+                            if isFocused && !isPriceInputTouched {
+                                isPriceInputTouched = true
+                                if priceInput == "0.00" {
+                                    priceInput = ""
+                                }
+                            }
                         }
+                        .onChange(of: priceInput) { newValue in
+                            if isPriceInputTouched {
+                                updatePriceFromInput(newValue)
+                            }
+                        }
+                        .frame(width: 70)
                 }
-                .frame(width: 140)
-                .padding(.spacingMD)
+                .padding(.vertical, 6)
+                .padding(.horizontal, 8)
                 .background(
-                    RoundedRectangle(cornerRadius: .cornerRadiusMedium)
-                        .fill(Color.adaptiveDepth3)
-                        .shadow(color: isPriceFocused ? Color.adaptiveAccentBlue.opacity(0.3) : Color.black.opacity(0.08), radius: isPriceFocused ? 10 : 8, x: 0, y: isPriceFocused ? 4 : 3)
-                        .shadow(color: isPriceFocused ? Color.adaptiveAccentBlue.opacity(0.15) : Color.black.opacity(0.04), radius: isPriceFocused ? 4 : 2, x: 0, y: 1)
+                    VStack(spacing: 0) {
+                        Spacer()
+                        Rectangle()
+                            .fill(isPriceFocused ? Color.adaptiveAccentBlue : Color.adaptiveTextSecondary.opacity(0.3))
+                            .frame(height: isPriceFocused ? 2 : 1)
+                    }
                 )
                 .animation(.easeOut(duration: 0.2), value: isPriceFocused)
-            }
-
-            // Cost per participant (if assigned)
-            if !item.assignedToParticipants.isEmpty {
-                HStack {
-                    Text("Per person")
-                        .font(.system(size: 14, weight: .regular))
-                        .foregroundColor(.adaptiveTextSecondary)
-
-                    Spacer()
-
-                    Text("$\(item.costPerParticipant, specifier: "%.2f")")
-                        .font(.system(size: 14, weight: .regular))
-                        .foregroundColor(.adaptiveTextSecondary)
-                }
             }
 
             // Participant assignment section with collapse/expand
@@ -3146,24 +3480,14 @@ struct ItemRowWithParticipants: View {
                         }
                     }) {
                         HStack(spacing: 0) {
-                            Text("Assign to")
-                                .font(.system(size: 14, weight: .regular))
-                                .foregroundColor(.adaptiveTextSecondary)
-
-                            Spacer()
-
                             if !isAssignSectionExpanded {
                                 // Show assigned participants when collapsed
                                 Text(assignedParticipantsText)
                                     .font(.system(size: 14, weight: .regular))
                                     .foregroundColor(.adaptiveTextSecondary)
-                                    .padding(.trailing, 8)
                             }
 
-                            Image(systemName: isAssignSectionExpanded ? "chevron.up" : "chevron.down")
-                                .font(.system(size: 14, weight: .regular))
-                                .foregroundColor(.secondary)
-                                .padding(.trailing, 8)
+                            Spacer()
                         }
                     }
                     .buttonStyle(PlainButtonStyle())
@@ -3188,6 +3512,12 @@ struct ItemRowWithParticipants: View {
                 }
             }
         }
+        .padding(isHighlighted ? .spacingMD : 0)
+        .background(
+            RoundedRectangle(cornerRadius: .cornerRadiusMedium)
+                .fill(isHighlighted ? Color.orange.opacity(0.2) : Color.clear)
+        )
+        .animation(.easeInOut(duration: 0.3), value: isHighlighted)
         .onAppear {
             updateEveryoneButtonState()
             initializePriceInput()
@@ -3263,7 +3593,14 @@ struct ItemRowWithParticipants: View {
     }
 
     private func initializePriceInput() {
-        priceInput = String(format: "%.2f", item.price)
+        // Only show value if item has a non-zero price
+        if item.price > 0 {
+            priceInput = String(format: "%.2f", item.price)
+            isPriceInputTouched = true
+        } else {
+            priceInput = ""
+            isPriceInputTouched = false
+        }
     }
 
     private func updatePriceFromInput(_ input: String) {
@@ -3285,6 +3622,267 @@ struct ItemRowWithParticipants: View {
         if let newPrice = Double(cleanedInput), newPrice >= 0 {
             item.price = newPrice
             onItemUpdate(item)
+        }
+    }
+}
+
+// MARK: - Manual Item Row Component
+struct ManualItemRow: View {
+    @Binding var item: UIItem
+    let participants: [UIParticipant]
+    let onDelete: () -> Void
+    let onToggleParticipant: (String) -> Void
+    var isHighlighted: Bool = false
+
+    @State private var isEveryoneSelected = false
+    @State private var priceInput: String = ""
+    @State private var isAssignSectionExpanded = true
+    @State private var isPriceInputTouched = false
+    @FocusState private var isNameFocused: Bool
+    @FocusState private var isPriceFocused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            // Item name (with asterisk if unassigned) and price on same line
+            HStack(spacing: .spacingML) {
+                // Item name field with red asterisk suffix if unassigned
+                HStack(spacing: 4) {
+                    TextField("Item name", text: $item.name)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.adaptiveTextPrimary)
+                        .focused($isNameFocused)
+                    if item.assignedToParticipants.isEmpty {
+                        Text("*")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(.red)
+                    }
+                }
+
+                Spacer()
+
+                // Price input field with underline style
+                HStack(spacing: 4) {
+                    Text("$")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(isPriceInputTouched || !priceInput.isEmpty ? .adaptiveTextPrimary : .adaptiveTextSecondary)
+                    TextField("0.00", text: $priceInput)
+                        .keyboardType(.decimalPad)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(isPriceInputTouched || !priceInput.isEmpty ? .adaptiveTextPrimary : .adaptiveTextSecondary)
+                        .multilineTextAlignment(.trailing)
+                        .focused($isPriceFocused)
+                        .onChange(of: isPriceFocused) { isFocused in
+                            if isFocused && !isPriceInputTouched {
+                                isPriceInputTouched = true
+                                if priceInput == "0.00" {
+                                    priceInput = ""
+                                }
+                            }
+                        }
+                        .onChange(of: priceInput) { newValue in
+                            if isPriceInputTouched {
+                                updatePriceFromInput(newValue)
+                            }
+                        }
+                        .frame(width: 70)
+                }
+                .padding(.vertical, 6)
+                .padding(.horizontal, 8)
+                .background(
+                    VStack(spacing: 0) {
+                        Spacer()
+                        Rectangle()
+                            .fill(isPriceFocused ? Color.adaptiveAccentBlue : Color.adaptiveTextSecondary.opacity(0.3))
+                            .frame(height: isPriceFocused ? 2 : 1)
+                    }
+                )
+                .animation(.easeOut(duration: 0.2), value: isPriceFocused)
+            }
+
+            // Participant assignment section
+            if !participants.isEmpty {
+                VStack(alignment: .leading, spacing: .spacingSM) {
+                    // Header with collapse/expand
+                    Button(action: {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            isAssignSectionExpanded.toggle()
+                        }
+                    }) {
+                        HStack(spacing: 0) {
+                            if !isAssignSectionExpanded {
+                                Text(assignedParticipantsText)
+                                    .font(.system(size: 14, weight: .regular))
+                                    .foregroundColor(.adaptiveTextSecondary)
+                            }
+
+                            Spacer()
+                        }
+                    }
+                    .buttonStyle(PlainButtonStyle())
+
+                    // Assignment buttons (shown when expanded)
+                    if isAssignSectionExpanded {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: .spacingML) {
+                                // Everyone button
+                                Button(action: toggleEveryoneButton) {
+                                    HStack(spacing: .spacingXSM) {
+                                        Text("Everyone")
+                                            .font(.captionDynamic)
+                                            .fontWeight(.semibold)
+                                            .lineLimit(1)
+
+                                        if isEveryoneSelected {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .font(.captionDynamic)
+                                                .foregroundColor(.white)
+                                        }
+                                    }
+                                    .padding(.horizontal, isEveryoneSelected ? 10 : 14)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 18)
+                                            .fill(isEveryoneSelected ? Color.indigo : Color(.systemGray5))
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 18)
+                                                    .stroke(Color.indigo, lineWidth: isEveryoneSelected ? 0 : 1)
+                                            )
+                                    )
+                                    .foregroundColor(isEveryoneSelected ? .white : .indigo)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+
+                                // Vertical separator
+                                Rectangle()
+                                    .fill(Color.gray.opacity(0.4))
+                                    .frame(width: 1, height: 24)
+
+                                // Individual participant buttons
+                                ForEach(participants, id: \.id) { participant in
+                                    Button(action: {
+                                        if !isEveryoneSelected {
+                                            onToggleParticipant(participant.id)
+                                        }
+                                    }) {
+                                        HStack(spacing: .spacingXSM) {
+                                            Text(participant.name)
+                                                .font(.captionDynamic)
+                                                .fontWeight(.semibold)
+                                                .lineLimit(1)
+
+                                            if item.assignedToParticipants.contains(participant.id) && !isEveryoneSelected {
+                                                Button(action: {
+                                                    onToggleParticipant(participant.id)
+                                                }) {
+                                                    Image(systemName: "xmark.circle.fill")
+                                                        .font(.captionDynamic)
+                                                        .foregroundColor(.white)
+                                                }
+                                                .buttonStyle(PlainButtonStyle())
+                                            }
+                                        }
+                                        .padding(.horizontal, item.assignedToParticipants.contains(participant.id) ? 10 : 14)
+                                        .padding(.vertical, 8)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 18)
+                                                .fill(item.assignedToParticipants.contains(participant.id) ? participant.color.opacity(isEveryoneSelected ? 0.6 : 1.0) : Color(.systemGray5))
+                                                .overlay(
+                                                    RoundedRectangle(cornerRadius: 18)
+                                                        .stroke(participant.color.opacity(isEveryoneSelected ? 0.6 : 1.0), lineWidth: item.assignedToParticipants.contains(participant.id) ? 0 : 1)
+                                                )
+                                        )
+                                        .foregroundColor(item.assignedToParticipants.contains(participant.id) ? .white : participant.color.opacity(isEveryoneSelected ? 0.6 : 1.0))
+                                        .opacity(isEveryoneSelected ? 0.6 : 1.0)
+                                    }
+                                    .buttonStyle(PlainButtonStyle())
+                                    .disabled(isEveryoneSelected)
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                        }
+                        .frame(minHeight: 60)
+                    }
+                }
+            }
+        }
+        .padding(isHighlighted ? .spacingMD : 0)
+        .background(
+            RoundedRectangle(cornerRadius: .cornerRadiusMedium)
+                .fill(isHighlighted ? Color.orange.opacity(0.2) : Color.clear)
+        )
+        .animation(.easeInOut(duration: 0.3), value: isHighlighted)
+        .onAppear {
+            updateEveryoneButtonState()
+            initializePriceInput()
+        }
+        .onChange(of: item.assignedToParticipants) {
+            updateEveryoneButtonState()
+        }
+    }
+
+    private var assignedParticipantsText: String {
+        if item.assignedToParticipants.isEmpty {
+            return "Not assigned"
+        }
+
+        let assignedNames = participants
+            .filter { item.assignedToParticipants.contains($0.id) }
+            .map { $0.name }
+
+        if assignedNames.count == participants.count {
+            return "Everyone"
+        } else if assignedNames.count == 1 {
+            return "Assigned to: \(assignedNames[0])"
+        } else {
+            return "Assigned to: \(assignedNames.joined(separator: ", "))"
+        }
+    }
+
+    private func toggleEveryoneButton() {
+        if isEveryoneSelected {
+            item.assignedToParticipants.removeAll()
+        } else {
+            item.assignedToParticipants = Set(participants.map { $0.id })
+        }
+        updateEveryoneButtonState()
+    }
+
+    private func updateEveryoneButtonState() {
+        isEveryoneSelected = !item.assignedToParticipants.isEmpty && item.assignedToParticipants.count == participants.count
+    }
+
+    private func initializePriceInput() {
+        // Only show value if item has a non-zero price
+        if item.price > 0 {
+            priceInput = String(format: "%.2f", item.price)
+            isPriceInputTouched = true
+        } else {
+            priceInput = ""
+            isPriceInputTouched = false
+        }
+    }
+
+    private func updatePriceFromInput(_ input: String) {
+        var cleanedInput = input.replacingOccurrences(of: "[^0-9.]", with: "", options: .regularExpression)
+
+        let components = cleanedInput.components(separatedBy: ".")
+        if components.count > 2 {
+            cleanedInput = components[0] + "." + components.dropFirst().joined()
+        }
+
+        if let decimalIndex = cleanedInput.firstIndex(of: ".") {
+            let afterDecimal = cleanedInput[cleanedInput.index(after: decimalIndex)...]
+            if afterDecimal.count > 2 {
+                let truncatedAfterDecimal = String(afterDecimal.prefix(2))
+                cleanedInput = String(cleanedInput[..<decimalIndex]) + "." + truncatedAfterDecimal
+            }
+        }
+
+        priceInput = cleanedInput
+
+        if let newPrice = Double(cleanedInput), newPrice >= 0 {
+            item.price = newPrice
         }
     }
 }
