@@ -47,8 +47,14 @@ struct BillEditFlow: View {
                 UISummaryScreen(
                     session: editSession,
                     onDone: {
+                        print("🔵 [BillEditFlow] onDone called, completing session and dismissing")
                         editSession.completeSession()
-                        dismiss()
+
+                        // Dismiss on next run loop to avoid dismissing during state updates
+                        DispatchQueue.main.async {
+                            print("🔵 [BillEditFlow] Executing dismiss()")
+                            dismiss()
+                        }
                     },
                     contactsManager: contactsManager,
                     authViewModel: authViewModel,
