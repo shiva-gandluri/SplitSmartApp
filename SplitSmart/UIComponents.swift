@@ -2811,8 +2811,8 @@ struct UISummaryScreen: View {
                             }
                         }) {
                             HStack {
-                                Image(systemName: "plus.circle.fill")
-                                Text("Add Bill")
+                                Image(systemName: isEditMode ? "checkmark.circle.fill" : "plus.circle.fill")
+                                Text(isEditMode ? "Update Bill" : "Add Bill")
                             }
                         }
                         .buttonStyle(PrimaryButtonStyle())

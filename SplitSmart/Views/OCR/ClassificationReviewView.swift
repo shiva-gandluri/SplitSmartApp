@@ -96,13 +96,16 @@ struct ClassificationReviewView: View {
 
                 // Complete Button
                 Button(action: onComplete) {
-                    Text("Continue")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(canContinue ? Color.blue : Color.gray)
-                        .cornerRadius(10)
+                    HStack {
+                        Image(systemName: "arrow.right")
+                        Text("Continue")
+                    }
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(canContinue ? Color.blue : Color.gray)
+                    .cornerRadius(10)
                 }
                 .disabled(!canContinue)
                 .padding(.top)

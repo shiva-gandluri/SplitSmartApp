@@ -925,25 +925,6 @@ struct UIHomeScreen: View {
                 .padding(.bottom, 80)
             }
             .background(Color.adaptiveDepth0)
-            .overlay(
-                // Floating Action Button (FAB) - Modern UI pattern
-                VStack {
-                    Spacer()
-                    Button(action: onCreateNew) {
-                        Image(systemName: "plus")
-                            .font(.system(size: 28, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(width: 60, height: 60)
-                            .background(
-                                Circle()
-                                    .fill(Color.adaptiveAccentBlue)
-                                    .shadow(color: Color.black.opacity(0.2), radius: 8, x: 0, y: 4)
-                            )
-                    }
-                    .padding(.bottom, 20)
-                }
-                , alignment: .bottom
-            )
         }
     }
 }

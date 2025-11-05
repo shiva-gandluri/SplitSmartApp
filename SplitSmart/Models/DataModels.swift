@@ -220,7 +220,7 @@ struct UIParticipant: Identifiable, Hashable {
     let id: String  // Firebase UID for consistency with BillParticipant
     let name: String
     let color: Color
-    let photoURL: String?  // Profile picture URL
+    var photoURL: String?  // Profile picture URL - mutable to allow async loading
 
     // Hash-based color assignment for consistent colors per Firebase UID
     var assignedColor: Color {
@@ -393,8 +393,8 @@ struct Bill: Codable, Identifiable, Hashable {
     var deletedByDisplayName: String? // Display name snapshot
     var deletedAt: Timestamp? // When bill was deleted
 
-    // Entry method tracking
-    var entryMethod: BillEntryMethod
+    // Entry method tracking (defaults to scan for backward compatibility)
+    var entryMethod: BillEntryMethod = .scan
 
     init(id: String = UUID().uuidString,
          createdBy: String,
@@ -5327,72 +5327,87 @@ class BillSplitSession: ObservableObject {
         
         // Duplicate check already handled above - proceed with creation
 
-        // Fetch photoURL from Firestore participants collection
-        var photoURL: String? = nil
-        let db = Firestore.firestore()
-        do {
-            // First, try participants collection (primary source for public participant data)
-            let participantDoc = try await db.collection("participants").document(validatedFirebaseUID).getDocument()
-            photoURL = participantDoc.data()?["photoURL"] as? String
-            print("📸 [DataModels] Fetched photoURL from participants collection for \(trimmedName) (\(validatedFirebaseUID)): \(photoURL ?? "nil")")
-
-            // If not in participants collection, try users collection as fallback
-            if photoURL == nil {
-                print("🔍 [DataModels] PhotoURL not in participants collection, checking users collection...")
-                let userDoc = try await db.collection("users").document(validatedFirebaseUID).getDocument()
-                photoURL = userDoc.data()?["photoURL"] as? String
-
-                if let foundPhotoURL = photoURL {
-                    print("✅ [DataModels] Found photoURL in users collection: \(foundPhotoURL)")
-
-                    // Update participants collection for future use
-                    try? await db.collection("participants").document(validatedFirebaseUID).updateData([
-                        "photoURL": foundPhotoURL
-                    ])
-                    print("💾 [DataModels] Synced photoURL to participants collection for \(trimmedName)")
-                }
-            }
-
-            // If still not found and this is the current user, get from Firebase Auth
-            if photoURL == nil {
-                print("🔍 [DataModels] PhotoURL not in Firestore, checking Firebase Auth...")
-                if let authPhotoURL = Auth.auth().currentUser?.photoURL?.absoluteString,
-                   Auth.auth().currentUser?.uid == validatedFirebaseUID {
-                    photoURL = authPhotoURL
-                    print("✅ [DataModels] Found photoURL in Firebase Auth for current user: \(authPhotoURL)")
-
-                    // Update both collections for future use
-                    try? await db.collection("participants").document(validatedFirebaseUID).updateData([
-                        "photoURL": authPhotoURL
-                    ])
-                    try? await db.collection("users").document(validatedFirebaseUID).updateData([
-                        "photoURL": authPhotoURL
-                    ])
-                    print("💾 [DataModels] Updated Firestore collections with photoURL for \(trimmedName)")
-                }
-            }
-        } catch {
-            print("❌ [DataModels] Could not fetch photoURL for participant \(trimmedName): \(error.localizedDescription)")
-        }
-
+        // Create participant immediately without photoURL for instant UI response
         let tempParticipant = UIParticipant(
             id: validatedFirebaseUID,
             name: trimmedName,
             color: .blue,
-            photoURL: photoURL
+            photoURL: nil
         )
         let newParticipant = UIParticipant(
             id: validatedFirebaseUID,
             name: trimmedName,
             color: tempParticipant.assignedColor,
-            photoURL: photoURL
+            photoURL: nil
         )
 
         await MainActor.run {
             participants.append(newParticipant)
         }
 
-        print("✅ [DataModels] Participant added successfully: \(newParticipant.name) with photoURL: \(photoURL ?? "nil")")
+        print("✅ [DataModels] Participant added immediately: \(newParticipant.name) (photoURL will load async)")
+
+        // Fetch photoURL asynchronously in background - don't block user
+        Task {
+            let db = Firestore.firestore()
+            var photoURL: String? = nil
+
+            do {
+                // First, try participants collection (primary source for public participant data)
+                let participantDoc = try await db.collection("participants").document(validatedFirebaseUID).getDocument()
+                photoURL = participantDoc.data()?["photoURL"] as? String
+                print("📸 [DataModels] Fetched photoURL from participants collection for \(trimmedName) (\(validatedFirebaseUID)): \(photoURL ?? "nil")")
+
+                // If not in participants collection, try users collection as fallback
+                if photoURL == nil {
+                    print("🔍 [DataModels] PhotoURL not in participants collection, checking users collection...")
+                    let userDoc = try await db.collection("users").document(validatedFirebaseUID).getDocument()
+                    photoURL = userDoc.data()?["photoURL"] as? String
+
+                    if let foundPhotoURL = photoURL {
+                        print("✅ [DataModels] Found photoURL in users collection: \(foundPhotoURL)")
+
+                        // Update participants collection for future use
+                        try? await db.collection("participants").document(validatedFirebaseUID).updateData([
+                            "photoURL": foundPhotoURL
+                        ])
+                        print("💾 [DataModels] Synced photoURL to participants collection for \(trimmedName)")
+                    }
+                }
+
+                // If still not found and this is the current user, get from Firebase Auth
+                if photoURL == nil {
+                    print("🔍 [DataModels] PhotoURL not in Firestore, checking Firebase Auth...")
+                    if let authPhotoURL = Auth.auth().currentUser?.photoURL?.absoluteString,
+                       Auth.auth().currentUser?.uid == validatedFirebaseUID {
+                        photoURL = authPhotoURL
+                        print("✅ [DataModels] Found photoURL in Firebase Auth for current user: \(authPhotoURL)")
+
+                        // Update both collections for future use
+                        try? await db.collection("participants").document(validatedFirebaseUID).updateData([
+                            "photoURL": authPhotoURL
+                        ])
+                        try? await db.collection("users").document(validatedFirebaseUID).updateData([
+                            "photoURL": authPhotoURL
+                        ])
+                        print("💾 [DataModels] Updated Firestore collections with photoURL for \(trimmedName)")
+                    }
+                }
+
+                // Update participant with photoURL if found
+                if let photoURL = photoURL {
+                    await MainActor.run {
+                        if let index = self.participants.firstIndex(where: { $0.id == validatedFirebaseUID }) {
+                            self.participants[index].photoURL = photoURL
+                            print("🔄 [DataModels] Updated participant \(trimmedName) with photoURL: \(photoURL)")
+                        }
+                    }
+                }
+            } catch {
+                print("❌ [DataModels] Could not fetch photoURL for participant \(trimmedName): \(error.localizedDescription)")
+            }
+        }
+
         return (newParticipant, nil, false)
     }
     

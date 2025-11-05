@@ -393,54 +393,67 @@ struct ImagePreview: View {
     @State private var lastScale: CGFloat = 1.0
     @State private var offset = CGSize.zero
     @State private var lastOffset = CGSize.zero
-    
+
+    private let containerHeight: CGFloat = 400
+    private let maxScale: CGFloat = 5.0
+
     var body: some View {
         VStack(spacing: 24) {
-            // Simple reliable image viewer
-            ZStack {
-                Rectangle()
-                    .fill(Color.gray.opacity(0.1))
-                    .cornerRadius(.cornerRadiusButton)
-                
-                Image(uiImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .scaleEffect(scale)
-                    .offset(offset)
-                    .gesture(
-                        MagnificationGesture()
-                            .onChanged { value in
-                                let delta = value / lastScale
-                                lastScale = value
-                                scale = min(max(scale * delta, 1.0), 5.0)
+            // Image viewer with constrained zoom/pan
+            GeometryReader { geometry in
+                ZStack {
+                    Rectangle()
+                        .fill(Color.gray.opacity(0.1))
+                        .cornerRadius(.cornerRadiusButton)
+
+                    Image(uiImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .scaleEffect(scale)
+                        .offset(offset)
+                        .gesture(
+                            MagnificationGesture()
+                                .onChanged { value in
+                                    let delta = value / lastScale
+                                    lastScale = value
+                                    scale = min(max(scale * delta, 1.0), maxScale)
+                                }
+                                .onEnded { _ in
+                                    lastScale = 1.0
+                                }
+                        )
+                        .gesture(
+                            DragGesture()
+                                .onChanged { value in
+                                    let newOffset = CGSize(
+                                        width: lastOffset.width + value.translation.width,
+                                        height: lastOffset.height + value.translation.height
+                                    )
+                                    let imageSize = getImageSize(for: image, in: geometry.size)
+                                    offset = constrainOffset(
+                                        offset: newOffset,
+                                        scale: scale,
+                                        imageSize: imageSize,
+                                        containerSize: geometry.size
+                                    )
+                                }
+                                .onEnded { _ in
+                                    lastOffset = offset
+                                }
+                        )
+                        .onTapGesture(count: 2) {
+                            withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+                                scale = 1.0
+                                offset = .zero
+                                lastOffset = .zero
                             }
-                            .onEnded { _ in
-                                lastScale = 1.0
-                            }
-                    )
-                    .gesture(
-                        DragGesture()
-                            .onChanged { value in
-                                offset = CGSize(
-                                    width: lastOffset.width + value.translation.width,
-                                    height: lastOffset.height + value.translation.height
-                                )
-                            }
-                            .onEnded { _ in
-                                lastOffset = offset
-                            }
-                    )
-                    .onTapGesture(count: 2) {
-                        withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
-                            scale = 1.0
-                            offset = .zero
-                            lastOffset = .zero
                         }
-                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: .cornerRadiusButton))
             }
-            .frame(height: 400)
+            .frame(height: containerHeight)
             .padding(.horizontal)
-            .clipped()
             
             // Enhanced instructions
             VStack(spacing: 4) {
@@ -757,34 +770,65 @@ struct UIScanScreen: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: .spacingLG) {
-                headerTitle
-                contentView
-            }
-            .padding(.top, .spacingMD)
-        }
-        .background(Color.adaptiveDepth0.ignoresSafeArea())
-        .cameraSheet(
-            isPresented: $showingCamera,
-            capturedImage: $capturedImage,
-            onImageCaptured: handleImageCaptured,
-            onUpload: handlePhotoLibrary,
-            onManualEntry: handleManualEntry,
-            onCancel: {
-                if let onCancel = onCancel {
-                    onCancel()
-                } else {
-                    dismiss()
+        Group {
+            if showingCamera {
+                // Add screen = Camera with 4 buttons
+                CameraCaptureWithOverlay(
+                    isPresented: $showingCamera,
+                    capturedImage: $capturedImage,
+                    onImageCaptured: handleImageCaptured,
+                    onUpload: handlePhotoLibrary,
+                    onManualEntry: handleManualEntry,
+                    onCancel: {
+                        if let onCancel = onCancel {
+                            onCancel()
+                        } else {
+                            dismiss()
+                        }
+                    }
+                )
+                .ignoresSafeArea()
+            } else if showingPhotoLibrary {
+                // Gallery screen - replaces Add screen completely
+                CameraCapture(
+                    isPresented: $showingPhotoLibrary,
+                    capturedImage: $capturedImage,
+                    sourceType: .photoLibrary
+                )
+                .ignoresSafeArea()
+                .onDisappear {
+                    if capturedImage != nil {
+                        handleImageCaptured()
+                    } else {
+                        // User cancelled, return to Add screen
+                        showingCamera = true
+                    }
                 }
+            } else if showingOCRResults, let result = ocrResult {
+                // OCR confirmation screen (Confirm Receipt Details)
+                ocrConfirmationView(result: result)
+                    .background(Color.adaptiveDepth0.ignoresSafeArea())
+            } else if showingImagePreview, let image = capturedImage {
+                // Image preview screen (with zoom/pan)
+                VStack(spacing: .spacingLG) {
+                    // Header
+                    Text("Scan Receipt")
+                        .font(.h3Dynamic)
+                        .foregroundColor(.adaptiveTextPrimary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, .paddingScreen)
+                        .padding(.top, .spacingMD)
+
+                    // Image preview with zoom/pan
+                    imagePreviewView(image: image)
+                }
+                .background(Color.adaptiveDepth0.ignoresSafeArea())
+            } else if ocrService.isProcessing {
+                // Processing screen
+                processingView
+                    .background(Color.adaptiveDepth0.ignoresSafeArea())
             }
-        )
-        .photoLibrarySheet(
-            isPresented: $showingPhotoLibrary,
-            capturedImage: $capturedImage,
-            showingCamera: $showingCamera,
-            onImageCaptured: handleImageCaptured
-        )
+        }
         .permissionAlert(
             isPresented: $permissionManager.showPermissionAlert,
             message: permissionManager.permissionMessage
@@ -792,35 +836,7 @@ struct UIScanScreen: View {
         .onAppear(perform: checkPermissions)
     }
 
-    // MARK: - View Components (Refactored with Design System)
-
-    private var headerTitle: some View {
-        Group {
-            // Only show header when we have actual content to display (image preview, OCR results, or processing)
-            if showingImagePreview || showingOCRResults || ocrService.isProcessing {
-                Text("Scan Receipt")
-                    .font(.h3Dynamic)
-                    .foregroundColor(.adaptiveTextPrimary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, .paddingScreen)
-            }
-        }
-    }
-
-    private var contentView: some View {
-        Group {
-            if showingOCRResults, let result = ocrResult {
-                ocrConfirmationView(result: result)
-            } else if showingImagePreview, let image = capturedImage {
-                imagePreviewView(image: image)
-            } else if ocrService.isProcessing {
-                processingView
-            } else {
-                // Don't show scanInputView - camera auto-opens instead
-                Color.clear
-            }
-        }
-    }
+    // MARK: - View Components
 
     private func ocrConfirmationView(result: OCRResult) -> some View {
         OCRConfirmationView(
@@ -908,24 +924,17 @@ struct UIScanScreen: View {
     }
     
     private func handlePhotoLibrary() {
-        // Check photo library permission before proceeding
+        // Check permission and show gallery (which replaces camera)
         switch permissionManager.photoLibraryPermissionStatus {
         case .authorized, .limited:
-            // Close camera first
             showingCamera = false
-            // Use async to present photo library after camera dismissal starts
-            DispatchQueue.main.async {
-                self.showingPhotoLibrary = true
-            }
+            showingPhotoLibrary = true
         case .notDetermined:
             permissionManager.requestPhotoLibraryPermission()
-            // Minimal delay for permission result
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 if self.permissionManager.canUsePhotoLibrary {
                     self.showingCamera = false
-                    DispatchQueue.main.async {
-                        self.showingPhotoLibrary = true
-                    }
+                    self.showingPhotoLibrary = true
                 }
             }
         case .denied, .restricted:
@@ -937,6 +946,11 @@ struct UIScanScreen: View {
 
     private func handleManualEntry() {
         print("🟢 [ScanView] handleManualEntry called")
+
+        // Dismiss camera if showing
+        if showingCamera {
+            showingCamera = false
+        }
 
         // Clear any existing scanning status to prevent loading spinner
         scanningStatus = ""
@@ -963,6 +977,8 @@ struct UIScanScreen: View {
     }
 
     private func handleImageCaptured() {
+        // Dismiss camera and show image preview
+        showingCamera = false
         showingImagePreview = true
     }
     
@@ -1304,61 +1320,63 @@ struct ReceiptTotalRow: View {
 struct OCRProcessingView: View {
     let progress: Float
     let status: String
-    
+
     var body: some View {
         VStack(spacing: 24) {
             Spacer()
-            
+
             VStack(spacing: 20) {
                 // OCR Icon with animation
                 ZStack {
                     Circle()
                         .stroke(Color.adaptiveAccentBlue.opacity(0.3), lineWidth: 4)
                         .frame(width: 80, height: 80)
-                    
+
                     Circle()
                         .trim(from: 0, to: CGFloat(progress))
                         .stroke(Color.adaptiveAccentBlue, style: StrokeStyle(lineWidth: 4, lineCap: .round))
                         .frame(width: 80, height: 80)
                         .rotationEffect(.degrees(-90))
                         .animation(.easeInOut(duration: 0.3), value: progress)
-                    
+
                     Image(systemName: "doc.text.magnifyingglass")
                         .font(.system(size: 32))
                         .foregroundColor(.adaptiveAccentBlue)
                 }
-                
+
                 VStack(spacing: 8) {
                     Text("Processing Receipt")
                         .font(.title2)
                         .fontWeight(.semibold)
-                    
+
                     Text(status.isEmpty ? "Extracting text from image..." : status)
                         .font(.body)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
+                        .padding(.horizontal, .paddingScreen)
                 }
-                
+
                 // Progress indicator
                 VStack(spacing: 8) {
                     ProgressView(value: progress)
                         .progressViewStyle(LinearProgressViewStyle(tint: .blue))
-                        .frame(width: 200)
-                    
+                        .frame(maxWidth: 200)
+
                     Text("\(Int(progress * 100))%")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
             }
-            
+            .padding(.horizontal, .paddingScreen)
+
             Spacer()
-            
+
             // Processing tips
             VStack(alignment: .leading, spacing: 8) {
                 Text("OCR Processing Tips:")
                     .fontWeight(.medium)
                     .foregroundColor(.adaptiveAccentBlue)
-                
+
                 VStack(alignment: .leading, spacing: 4) {
                     Text("• Better lighting improves text recognition")
                     Text("• Clear, uncrumpled receipts work best")
@@ -1367,11 +1385,12 @@ struct OCRProcessingView: View {
                 .font(.caption)
                 .foregroundColor(.adaptiveAccentBlue)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
             .background(Color.adaptiveAccentBlue.opacity(0.1))
             .cornerRadius(.cornerRadiusButton)
-            .padding(.horizontal)
-            
+            .padding(.horizontal, .paddingScreen)
+
             Spacer()
         }
     }
@@ -2164,7 +2183,7 @@ struct OCRConfirmationView: View {
                 if canConfirm {
                     Button(action: handleConfirm) {
                         HStack {
-                            Image(systemName: "checkmark")
+                            Image(systemName: "arrow.right")
                             Text("Continue")
                         }
                     }
@@ -2173,7 +2192,7 @@ struct OCRConfirmationView: View {
                 } else {
                     Button(action: {}) {
                         HStack {
-                            Image(systemName: "checkmark")
+                            Image(systemName: "arrow.right")
                             Text("Continue")
                         }
                     }
@@ -2444,11 +2463,17 @@ private struct PhotoLibrarySheetModifier: ViewModifier {
                     sourceType: .photoLibrary
                 )
                 .ignoresSafeArea()
-                .onDisappear {
-                    // Close the camera when photo library closes
+                .onAppear {
+                    // Dismiss camera when photo library appears
                     showingCamera = false
+                }
+                .onDisappear {
                     if capturedImage != nil {
+                        // User selected an image, proceed with it
                         onImageCaptured()
+                    } else {
+                        // User cancelled without selecting image, restore camera
+                        showingCamera = true
                     }
                 }
             }
