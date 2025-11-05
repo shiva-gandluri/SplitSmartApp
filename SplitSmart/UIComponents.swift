@@ -2915,6 +2915,7 @@ struct UISummaryScreen: View {
                 }
 
                 // Call updateBill on BillService
+                print("📤 [UISUMMARY] Calling updateBill for bill: \(existingBillToUpdate.id)")
                 try await billService.updateBill(
                     billId: existingBillToUpdate.id,
                     billName: session.billName,
@@ -2925,6 +2926,7 @@ struct UISummaryScreen: View {
                     currentUserEmail: currentUserEmail,
                     billManager: billManager
                 )
+                print("✅ [UISUMMARY] updateBill completed successfully")
 
                 // Call the completion handler
                 onDone()
@@ -2961,6 +2963,9 @@ struct UISummaryScreen: View {
             }
 
         } catch {
+            print("❌ [UISUMMARY] Bill creation/update failed with error: \(error)")
+            print("❌ [UISUMMARY] Error type: \(type(of: error))")
+            print("❌ [UISUMMARY] Error description: \(error.localizedDescription)")
 
             // Check if it's a Firebase permissions error
             if error.localizedDescription.contains("Missing or insufficient permissions") {
@@ -2969,6 +2974,7 @@ struct UISummaryScreen: View {
                 billCreationError = error.localizedDescription
             }
             showingError = true
+            isCreatingBill = false
         }
 
         isCreatingBill = false
