@@ -452,34 +452,33 @@ sequenceDiagram
         BS->>FS: Update Bill (increment version)
         FS-->>BS: Success
         BS-->>BE: Success
-        deactivate BS
-        BE->>BE: Dismiss Sheet
-        deactivate BE
-        BD->>User: Show Updated Bill
-        deactivate BD
     else Version Mismatch (Conflict)
         BS->>CD: detectConflicts()
         activate CD
         CD-->>BS: Conflict Detected
         deactivate CD
         BS-->>BE: Conflict Error
-        deactivate BS
         BE->>User: Show Conflict UI
         User->>BE: Choose Resolution
         BE->>BS: Retry with Resolution
-        activate BS
         BS->>FS: Update with Merge
         FS-->>BS: Success
         BS-->>BE: Success
-        deactivate BS
     end
-    
+
+    deactivate BS
+    deactivate FS
+    BE->>BE: Dismiss Sheet
+    deactivate BE
+    BD->>User: Show Updated Bill
+    deactivate BD
+
+    Note over FS,BM: Real-time listener
     FS->>BM: Snapshot Event
     activate BM
     BM->>BM: Update userBills
     BM-->>BD: Auto-refresh
     deactivate BM
-    deactivate FS
 
     %% Color Scheme
     rect rgb(159, 168, 218)
@@ -594,7 +593,7 @@ flowchart TB
     Firestore[(Firestore<br/>Bills Collection)] -->|Real-time Listener| BM[BillManager<br/>Snapshot Event]
     BM -->|Update userBills| Calc[Calculate Balances<br/>For Each Bill]
     Calc -->|Aggregate| Total[Total Owed/Owing]
-    Total -->|@Published| UI[UIHomeScreen<br/>Display Balances]
+    Total -->|Published Update| UI[UIHomeScreen<br/>Display Balances]
     UI -->|Show| Cards[Balance Cards<br/>You Owe / Owed]
     UI -->|Show| People[People Lists<br/>Who Owe / You Owe]
     
