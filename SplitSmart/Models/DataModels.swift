@@ -393,8 +393,8 @@ struct Bill: Codable, Identifiable, Hashable {
     var deletedByDisplayName: String? // Display name snapshot
     var deletedAt: Timestamp? // When bill was deleted
 
-    // Entry method tracking (defaults to scan for backward compatibility)
-    var entryMethod: BillEntryMethod = .scan
+    // Entry method tracking (optional for backward compatibility with existing bills)
+    var entryMethod: BillEntryMethod?
 
     init(id: String = UUID().uuidString,
          createdBy: String,
@@ -417,7 +417,7 @@ struct Bill: Codable, Identifiable, Hashable {
          deletedBy: String? = nil,
          deletedByDisplayName: String? = nil,
          deletedAt: Timestamp? = nil,
-         entryMethod: BillEntryMethod = .scan) {
+         entryMethod: BillEntryMethod? = nil) {
         self.id = id
         self.createdBy = createdBy
         self.createdByDisplayName = createdByDisplayName
@@ -1239,6 +1239,11 @@ class BillManager: ObservableObject {
      ```
      */
     func setCurrentUser(_ userId: String) {
+        // If already set to this user, don't re-initialize listeners
+        if self.currentUserId == userId {
+            return
+        }
+
         // Clear existing data if switching users
         if let currentUser = self.currentUserId, currentUser != userId {
             billsListener?.remove()

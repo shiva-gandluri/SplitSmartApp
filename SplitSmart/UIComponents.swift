@@ -2915,7 +2915,10 @@ struct UISummaryScreen: View {
                 }
 
                 // Call updateBill on BillService
+                #if DEBUG
                 print("📤 [UISUMMARY] Calling updateBill for bill: \(existingBillToUpdate.id)")
+                #endif
+
                 try await billService.updateBill(
                     billId: existingBillToUpdate.id,
                     billName: session.billName,
@@ -2926,10 +2929,23 @@ struct UISummaryScreen: View {
                     currentUserEmail: currentUserEmail,
                     billManager: billManager
                 )
+                #if DEBUG
                 print("✅ [UISUMMARY] updateBill completed successfully")
+                #endif
+
+                // Reset spinner state BEFORE calling onDone to ensure UI updates
+                isCreatingBill = false
+
+                #if DEBUG
+                print("🔵 [UISUMMARY] Reset isCreatingBill to false, about to call onDone()")
+                #endif
 
                 // Call the completion handler
                 onDone()
+
+                #if DEBUG
+                print("🔵 [UISUMMARY] onDone() completed")
+                #endif
 
             } else {
                 // CREATE MODE: Create new bill
@@ -2963,9 +2979,11 @@ struct UISummaryScreen: View {
             }
 
         } catch {
+            #if DEBUG
             print("❌ [UISUMMARY] Bill creation/update failed with error: \(error)")
             print("❌ [UISUMMARY] Error type: \(type(of: error))")
             print("❌ [UISUMMARY] Error description: \(error.localizedDescription)")
+            #endif
 
             // Check if it's a Firebase permissions error
             if error.localizedDescription.contains("Missing or insufficient permissions") {

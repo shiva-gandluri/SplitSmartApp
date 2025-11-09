@@ -47,12 +47,19 @@ struct BillEditFlow: View {
                 UISummaryScreen(
                     session: editSession,
                     onDone: {
-                        print("🔵 [BillEditFlow] onDone called, completing session and dismissing")
+                        #if DEBUG
+                        print("🔵 [BillEditFlow] onDone called, completing session")
+                        #endif
+
                         editSession.completeSession()
 
-                        // Dismiss on next run loop to avoid dismissing during state updates
-                        DispatchQueue.main.async {
+                        // Delay dismiss to ensure all state updates complete first
+                        // This prevents dismiss from being blocked by concurrent state propagation
+                        let dismissDelay: TimeInterval = 0.1
+                        DispatchQueue.main.asyncAfter(deadline: .now() + dismissDelay) {
+                            #if DEBUG
                             print("🔵 [BillEditFlow] Executing dismiss()")
+                            #endif
                             dismiss()
                         }
                     },
